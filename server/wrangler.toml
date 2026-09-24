@@ -1,0 +1,27 @@
+# Cloudflare Workers configuration for LDL Workspace
+name = "ldl-workspace"
+main = "src/worker.js"
+compatibility_date = "2025-09-01"
+compatibility_flags = ["nodejs_compat"]
+
+# Built React client (npm --prefix ../client run build)
+[assets]
+directory = "../client/dist"
+binding = "ASSETS"
+not_found_handling = "single-page-application"
+run_worker_first = ["/api/*"]
+
+# D1 database. The deploy workflow fills in database_id automatically (scripts/cf-setup.sh).
+[[d1_databases]]
+binding = "DB"
+database_name = "ldl-workspace-db"
+database_id = "00000000-0000-0000-0000-000000000000"
+migrations_dir = "migrations"
+
+# R2 bucket for attachments
+[[r2_buckets]]
+binding = "FILES"
+bucket_name = "ldl-workspace-files"
+
+[observability]
+enabled = true

@@ -1,12 +1,11 @@
-import { Router } from 'express';
-import fs from 'node:fs';
-import path from 'node:path';
-import { all, get, run, tx, logActivity, notify, UPLOAD_DIR } from '../db.js';
-import { requireAuth, requireAdmin } from '../auth.js';
-import { badRequest, notFound, forbidden, toInt, idList, upload, fixName, paginate, today } from '../util.js';
+import { Hono } from 'hono';
+import { all, get, run, batch, logActivity, notify } from '../db.js';
+import { requireAdmin } from '../auth.js';
+import {
+  badRequest, notFound, forbidden, toInt, idList, paginate, today, jsonBody, formBody, storeFiles, removeFile, sendFile,
+} from '../util.js';
 
-const r = Router();
-r.use(requireAuth);
+const r = new Hono();
 
 export const DOC_KINDS = ['notice', 'incoming', 'outgoing', 'internal'];
 export const DOC_STATUSES = ['draft', 'pending', 'issued', 'rejected', 'archived'];
@@ -25,24 +24,24 @@ function visibilitySql(user) {
   };
 }
 
-function canView(user, docId) {
+async function canView(user, docId) {
   const v = visibilitySql(user);
-  return !!get(`SELECT 1 FROM documents d WHERE d.id = ? AND ${v.sql}`, docId, ...v.params);
+  return !!(await get(`SELECT 1 FROM documents d WHERE d.id = ? AND ${v.sql}`, docId, ...v.params));
 }
 
-function loadDocOr404(id) {
-  const d = get('SELECT * FROM documents WHERE id = ?', id);
+async function loadDocOr404(id) {
+  const d = await get('SELECT * FROM documents WHERE id = ?', id);
   if (!d) throw notFound('Văn bản không tồn tại');
   return d;
 }
 
 const canEdit = (user, d) => user.role === 'admin' || d.creator_id === user.id;
 
+const PENDING_STEP_SQL = `da.step = (SELECT MIN(step) FROM document_approvers x WHERE x.document_id = d.id AND x.status = 'pending')`;
+
 // ---------------------------------------------------------------- list query
-function buildListQuery(req) {
-  const u = req.user;
-  const q = req.query;
-  const vis = visibilitySql(u);
+function buildListQuery(user, q) {
+  const vis = visibilitySql(user);
   const where = [vis.sql];
   const params = [...vis.params];
   const box = q.box || 'home';
@@ -53,21 +52,20 @@ function buildListQuery(req) {
   switch (box) {
     case 'following':
       where.push('EXISTS (SELECT 1 FROM document_follows f WHERE f.document_id = d.id AND f.user_id = ?)');
-      params.push(u.id);
+      params.push(user.id);
       break;
     case 'pending_me':
       where.push(`d.status = 'pending' AND EXISTS (SELECT 1 FROM document_approvers da WHERE da.document_id = d.id
-                  AND da.user_id = ? AND da.status = 'pending'
-                  AND da.step = (SELECT MIN(step) FROM document_approvers x WHERE x.document_id = d.id AND x.status = 'pending'))`);
-      params.push(u.id);
+                  AND da.user_id = ? AND da.status = 'pending' AND ${PENDING_STEP_SQL})`);
+      params.push(user.id);
       break;
     case 'starred':
       where.push('EXISTS (SELECT 1 FROM document_stars s WHERE s.document_id = d.id AND s.user_id = ?)');
-      params.push(u.id);
+      params.push(user.id);
       break;
     case 'mine':
       where.push('d.creator_id = ?');
-      params.push(u.id);
+      params.push(user.id);
       break;
     case 'numbering':
       where.push("d.need_numbering = 1 AND (d.code IS NULL OR d.code = '') AND d.status <> 'draft'");
@@ -77,7 +75,7 @@ function buildListQuery(req) {
       break;
     case 'drafts':
       where.push("d.status = 'draft' AND d.creator_id = ?");
-      params.push(u.id);
+      params.push(user.id);
       break;
     case 'expired':
       where.push("d.status = 'issued' AND d.expire_date IS NOT NULL AND d.expire_date < ?");
@@ -90,25 +88,22 @@ function buildListQuery(req) {
       where.push("d.status = 'archived'");
       break;
     case 'trash':
-      if (u.role !== 'admin') { where.push('d.creator_id = ?'); params.push(u.id); }
+      if (user.role !== 'admin') { where.push('d.creator_id = ?'); params.push(user.id); }
       break;
     default:
       // Trang chủ: văn bản đã ban hành + văn bản của tôi chưa ban hành
       where.push("(d.status = 'issued' OR (d.creator_id = ? AND d.status IN ('pending','rejected')))");
-      params.push(u.id);
+      params.push(user.id);
   }
 
   if (q.tab && DOC_KINDS.includes(q.tab)) { where.push('d.kind = ?'); params.push(q.tab); }
   if (q.status) {
-    const sts = String(q.status).split(',').filter((s) => DOC_STATUSES.includes(s) || s === 'expired');
-    if (sts.length) {
-      const parts = [];
-      for (const s of sts) {
-        if (s === 'expired') { parts.push("(d.status = 'issued' AND d.expire_date < ?)"); params.push(today()); }
-        else { parts.push('d.status = ?'); params.push(s); }
-      }
-      where.push(`(${parts.join(' OR ')})`);
+    const parts = [];
+    for (const s of String(q.status).split(',')) {
+      if (s === 'expired') { parts.push("(d.status = 'issued' AND d.expire_date < ?)"); params.push(today()); }
+      else if (DOC_STATUSES.includes(s)) { parts.push('d.status = ?'); params.push(s); }
     }
+    if (parts.length) where.push(`(${parts.join(' OR ')})`);
   }
   const idFilter = (col, key) => {
     const ids = idList(q[key]);
@@ -135,8 +130,8 @@ function buildListQuery(req) {
     where.push("(d.title LIKE ? OR IFNULL(d.code,'') LIKE ? OR IFNULL(d.description,'') LIKE ? OR IFNULL(d.content,'') LIKE ?)");
     params.push(like, like, like, like);
   }
-  if (q.date_from) { where.push("date(COALESCE(d.issued_at, d.created_at)) >= date(?)"); params.push(q.date_from); }
-  if (q.date_to) { where.push("date(COALESCE(d.issued_at, d.created_at)) <= date(?)"); params.push(q.date_to); }
+  if (q.date_from) { where.push('date(COALESCE(d.issued_at, d.created_at)) >= date(?)'); params.push(q.date_from); }
+  if (q.date_to) { where.push('date(COALESCE(d.issued_at, d.created_at)) <= date(?)'); params.push(q.date_to); }
 
   const sorts = {
     newest: 'COALESCE(d.issued_at, d.created_at) DESC, d.id DESC',
@@ -144,8 +139,7 @@ function buildListQuery(req) {
     title: 'd.title COLLATE NOCASE ASC',
     updated: 'd.updated_at DESC',
   };
-  const order = sorts[q.sort] || sorts.newest;
-  return { where: where.join(' AND '), params, order };
+  return { where: where.join(' AND '), params, order: sorts[q.sort] || sorts.newest };
 }
 
 const DOC_SELECT = `
@@ -176,9 +170,9 @@ function decorate(doc) {
   return doc;
 }
 
-function firstAttachments(ids) {
+async function attachmentsFor(ids) {
   if (!ids.length) return {};
-  const rows = all(
+  const rows = await all(
     `SELECT id, document_id, original_name, mime, size FROM document_attachments
      WHERE document_id IN (${ids.map(() => '?').join(',')}) ORDER BY id`,
     ...ids
@@ -189,46 +183,47 @@ function firstAttachments(ids) {
 }
 
 // ---------------------------------------------------------------- meta
-r.get('/office/meta', (req, res) => {
-  const u = req.user;
+r.get('/office/meta', async (c) => {
+  const u = c.get('user');
   const vis = visibilitySql(u);
-  const count = (extra, ...p) =>
-    get(`SELECT COUNT(*) AS c FROM documents d WHERE ${vis.sql} AND d.deleted_at IS NULL AND ${extra}`, ...vis.params, ...p).c;
-  res.json({
-    types: all('SELECT * FROM doc_types ORDER BY name COLLATE NOCASE'),
-    folders: all('SELECT * FROM doc_folders ORDER BY name COLLATE NOCASE'),
-    categories: all('SELECT * FROM doc_categories ORDER BY name COLLATE NOCASE'),
-    departments: all('SELECT id, name, parent_id FROM departments ORDER BY name COLLATE NOCASE'),
+  const count = async (extra, ...p) =>
+    (await get(`SELECT COUNT(*) AS c FROM documents d WHERE ${vis.sql} AND d.deleted_at IS NULL AND ${extra}`, ...vis.params, ...p)).c;
+  return c.json({
+    types: await all('SELECT * FROM doc_types ORDER BY name COLLATE NOCASE'),
+    folders: await all('SELECT * FROM doc_folders ORDER BY name COLLATE NOCASE'),
+    categories: await all('SELECT * FROM doc_categories ORDER BY name COLLATE NOCASE'),
+    departments: await all('SELECT id, name, parent_id FROM departments ORDER BY name COLLATE NOCASE'),
     counts: {
-      pending_me: count(`d.status = 'pending' AND EXISTS (SELECT 1 FROM document_approvers da WHERE da.document_id = d.id
-        AND da.user_id = ? AND da.status = 'pending'
-        AND da.step = (SELECT MIN(step) FROM document_approvers x WHERE x.document_id = d.id AND x.status = 'pending'))`, u.id),
-      numbering: count("d.need_numbering = 1 AND (d.code IS NULL OR d.code = '') AND d.status <> 'draft'"),
-      drafts: count("d.status = 'draft' AND d.creator_id = ?", u.id),
-      unread: count("d.status = 'issued' AND NOT EXISTS (SELECT 1 FROM document_views v WHERE v.document_id = d.id AND v.user_id = ?)", u.id),
+      pending_me: await count(`d.status = 'pending' AND EXISTS (SELECT 1 FROM document_approvers da WHERE da.document_id = d.id
+        AND da.user_id = ? AND da.status = 'pending' AND ${PENDING_STEP_SQL})`, u.id),
+      numbering: await count("d.need_numbering = 1 AND (d.code IS NULL OR d.code = '') AND d.status <> 'draft'"),
+      drafts: await count("d.status = 'draft' AND d.creator_id = ?", u.id),
+      unread: await count("d.status = 'issued' AND NOT EXISTS (SELECT 1 FROM document_views v WHERE v.document_id = d.id AND v.user_id = ?)", u.id),
     },
   });
 });
 
 // ---------------------------------------------------------------- list / export
-r.get('/documents', (req, res) => {
-  const { where, params, order } = buildListQuery(req);
-  const { page, limit, offset } = paginate(req, 20);
-  const total = get(`SELECT COUNT(*) AS c FROM documents d WHERE ${where}`, ...params).c;
-  const items = all(`${DOC_SELECT} WHERE ${where} ORDER BY ${order} LIMIT ? OFFSET ?`,
-    req.user.id, req.user.id, req.user.id, ...params, limit, offset).map(decorate);
-  const atts = firstAttachments(items.map((d) => d.id));
+r.get('/documents', async (c) => {
+  const u = c.get('user');
+  const q = c.req.query();
+  const { where, params, order } = buildListQuery(u, q);
+  const { page, limit, offset } = paginate(q, 20);
+  const total = (await get(`SELECT COUNT(*) AS c FROM documents d WHERE ${where}`, ...params)).c;
+  const items = (await all(`${DOC_SELECT} WHERE ${where} ORDER BY ${order} LIMIT ? OFFSET ?`,
+    u.id, u.id, u.id, ...params, limit, offset)).map(decorate);
+  const atts = await attachmentsFor(items.map((d) => d.id));
   for (const d of items) d.attachments = atts[d.id] || [];
-  res.json({ items, total, page, limit });
+  return c.json({ items, total, page, limit });
 });
 
 const STATUS_LABEL = { draft: 'Đã lưu', pending: 'Chờ duyệt', issued: 'Đã ban hành', rejected: 'Không thông qua', archived: 'Cất giữ' };
 const KIND_LABEL = { notice: 'Thông báo', incoming: 'Văn bản đến', outgoing: 'Văn bản đi', internal: 'Văn bản nội bộ' };
 
-r.get('/documents/export', (req, res) => {
-  const { where, params, order } = buildListQuery(req);
-  const items = all(`${DOC_SELECT} WHERE ${where} ORDER BY ${order} LIMIT 5000`,
-    req.user.id, req.user.id, req.user.id, ...params).map(decorate);
+r.get('/documents/export', async (c) => {
+  const u = c.get('user');
+  const { where, params, order } = buildListQuery(u, c.req.query());
+  const items = (await all(`${DOC_SELECT} WHERE ${where} ORDER BY ${order} LIMIT 5000`, u.id, u.id, u.id, ...params)).map(decorate);
   const esc = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`;
   const header = ['Số hiệu', 'Tiêu đề', 'Trích yếu', 'Nhóm', 'Loại văn bản', 'Trạng thái', 'Người ban hành',
     'Phòng ban', 'Ngày ban hành', 'Ngày hiệu lực', 'Ngày hết hạn', 'Lượt xem'];
@@ -238,80 +233,85 @@ r.get('/documents/export', (req, res) => {
       d.is_expired ? 'Hết hạn' : STATUS_LABEL[d.status], d.issuer_name, d.department_name,
       d.issued_at?.slice(0, 10), d.effective_date, d.expire_date, d.view_count].map(esc).join(','));
   }
-  res.setHeader('Content-Type', 'text/csv; charset=utf-8');
-  res.setHeader('Content-Disposition', `attachment; filename="van-ban-${today()}.csv"`);
-  res.send('﻿' + lines.join('\r\n'));
+  return new Response('﻿' + lines.join('\r\n'), {
+    headers: {
+      'Content-Type': 'text/csv; charset=utf-8',
+      'Content-Disposition': `attachment; filename="van-ban-${today()}.csv"`,
+    },
+  });
 });
 
 // ---------------------------------------------------------------- detail
-function fullDoc(id, user) {
-  const d = decorate(get(`${DOC_SELECT} WHERE d.id = ?`, user.id, user.id, user.id, id));
-  d.attachments = all('SELECT id, original_name, mime, size, created_at FROM document_attachments WHERE document_id = ? ORDER BY id', id);
-  d.approvers = all(
+async function fullDoc(id, user) {
+  const d = decorate(await get(`${DOC_SELECT} WHERE d.id = ?`, user.id, user.id, user.id, id));
+  d.attachments = await all('SELECT id, original_name, mime, size, created_at FROM document_attachments WHERE document_id = ? ORDER BY id', id);
+  d.approvers = await all(
     `SELECT da.*, u.name, u.color, u.title FROM document_approvers da JOIN users u ON u.id = da.user_id
      WHERE da.document_id = ? ORDER BY da.step, u.name`, id);
-  d.recipients = all(
+  d.recipients = await all(
     `SELECT dr.user_id, dr.department_id, u.name AS user_name, dep.name AS department_name
      FROM document_recipients dr LEFT JOIN users u ON u.id = dr.user_id LEFT JOIN departments dep ON dep.id = dr.department_id
      WHERE dr.document_id = ?`, id);
-  d.followers = all('SELECT u.id, u.name, u.color FROM document_follows f JOIN users u ON u.id = f.user_id WHERE f.document_id = ?', id);
-  const pendingStep = get("SELECT MIN(step) AS s FROM document_approvers WHERE document_id = ? AND status = 'pending'", id).s;
+  d.followers = await all('SELECT u.id, u.name, u.color FROM document_follows f JOIN users u ON u.id = f.user_id WHERE f.document_id = ?', id);
+  const pendingStep = (await get("SELECT MIN(step) AS s FROM document_approvers WHERE document_id = ? AND status = 'pending'", id)).s;
   d.can_approve = d.status === 'pending' && d.approvers.some((a) => a.user_id === user.id && a.status === 'pending' && a.step === pendingStep);
   d.can_edit = canEdit(user, d) && (['draft', 'rejected'].includes(d.status) || user.role === 'admin');
   d.can_manage = canEdit(user, d);
   return d;
 }
 
-r.get('/documents/:id', (req, res) => {
-  const id = toInt(req.params.id);
-  loadDocOr404(id);
-  if (!canView(req.user, id)) throw forbidden('Bạn không có quyền xem văn bản này');
-  run('INSERT INTO document_views(document_id, user_id) VALUES (?,?) ON CONFLICT DO UPDATE SET viewed_at = datetime(\'now\')', id, req.user.id);
-  res.json(fullDoc(id, req.user));
+async function requireViewable(c) {
+  const id = toInt(c.req.param('id'));
+  await loadDocOr404(id);
+  if (!(await canView(c.get('user'), id))) throw forbidden('Bạn không có quyền xem văn bản này');
+  return id;
+}
+
+r.get('/documents/:id', async (c) => {
+  const id = await requireViewable(c);
+  await run("INSERT INTO document_views(document_id, user_id) VALUES (?,?) ON CONFLICT DO UPDATE SET viewed_at = datetime('now')", id, c.get('user').id);
+  return c.json(await fullDoc(id, c.get('user')));
 });
 
-r.get('/documents/:id/viewers', (req, res) => {
-  const id = toInt(req.params.id);
-  if (!canView(req.user, id)) throw forbidden();
-  res.json(all(`SELECT u.id, u.name, u.color, dep.name AS department_name, v.viewed_at FROM document_views v
+r.get('/documents/:id/viewers', async (c) => {
+  const id = await requireViewable(c);
+  return c.json(await all(`SELECT u.id, u.name, u.color, dep.name AS department_name, v.viewed_at FROM document_views v
     JOIN users u ON u.id = v.user_id LEFT JOIN departments dep ON dep.id = u.department_id
     WHERE v.document_id = ? ORDER BY v.viewed_at DESC`, id));
 });
 
-r.get('/documents/:id/activity', (req, res) => {
-  const id = toInt(req.params.id);
-  if (!canView(req.user, id)) throw forbidden();
-  res.json(all(`SELECT l.*, u.name AS user_name, u.color AS user_color FROM activity_logs l
+r.get('/documents/:id/activity', async (c) => {
+  const id = await requireViewable(c);
+  return c.json(await all(`SELECT l.*, u.name AS user_name, u.color AS user_color FROM activity_logs l
     LEFT JOIN users u ON u.id = l.user_id WHERE l.entity_type = 'document' AND l.entity_id = ? ORDER BY l.id DESC`, id));
 });
 
-r.get('/documents/:id/comments', (req, res) => {
-  const id = toInt(req.params.id);
-  if (!canView(req.user, id)) throw forbidden();
-  res.json(all(`SELECT c.*, u.name AS user_name, u.color AS user_color FROM document_comments c
-    LEFT JOIN users u ON u.id = c.user_id WHERE c.document_id = ? ORDER BY c.id`, id));
+const COMMENT_SELECT = `SELECT c.*, u.name AS user_name, u.color AS user_color FROM document_comments c
+  LEFT JOIN users u ON u.id = c.user_id`;
+
+r.get('/documents/:id/comments', async (c) => {
+  const id = await requireViewable(c);
+  return c.json(await all(`${COMMENT_SELECT} WHERE c.document_id = ? ORDER BY c.id`, id));
 });
 
-r.post('/documents/:id/comments', (req, res) => {
-  const id = toInt(req.params.id);
-  const d = loadDocOr404(id);
-  if (!canView(req.user, id)) throw forbidden();
-  const content = String(req.body?.content || '').trim();
+r.post('/documents/:id/comments', async (c) => {
+  const id = await requireViewable(c);
+  const user = c.get('user');
+  const d = await loadDocOr404(id);
+  const content = String((await jsonBody(c)).content || '').trim();
   if (!content) throw badRequest('Nội dung bình luận trống');
-  const info = run('INSERT INTO document_comments(document_id, user_id, content) VALUES (?,?,?)', id, req.user.id, content);
-  const watchers = all('SELECT user_id FROM document_follows WHERE document_id = ?', id).map((x) => x.user_id);
-  notify([d.creator_id, ...watchers], {
-    actorId: req.user.id, app: APP, type: 'comment',
-    title: `${req.user.name} đã bình luận văn bản "${d.title}"`, link: `/office/doc/${id}`,
+  const { lastId } = await run('INSERT INTO document_comments(document_id, user_id, content) VALUES (?,?,?)', id, user.id, content);
+  const watchers = (await all('SELECT user_id FROM document_follows WHERE document_id = ?', id)).map((x) => x.user_id);
+  await notify([d.creator_id, ...watchers], {
+    actorId: user.id, app: APP, type: 'comment',
+    title: `${user.name} đã bình luận văn bản "${d.title}"`, link: `/office/doc/${id}`,
   });
-  res.status(201).json(get(`SELECT c.*, u.name AS user_name, u.color AS user_color FROM document_comments c
-    LEFT JOIN users u ON u.id = c.user_id WHERE c.id = ?`, Number(info.lastInsertRowid)));
+  return c.json(await get(`${COMMENT_SELECT} WHERE c.id = ?`, lastId), 201);
 });
 
 // ---------------------------------------------------------------- create / update
 function parseDocBody(b) {
   if (!b.title?.trim()) throw badRequest('Tiêu đề văn bản là bắt buộc');
-  const kind = DOC_KINDS.includes(b.kind) ? b.kind : 'notice';
   if (b.expire_date && b.effective_date && b.expire_date < b.effective_date) {
     throw badRequest('Ngày hết hạn phải sau ngày hiệu lực');
   }
@@ -320,7 +320,7 @@ function parseDocBody(b) {
     title: b.title.trim(),
     description: b.description || null,
     content: b.content || null,
-    kind,
+    kind: DOC_KINDS.includes(b.kind) ? b.kind : 'notice',
     type_id: toInt(b.type_id),
     folder_id: toInt(b.folder_id),
     category_id: toInt(b.category_id),
@@ -328,7 +328,7 @@ function parseDocBody(b) {
     sender_department_id: toInt(b.sender_department_id),
     sender_org: b.sender_org || null,
     issuer_id: toInt(b.issuer_id),
-    need_numbering: b.need_numbering === true || b.need_numbering === '1' || b.need_numbering === 'true' ? 1 : 0,
+    need_numbering: ['1', 'true', true, 1].includes(b.need_numbering) ? 1 : 0,
     effective_date: b.effective_date || null,
     expire_date: b.expire_date || null,
     approvers: idList(b.approvers),
@@ -338,294 +338,292 @@ function parseDocBody(b) {
   };
 }
 
-function saveRelations(id, p) {
-  run('DELETE FROM document_approvers WHERE document_id = ?', id);
-  p.approvers.forEach((uid, i) => run('INSERT INTO document_approvers(document_id, user_id, step) VALUES (?,?,?)', id, uid, i + 1));
-  run('DELETE FROM document_recipients WHERE document_id = ?', id);
-  for (const uid of p.recipient_users) run('INSERT INTO document_recipients(document_id, user_id) VALUES (?,?)', id, uid);
-  for (const did of p.recipient_departments) run('INSERT INTO document_recipients(document_id, department_id) VALUES (?,?)', id, did);
-  run('UPDATE documents SET is_public = ? WHERE id = ?', p.recipient_users.length || p.recipient_departments.length ? 0 : 1, id);
-  for (const uid of p.followers) run('INSERT OR IGNORE INTO document_follows(document_id, user_id) VALUES (?,?)', id, uid);
+const truthy = (v) => ['1', 'true', true, 1].includes(v);
+
+/** Statements that replace approvers / recipients / followers of a document. */
+function relationStatements(id, p, previousApprovals = null) {
+  const stmts = [['DELETE FROM document_approvers WHERE document_id = ?', [id]]];
+  p.approvers.forEach((uid, i) => {
+    const prev = previousApprovals?.find((a) => a.user_id === uid);
+    stmts.push(['INSERT INTO document_approvers(document_id, user_id, step, status, comment, acted_at) VALUES (?,?,?,?,?,?)',
+      [id, uid, i + 1, prev?.status || 'pending', prev?.comment ?? null, prev?.acted_at ?? null]]);
+  });
+  stmts.push(['DELETE FROM document_recipients WHERE document_id = ?', [id]]);
+  for (const uid of p.recipient_users) stmts.push(['INSERT INTO document_recipients(document_id, user_id) VALUES (?,?)', [id, uid]]);
+  for (const did of p.recipient_departments) stmts.push(['INSERT INTO document_recipients(document_id, department_id) VALUES (?,?)', [id, did]]);
+  stmts.push(['UPDATE documents SET is_public = ? WHERE id = ?', [p.recipient_users.length || p.recipient_departments.length ? 0 : 1, id]]);
+  for (const uid of p.followers) stmts.push(['INSERT OR IGNORE INTO document_follows(document_id, user_id) VALUES (?,?)', [id, uid]]);
+  return stmts;
 }
 
-function saveAttachments(id, files) {
-  for (const f of files || []) {
-    run('INSERT INTO document_attachments(document_id, filename, original_name, mime, size) VALUES (?,?,?,?,?)',
-      id, f.filename, fixName(f.originalname), f.mimetype, f.size);
-  }
+async function saveAttachments(id, files) {
+  const stored = await storeFiles(files);
+  await batch(stored.map((f) => [
+    'INSERT INTO document_attachments(document_id, filename, original_name, mime, size) VALUES (?,?,?,?,?)',
+    [id, f.filename, f.original_name, f.mime, f.size],
+  ]));
 }
 
-function recipientUserIds(id) {
-  const d = get('SELECT is_public FROM documents WHERE id = ?', id);
-  if (d.is_public) return all('SELECT id FROM users WHERE active = 1').map((x) => x.id);
-  return all(`SELECT DISTINCT u.id FROM users u JOIN document_recipients dr ON dr.document_id = ?
-    AND (dr.user_id = u.id OR dr.department_id = u.department_id) WHERE u.active = 1`, id).map((x) => x.id);
+async function recipientUserIds(id) {
+  const d = await get('SELECT is_public FROM documents WHERE id = ?', id);
+  if (d.is_public) return (await all('SELECT id FROM users WHERE active = 1')).map((x) => x.id);
+  return (await all(`SELECT DISTINCT u.id FROM users u JOIN document_recipients dr ON dr.document_id = ?
+    AND (dr.user_id = u.id OR dr.department_id = u.department_id) WHERE u.active = 1`, id)).map((x) => x.id);
 }
 
-/** Move a document forward: submit for approval or publish when no approver remains. */
-function advance(id, actor) {
-  const d = get('SELECT * FROM documents WHERE id = ?', id);
-  const step = get("SELECT MIN(step) AS s FROM document_approvers WHERE document_id = ? AND status = 'pending'", id).s;
+/** Move a document forward: send to the next approval step, or publish when no approver remains. */
+async function advance(id, actor) {
+  const d = await get('SELECT * FROM documents WHERE id = ?', id);
+  const step = (await get("SELECT MIN(step) AS s FROM document_approvers WHERE document_id = ? AND status = 'pending'", id)).s;
   if (step) {
-    run("UPDATE documents SET status = 'pending', updated_at = datetime('now') WHERE id = ?", id);
-    const approvers = all("SELECT user_id FROM document_approvers WHERE document_id = ? AND step = ? AND status = 'pending'", id, step);
-    notify(approvers.map((a) => a.user_id), {
+    await run("UPDATE documents SET status = 'pending', updated_at = datetime('now') WHERE id = ?", id);
+    const approvers = await all("SELECT user_id FROM document_approvers WHERE document_id = ? AND step = ? AND status = 'pending'", id, step);
+    await notify(approvers.map((a) => a.user_id), {
       actorId: actor.id, app: APP, type: 'approval',
       title: `Văn bản "${d.title}" đang chờ bạn duyệt`, link: `/office/doc/${id}`,
     });
     return 'pending';
   }
-  run(`UPDATE documents SET status = 'issued', issued_at = COALESCE(issued_at, datetime('now')),
+  await run(`UPDATE documents SET status = 'issued', issued_at = COALESCE(issued_at, datetime('now')),
        issuer_id = COALESCE(issuer_id, creator_id), updated_at = datetime('now') WHERE id = ?`, id);
-  logActivity('document', id, actor.id, 'issued', 'Văn bản đã được ban hành');
-  notify(recipientUserIds(id), {
+  await logActivity('document', id, actor.id, 'issued', 'Văn bản đã được ban hành');
+  await notify(await recipientUserIds(id), {
     actorId: actor.id, app: APP, type: 'issued', title: `Văn bản mới: ${d.title}`, link: `/office/doc/${id}`,
   });
   return 'issued';
 }
 
-r.post('/documents', upload.array('files'), (req, res) => {
-  const p = parseDocBody(req.body || {});
-  const asDraft = req.body.draft === '1' || req.body.draft === true || req.body.draft === 'true';
-  const id = tx(() => {
-    const info = run(
-      `INSERT INTO documents(code, title, description, content, kind, type_id, folder_id, category_id, department_id,
-        sender_department_id, sender_org, issuer_id, creator_id, need_numbering, effective_date, expire_date, status)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?, 'draft')`,
-      p.code, p.title, p.description, p.content, p.kind, p.type_id, p.folder_id, p.category_id, p.department_id,
-      p.sender_department_id, p.sender_org, p.issuer_id || req.user.id, req.user.id, p.need_numbering,
-      p.effective_date, p.expire_date
-    );
-    const newId = Number(info.lastInsertRowid);
-    saveRelations(newId, p);
-    run('INSERT OR IGNORE INTO document_follows(document_id, user_id) VALUES (?,?)', newId, req.user.id);
-    saveAttachments(newId, req.files);
-    logActivity('document', newId, req.user.id, 'created', asDraft ? 'Lưu nháp văn bản' : 'Tạo văn bản');
-    if (!asDraft) advance(newId, req.user);
-    return newId;
-  });
-  res.status(201).json(fullDoc(id, req.user));
+async function resubmit(id, user) {
+  await run("UPDATE document_approvers SET status = 'pending', comment = NULL, acted_at = NULL WHERE document_id = ?", id);
+  await logActivity('document', id, user.id, 'submitted', 'Gửi văn bản');
+  await advance(id, user);
+}
+
+r.post('/documents', async (c) => {
+  const user = c.get('user');
+  const { fields, files } = await formBody(c);
+  const p = parseDocBody(fields);
+  const asDraft = truthy(fields.draft);
+  const { lastId: id } = await run(
+    `INSERT INTO documents(code, title, description, content, kind, type_id, folder_id, category_id, department_id,
+      sender_department_id, sender_org, issuer_id, creator_id, need_numbering, effective_date, expire_date, status)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?, 'draft')`,
+    p.code, p.title, p.description, p.content, p.kind, p.type_id, p.folder_id, p.category_id, p.department_id,
+    p.sender_department_id, p.sender_org, p.issuer_id || user.id, user.id, p.need_numbering, p.effective_date, p.expire_date
+  );
+  await batch([
+    ...relationStatements(id, p),
+    ['INSERT OR IGNORE INTO document_follows(document_id, user_id) VALUES (?,?)', [id, user.id]],
+  ]);
+  await saveAttachments(id, files);
+  await logActivity('document', id, user.id, 'created', asDraft ? 'Lưu nháp văn bản' : 'Tạo văn bản');
+  if (!asDraft) await advance(id, user);
+  return c.json(await fullDoc(id, user), 201);
 });
 
-r.put('/documents/:id', upload.array('files'), (req, res) => {
-  const id = toInt(req.params.id);
-  const d = loadDocOr404(id);
-  if (!canEdit(req.user, d)) throw forbidden();
-  if (!['draft', 'rejected'].includes(d.status) && req.user.role !== 'admin') {
+r.put('/documents/:id', async (c) => {
+  const user = c.get('user');
+  const id = toInt(c.req.param('id'));
+  const d = await loadDocOr404(id);
+  if (!canEdit(user, d)) throw forbidden();
+  if (!['draft', 'rejected'].includes(d.status) && user.role !== 'admin') {
     throw badRequest('Chỉ có thể chỉnh sửa văn bản ở trạng thái nháp hoặc không thông qua');
   }
-  const p = parseDocBody(req.body || {});
-  const submit = req.body.submit === '1' || req.body.submit === 'true' || req.body.submit === true;
-  tx(() => {
-    run(
-      `UPDATE documents SET code = ?, title = ?, description = ?, content = ?, kind = ?, type_id = ?, folder_id = ?,
-        category_id = ?, department_id = ?, sender_department_id = ?, sender_org = ?, issuer_id = COALESCE(?, issuer_id),
-        need_numbering = ?, effective_date = ?, expire_date = ?, updated_at = datetime('now') WHERE id = ?`,
-      p.code, p.title, p.description, p.content, p.kind, p.type_id, p.folder_id, p.category_id, p.department_id,
-      p.sender_department_id, p.sender_org, p.issuer_id, p.need_numbering, p.effective_date, p.expire_date, id
-    );
-    const keepApprovals = d.status === 'issued' || d.status === 'archived';
-    if (keepApprovals) {
-      // Văn bản đã ban hành: chỉ cập nhật người nhận / theo dõi, giữ nguyên lịch sử duyệt
-      p.approvers = all('SELECT user_id FROM document_approvers WHERE document_id = ? ORDER BY step', id).map((x) => x.user_id);
-      const prev = all('SELECT * FROM document_approvers WHERE document_id = ?', id);
-      saveRelations(id, p);
-      for (const a of prev) {
-        run('UPDATE document_approvers SET status = ?, comment = ?, acted_at = ? WHERE document_id = ? AND user_id = ?',
-          a.status, a.comment, a.acted_at, id, a.user_id);
-      }
-    } else {
-      saveRelations(id, p);
-    }
-    const removeIds = idList(req.body.remove_attachments);
-    for (const aid of removeIds) {
-      const a = get('SELECT * FROM document_attachments WHERE id = ? AND document_id = ?', aid, id);
-      if (a) {
-        run('DELETE FROM document_attachments WHERE id = ?', aid);
-        fs.rm(path.join(UPLOAD_DIR, a.filename), () => {});
-      }
-    }
-    saveAttachments(id, req.files);
-    logActivity('document', id, req.user.id, 'updated', 'Cập nhật văn bản');
-    if (submit && ['draft', 'rejected'].includes(d.status)) {
-      run("UPDATE document_approvers SET status = 'pending', comment = NULL, acted_at = NULL WHERE document_id = ?", id);
-      logActivity('document', id, req.user.id, 'submitted', 'Gửi văn bản');
-      advance(id, req.user);
-    }
-  });
-  res.json(fullDoc(id, req.user));
+  const { fields, files } = await formBody(c);
+  const p = parseDocBody(fields);
+  const stmts = [[
+    `UPDATE documents SET code = ?, title = ?, description = ?, content = ?, kind = ?, type_id = ?, folder_id = ?,
+      category_id = ?, department_id = ?, sender_department_id = ?, sender_org = ?, issuer_id = COALESCE(?, issuer_id),
+      need_numbering = ?, effective_date = ?, expire_date = ?, updated_at = datetime('now') WHERE id = ?`,
+    [p.code, p.title, p.description, p.content, p.kind, p.type_id, p.folder_id, p.category_id, p.department_id,
+      p.sender_department_id, p.sender_org, p.issuer_id, p.need_numbering, p.effective_date, p.expire_date, id],
+  ]];
+  if (d.status === 'issued' || d.status === 'archived') {
+    // Văn bản đã ban hành: giữ nguyên luồng duyệt và kết quả duyệt
+    const prev = await all('SELECT * FROM document_approvers WHERE document_id = ? ORDER BY step', id);
+    p.approvers = prev.map((a) => a.user_id);
+    stmts.push(...relationStatements(id, p, prev));
+  } else {
+    stmts.push(...relationStatements(id, p));
+  }
+  const removeIds = idList(fields.remove_attachments);
+  const removed = removeIds.length
+    ? await all(`SELECT * FROM document_attachments WHERE document_id = ? AND id IN (${removeIds.map(() => '?').join(',')})`, id, ...removeIds)
+    : [];
+  for (const a of removed) stmts.push(['DELETE FROM document_attachments WHERE id = ?', [a.id]]);
+  await batch(stmts);
+  for (const a of removed) await removeFile(a.filename);
+  await saveAttachments(id, files);
+  await logActivity('document', id, user.id, 'updated', 'Cập nhật văn bản');
+  if (truthy(fields.submit) && ['draft', 'rejected'].includes(d.status)) await resubmit(id, user);
+  return c.json(await fullDoc(id, user));
 });
 
-r.post('/documents/:id/submit', (req, res) => {
-  const id = toInt(req.params.id);
-  const d = loadDocOr404(id);
-  if (!canEdit(req.user, d)) throw forbidden();
+r.post('/documents/:id/submit', async (c) => {
+  const user = c.get('user');
+  const id = toInt(c.req.param('id'));
+  const d = await loadDocOr404(id);
+  if (!canEdit(user, d)) throw forbidden();
   if (!['draft', 'rejected'].includes(d.status)) throw badRequest('Văn bản đã được gửi');
-  tx(() => {
-    run("UPDATE document_approvers SET status = 'pending', comment = NULL, acted_at = NULL WHERE document_id = ?", id);
-    logActivity('document', id, req.user.id, 'submitted', 'Gửi văn bản');
-    advance(id, req.user);
-  });
-  res.json(fullDoc(id, req.user));
+  await resubmit(id, user);
+  return c.json(await fullDoc(id, user));
 });
 
-r.post('/documents/:id/approve', (req, res) => {
-  const id = toInt(req.params.id);
-  const d = loadDocOr404(id);
-  const decision = req.body?.decision === 'reject' ? 'rejected' : 'approved';
-  const comment = req.body?.comment || null;
-  const step = get("SELECT MIN(step) AS s FROM document_approvers WHERE document_id = ? AND status = 'pending'", id).s;
-  const mine = get('SELECT * FROM document_approvers WHERE document_id = ? AND user_id = ?', id, req.user.id);
+r.post('/documents/:id/approve', async (c) => {
+  const user = c.get('user');
+  const id = toInt(c.req.param('id'));
+  const d = await loadDocOr404(id);
+  const b = await jsonBody(c);
+  const decision = b.decision === 'reject' ? 'rejected' : 'approved';
+  const comment = b.comment || null;
+  const step = (await get("SELECT MIN(step) AS s FROM document_approvers WHERE document_id = ? AND status = 'pending'", id)).s;
+  const mine = await get('SELECT * FROM document_approvers WHERE document_id = ? AND user_id = ?', id, user.id);
   if (d.status !== 'pending' || !mine || mine.status !== 'pending' || mine.step !== step) {
     throw forbidden('Bạn không phải người duyệt ở bước hiện tại');
   }
-  tx(() => {
-    run("UPDATE document_approvers SET status = ?, comment = ?, acted_at = datetime('now') WHERE document_id = ? AND user_id = ?",
-      decision, comment, id, req.user.id);
-    if (decision === 'rejected') {
-      run("UPDATE documents SET status = 'rejected', updated_at = datetime('now') WHERE id = ?", id);
-      logActivity('document', id, req.user.id, 'rejected', comment ? `Không thông qua: ${comment}` : 'Không thông qua');
-      notify(d.creator_id, { actorId: req.user.id, app: APP, type: 'rejected',
-        title: `${req.user.name} không thông qua văn bản "${d.title}"`, link: `/office/doc/${id}` });
-    } else {
-      logActivity('document', id, req.user.id, 'approved', comment ? `Đã duyệt: ${comment}` : 'Đã duyệt');
-      notify(d.creator_id, { actorId: req.user.id, app: APP, type: 'approved',
-        title: `${req.user.name} đã duyệt văn bản "${d.title}"`, link: `/office/doc/${id}` });
-      advance(id, req.user);
-    }
-  });
-  res.json(fullDoc(id, req.user));
+  // Guard against a concurrent decision on the same step
+  const { changes } = await run(
+    "UPDATE document_approvers SET status = ?, comment = ?, acted_at = datetime('now') WHERE document_id = ? AND user_id = ? AND status = 'pending'",
+    decision, comment, id, user.id
+  );
+  if (!changes) throw badRequest('Văn bản đã được xử lý');
+  if (decision === 'rejected') {
+    await run("UPDATE documents SET status = 'rejected', updated_at = datetime('now') WHERE id = ?", id);
+    await logActivity('document', id, user.id, 'rejected', comment ? `Không thông qua: ${comment}` : 'Không thông qua');
+    await notify(d.creator_id, { actorId: user.id, app: APP, type: 'rejected',
+      title: `${user.name} không thông qua văn bản "${d.title}"`, link: `/office/doc/${id}` });
+  } else {
+    await logActivity('document', id, user.id, 'approved', comment ? `Đã duyệt: ${comment}` : 'Đã duyệt');
+    await notify(d.creator_id, { actorId: user.id, app: APP, type: 'approved',
+      title: `${user.name} đã duyệt văn bản "${d.title}"`, link: `/office/doc/${id}` });
+    await advance(id, user);
+  }
+  return c.json(await fullDoc(id, user));
 });
 
-r.post('/documents/:id/number', (req, res) => {
-  const id = toInt(req.params.id);
-  const d = loadDocOr404(id);
-  if (req.user.role !== 'admin' && d.creator_id !== req.user.id) throw forbidden();
-  let code = String(req.body?.code || '').trim();
+r.post('/documents/:id/number', async (c) => {
+  const user = c.get('user');
+  const id = toInt(c.req.param('id'));
+  const d = await loadDocOr404(id);
+  if (user.role !== 'admin' && d.creator_id !== user.id) throw forbidden();
+  let code = String((await jsonBody(c)).code || '').trim();
   if (!code) {
-    const type = d.type_id ? get('SELECT * FROM doc_types WHERE id = ?', d.type_id) : null;
-    const year = new Date().getFullYear();
-    const n = get("SELECT COUNT(*) AS c FROM documents WHERE code IS NOT NULL AND code <> '' AND strftime('%Y', created_at) = ?", String(year)).c + 1;
+    const type = d.type_id ? await get('SELECT * FROM doc_types WHERE id = ?', d.type_id) : null;
+    const year = String(new Date().getFullYear());
+    const n = (await get("SELECT COUNT(*) AS c FROM documents WHERE code IS NOT NULL AND code <> '' AND strftime('%Y', created_at) = ?", year)).c + 1;
     code = `${String(n).padStart(3, '0')}/${year}/${type?.prefix || 'VB'}`;
   }
-  run("UPDATE documents SET code = ?, updated_at = datetime('now') WHERE id = ?", code, id);
-  logActivity('document', id, req.user.id, 'numbered', `Cấp số văn bản: ${code}`);
-  res.json(fullDoc(id, req.user));
+  await run("UPDATE documents SET code = ?, updated_at = datetime('now') WHERE id = ?", code, id);
+  await logActivity('document', id, user.id, 'numbered', `Cấp số văn bản: ${code}`);
+  return c.json(await fullDoc(id, user));
 });
 
-const toggle = (table) => (req, res) => {
-  const id = toInt(req.params.id);
-  loadDocOr404(id);
-  if (!canView(req.user, id)) throw forbidden();
-  const exists = get(`SELECT 1 FROM ${table} WHERE document_id = ? AND user_id = ?`, id, req.user.id);
-  if (exists) run(`DELETE FROM ${table} WHERE document_id = ? AND user_id = ?`, id, req.user.id);
-  else run(`INSERT INTO ${table}(document_id, user_id) VALUES (?,?)`, id, req.user.id);
-  res.json({ active: !exists });
+const toggle = (table) => async (c) => {
+  const id = await requireViewable(c);
+  const uid = c.get('user').id;
+  const exists = await get(`SELECT 1 FROM ${table} WHERE document_id = ? AND user_id = ?`, id, uid);
+  if (exists) await run(`DELETE FROM ${table} WHERE document_id = ? AND user_id = ?`, id, uid);
+  else await run(`INSERT INTO ${table}(document_id, user_id) VALUES (?,?)`, id, uid);
+  return c.json({ active: !exists });
 };
 r.post('/documents/:id/star', toggle('document_stars'));
 r.post('/documents/:id/follow', toggle('document_follows'));
 
-r.post('/documents/:id/archive', (req, res) => {
-  const id = toInt(req.params.id);
-  const d = loadDocOr404(id);
-  if (!canEdit(req.user, d)) throw forbidden();
-  const next = d.status === 'archived' ? 'issued' : 'archived';
+r.post('/documents/:id/archive', async (c) => {
+  const user = c.get('user');
+  const id = toInt(c.req.param('id'));
+  const d = await loadDocOr404(id);
+  if (!canEdit(user, d)) throw forbidden();
   if (d.status !== 'issued' && d.status !== 'archived') throw badRequest('Chỉ cất giữ được văn bản đã ban hành');
-  run("UPDATE documents SET status = ?, updated_at = datetime('now') WHERE id = ?", next, id);
-  logActivity('document', id, req.user.id, next === 'archived' ? 'archived' : 'unarchived', next === 'archived' ? 'Cất giữ văn bản' : 'Bỏ cất giữ văn bản');
-  res.json(fullDoc(id, req.user));
+  const next = d.status === 'archived' ? 'issued' : 'archived';
+  await run("UPDATE documents SET status = ?, updated_at = datetime('now') WHERE id = ?", next, id);
+  await logActivity('document', id, user.id, next === 'archived' ? 'archived' : 'unarchived', next === 'archived' ? 'Cất giữ văn bản' : 'Bỏ cất giữ văn bản');
+  return c.json(await fullDoc(id, user));
 });
 
-r.delete('/documents/:id', (req, res) => {
-  const id = toInt(req.params.id);
-  const d = loadDocOr404(id);
-  if (!canEdit(req.user, d)) throw forbidden();
-  if (req.query.permanent === '1') {
+r.delete('/documents/:id', async (c) => {
+  const user = c.get('user');
+  const id = toInt(c.req.param('id'));
+  const d = await loadDocOr404(id);
+  if (!canEdit(user, d)) throw forbidden();
+  if (c.req.query('permanent') === '1') {
     if (!d.deleted_at) throw badRequest('Chỉ xóa vĩnh viễn văn bản trong thùng rác');
-    const files = all('SELECT filename FROM document_attachments WHERE document_id = ?', id);
-    run('DELETE FROM documents WHERE id = ?', id);
-    for (const f of files) fs.rm(path.join(UPLOAD_DIR, f.filename), () => {});
-    return res.json({ ok: true });
+    const files = await all('SELECT filename FROM document_attachments WHERE document_id = ?', id);
+    await run('DELETE FROM documents WHERE id = ?', id);
+    for (const f of files) await removeFile(f.filename);
+    return c.json({ ok: true });
   }
-  run("UPDATE documents SET deleted_at = datetime('now') WHERE id = ?", id);
-  logActivity('document', id, req.user.id, 'deleted', 'Tạm xóa văn bản');
-  res.json({ ok: true });
+  await run("UPDATE documents SET deleted_at = datetime('now') WHERE id = ?", id);
+  await logActivity('document', id, user.id, 'deleted', 'Tạm xóa văn bản');
+  return c.json({ ok: true });
 });
 
-r.post('/documents/:id/restore', (req, res) => {
-  const id = toInt(req.params.id);
-  const d = loadDocOr404(id);
-  if (!canEdit(req.user, d)) throw forbidden();
-  run('UPDATE documents SET deleted_at = NULL WHERE id = ?', id);
-  logActivity('document', id, req.user.id, 'restored', 'Khôi phục văn bản');
-  res.json({ ok: true });
+r.post('/documents/:id/restore', async (c) => {
+  const user = c.get('user');
+  const id = toInt(c.req.param('id'));
+  const d = await loadDocOr404(id);
+  if (!canEdit(user, d)) throw forbidden();
+  await run('UPDATE documents SET deleted_at = NULL WHERE id = ?', id);
+  await logActivity('document', id, user.id, 'restored', 'Khôi phục văn bản');
+  return c.json({ ok: true });
 });
 
-r.post('/documents/bulk', (req, res) => {
-  const ids = idList(req.body?.ids);
-  const action = req.body?.action;
+r.post('/documents/bulk', async (c) => {
+  const user = c.get('user');
+  const b = await jsonBody(c);
   let n = 0;
-  tx(() => {
-    for (const id of ids) {
-      const d = get('SELECT * FROM documents WHERE id = ?', id);
-      if (!d || !canView(req.user, id)) continue;
-      if (action === 'star') { run('INSERT OR IGNORE INTO document_stars(document_id, user_id) VALUES (?,?)', id, req.user.id); n++; }
-      else if (action === 'follow') { run('INSERT OR IGNORE INTO document_follows(document_id, user_id) VALUES (?,?)', id, req.user.id); n++; }
-      else if (action === 'read') {
-        run("INSERT INTO document_views(document_id, user_id) VALUES (?,?) ON CONFLICT DO NOTHING", id, req.user.id); n++;
-      } else if (action === 'delete' && canEdit(req.user, d)) {
-        run("UPDATE documents SET deleted_at = datetime('now') WHERE id = ?", id);
-        logActivity('document', id, req.user.id, 'deleted', 'Tạm xóa văn bản'); n++;
-      } else if (action === 'move' && canEdit(req.user, d)) {
-        run('UPDATE documents SET folder_id = ? WHERE id = ?', toInt(req.body.folder_id), id); n++;
-      }
-    }
-  });
-  res.json({ affected: n });
+  for (const id of idList(b.ids)) {
+    const d = await get('SELECT * FROM documents WHERE id = ?', id);
+    if (!d || !(await canView(user, id))) continue;
+    if (b.action === 'star') await run('INSERT OR IGNORE INTO document_stars(document_id, user_id) VALUES (?,?)', id, user.id);
+    else if (b.action === 'follow') await run('INSERT OR IGNORE INTO document_follows(document_id, user_id) VALUES (?,?)', id, user.id);
+    else if (b.action === 'read') await run('INSERT OR IGNORE INTO document_views(document_id, user_id) VALUES (?,?)', id, user.id);
+    else if (b.action === 'delete' && canEdit(user, d)) {
+      await run("UPDATE documents SET deleted_at = datetime('now') WHERE id = ?", id);
+      await logActivity('document', id, user.id, 'deleted', 'Tạm xóa văn bản');
+    } else if (b.action === 'move' && canEdit(user, d)) await run('UPDATE documents SET folder_id = ? WHERE id = ?', toInt(b.folder_id), id);
+    else continue;
+    n++;
+  }
+  return c.json({ affected: n });
 });
 
 // ---------------------------------------------------------------- attachments
-r.get('/documents/:id/attachments/:aid', (req, res) => {
-  const id = toInt(req.params.id);
-  if (!canView(req.user, id)) throw forbidden();
-  const a = get('SELECT * FROM document_attachments WHERE id = ? AND document_id = ?', toInt(req.params.aid), id);
+r.get('/documents/:id/attachments/:aid', async (c) => {
+  const id = await requireViewable(c);
+  const a = await get('SELECT * FROM document_attachments WHERE id = ? AND document_id = ?', toInt(c.req.param('aid')), id);
   if (!a) throw notFound('Tệp không tồn tại');
-  const file = path.join(UPLOAD_DIR, a.filename);
-  if (!fs.existsSync(file)) throw notFound('Tệp không tồn tại trên máy chủ');
-  if (req.query.inline === '1') {
-    res.setHeader('Content-Type', a.mime || 'application/octet-stream');
-    res.setHeader('Content-Disposition', `inline; filename*=UTF-8''${encodeURIComponent(a.original_name)}`);
-    return res.sendFile(file);
-  }
-  res.download(file, a.original_name);
+  return sendFile(c, a, c.req.query('inline') === '1');
 });
 
 // ---------------------------------------------------------------- taxonomies
-function taxonomy(table, label) {
-  r.post(`/office/${table}`, (req, res) => {
-    const name = String(req.body?.name || '').trim();
+function taxonomy(kind, label) {
+  const table = `doc_${kind}`;
+  const isType = kind === 'types';
+  r.post(`/office/${kind}`, async (c) => {
+    const b = await jsonBody(c);
+    const name = String(b.name || '').trim();
     if (!name) throw badRequest(`Tên ${label} là bắt buộc`);
-    const cols = table === 'types' ? ['name', 'prefix'] : ['name', 'parent_id'];
-    const vals = table === 'types' ? [name, req.body.prefix || null] : [name, toInt(req.body.parent_id)];
-    const t = `doc_${table}`;
-    const info = run(`INSERT INTO ${t}(${cols.join(',')}) VALUES (?,?)`, ...vals);
-    res.status(201).json(get(`SELECT * FROM ${t} WHERE id = ?`, Number(info.lastInsertRowid)));
+    const { lastId } = isType
+      ? await run(`INSERT INTO ${table}(name, prefix) VALUES (?,?)`, name, b.prefix || null)
+      : await run(`INSERT INTO ${table}(name, parent_id) VALUES (?,?)`, name, toInt(b.parent_id));
+    return c.json(await get(`SELECT * FROM ${table} WHERE id = ?`, lastId), 201);
   });
-  r.put(`/office/${table}/:id`, requireAdmin, (req, res) => {
-    const t = `doc_${table}`;
-    const id = toInt(req.params.id);
-    const name = String(req.body?.name || '').trim();
+  r.put(`/office/${kind}/:id`, requireAdmin, async (c) => {
+    const id = toInt(c.req.param('id'));
+    const b = await jsonBody(c);
+    const name = String(b.name || '').trim();
     if (!name) throw badRequest(`Tên ${label} là bắt buộc`);
-    if (table === 'types') run(`UPDATE ${t} SET name = ?, prefix = ? WHERE id = ?`, name, req.body.prefix || null, id);
+    if (isType) await run(`UPDATE ${table} SET name = ?, prefix = ? WHERE id = ?`, name, b.prefix || null, id);
     else {
-      if (toInt(req.body.parent_id) === id) throw badRequest('Thư mục cha không hợp lệ');
-      run(`UPDATE ${t} SET name = ?, parent_id = ? WHERE id = ?`, name, toInt(req.body.parent_id), id);
+      if (toInt(b.parent_id) === id) throw badRequest('Thư mục cha không hợp lệ');
+      await run(`UPDATE ${table} SET name = ?, parent_id = ? WHERE id = ?`, name, toInt(b.parent_id), id);
     }
-    res.json(get(`SELECT * FROM ${t} WHERE id = ?`, id));
+    return c.json(await get(`SELECT * FROM ${table} WHERE id = ?`, id));
   });
-  r.delete(`/office/${table}/:id`, requireAdmin, (req, res) => {
-    run(`DELETE FROM doc_${table} WHERE id = ?`, toInt(req.params.id));
-    res.json({ ok: true });
+  r.delete(`/office/${kind}/:id`, requireAdmin, async (c) => {
+    await run(`DELETE FROM ${table} WHERE id = ?`, toInt(c.req.param('id')));
+    return c.json({ ok: true });
   });
 }
 taxonomy('types', 'loại văn bản');

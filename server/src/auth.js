@@ -1,21 +1,52 @@
-import jwt from 'jsonwebtoken';
-import crypto from 'node:crypto';
+import { sign, verify } from 'hono/jwt';
+import { getCookie } from 'hono/cookie';
 import { get, getSetting, setSetting } from './db.js';
 
-function secret() {
-  if (process.env.JWT_SECRET) return process.env.JWT_SECRET;
-  let s = getSetting('jwt_secret');
+export const COOKIE = 'ldl_token';
+const ITERATIONS = 60000;
+const enc = new TextEncoder();
+const b64 = (buf) => btoa(String.fromCharCode(...new Uint8Array(buf)));
+const unb64 = (s) => Uint8Array.from(atob(s), (ch) => ch.charCodeAt(0));
+
+async function derive(password, salt, iterations) {
+  const key = await crypto.subtle.importKey('raw', enc.encode(password), 'PBKDF2', false, ['deriveBits']);
+  return crypto.subtle.deriveBits({ name: 'PBKDF2', hash: 'SHA-256', salt, iterations }, key, 256);
+}
+
+/** Hash format: pbkdf2$<iterations>$<salt b64>$<hash b64> */
+export async function hashPassword(password) {
+  const salt = crypto.getRandomValues(new Uint8Array(16));
+  return `pbkdf2$${ITERATIONS}$${b64(salt)}$${b64(await derive(password, salt, ITERATIONS))}`;
+}
+
+export async function verifyPassword(password, stored) {
+  const [scheme, it, salt, hash] = String(stored || '').split('$');
+  if (scheme !== 'pbkdf2' || !hash) return false;
+  const actual = new Uint8Array(await derive(password, unb64(salt), Number(it)));
+  const expected = unb64(hash);
+  if (actual.length !== expected.length) return false;
+  let diff = 0;
+  for (let i = 0; i < actual.length; i++) diff |= actual[i] ^ expected[i];
+  return diff === 0;
+}
+
+let cachedSecret = null;
+async function secret(env) {
+  if (env?.JWT_SECRET) return env.JWT_SECRET;
+  if (cachedSecret) return cachedSecret;
+  let s = await getSetting('jwt_secret');
   if (!s) {
-    s = crypto.randomBytes(32).toString('hex');
-    setSetting('jwt_secret', s);
+    s = b64(crypto.getRandomValues(new Uint8Array(32)));
+    await setSetting('jwt_secret', s);
   }
+  cachedSecret = s;
   return s;
 }
 
-export const COOKIE = 'ldl_token';
+export const TOKEN_TTL = 30 * 24 * 3600;
 
-export function signToken(user) {
-  return jwt.sign({ uid: user.id }, secret(), { expiresIn: '30d' });
+export async function signToken(c, user) {
+  return sign({ uid: user.id, exp: Math.floor(Date.now() / 1000) + TOKEN_TTL }, await secret(c.env), 'HS256');
 }
 
 export const PUBLIC_USER_FIELDS =
@@ -29,22 +60,23 @@ export function loadUser(id) {
   );
 }
 
-export function requireAuth(req, res, next) {
-  const header = req.headers.authorization;
-  const token = req.cookies?.[COOKIE] || (header?.startsWith('Bearer ') ? header.slice(7) : null);
-  if (!token) return res.status(401).json({ error: 'Chưa đăng nhập' });
+export async function requireAuth(c, next) {
+  const header = c.req.header('authorization');
+  const token = getCookie(c, COOKIE) || (header?.startsWith('Bearer ') ? header.slice(7) : null);
+  if (!token) return c.json({ error: 'Chưa đăng nhập' }, 401);
+  let uid;
   try {
-    const { uid } = jwt.verify(token, secret());
-    const user = loadUser(uid);
-    if (!user || !user.active) return res.status(401).json({ error: 'Tài khoản không hợp lệ' });
-    req.user = user;
-    next();
+    ({ uid } = await verify(token, await secret(c.env), 'HS256'));
   } catch {
-    return res.status(401).json({ error: 'Phiên đăng nhập đã hết hạn' });
+    return c.json({ error: 'Phiên đăng nhập đã hết hạn' }, 401);
   }
+  const user = await loadUser(uid);
+  if (!user || !user.active) return c.json({ error: 'Tài khoản không hợp lệ' }, 401);
+  c.set('user', user);
+  await next();
 }
 
-export function requireAdmin(req, res, next) {
-  if (req.user?.role !== 'admin') return res.status(403).json({ error: 'Chỉ quản trị viên mới được thực hiện' });
-  next();
+export async function requireAdmin(c, next) {
+  if (c.get('user')?.role !== 'admin') return c.json({ error: 'Chỉ quản trị viên mới được thực hiện' }, 403);
+  await next();
 }

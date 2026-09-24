@@ -1,12 +1,10 @@
-import { Router } from 'express';
-import fs from 'node:fs';
-import path from 'node:path';
-import { all, get, run, tx, logActivity, notify, UPLOAD_DIR } from '../db.js';
-import { requireAuth } from '../auth.js';
-import { badRequest, notFound, forbidden, toInt, idList, upload, fixName, paginate, today } from '../util.js';
+import { Hono } from 'hono';
+import { all, get, run, batch, logActivity, notify } from '../db.js';
+import {
+  badRequest, notFound, forbidden, toInt, idList, paginate, today, jsonBody, formBody, storeFiles, removeFile, sendFile,
+} from '../util.js';
 
-const r = Router();
-r.use(requireAuth);
+const r = new Hono();
 
 const APP = 'wework';
 export const TASK_STATUSES = ['todo', 'doing', 'review', 'done', 'failed'];
@@ -17,12 +15,12 @@ const RECURRING = ['daily', 'weekly', 'monthly'];
 // ================================================================ access helpers
 const isAdmin = (u) => u.role === 'admin';
 
-function projectRole(user, projectId) {
+async function projectRole(user, projectId) {
   if (!projectId) return null;
-  const p = get('SELECT owner_id FROM projects WHERE id = ?', projectId);
+  const p = await get('SELECT owner_id FROM projects WHERE id = ?', projectId);
   if (!p) return null;
   if (p.owner_id === user.id) return 'manager';
-  const m = get('SELECT role FROM project_members WHERE project_id = ? AND user_id = ?', projectId, user.id);
+  const m = await get('SELECT role FROM project_members WHERE project_id = ? AND user_id = ?', projectId, user.id);
   if (m) return m.role;
   return isAdmin(user) ? 'manager' : null;
 }
@@ -39,18 +37,30 @@ function taskVisibilitySql(user) {
   };
 }
 
-function canViewTask(user, id) {
+async function canViewTask(user, id) {
   const v = taskVisibilitySql(user);
-  return !!get(`SELECT 1 FROM tasks t WHERE t.id = ? AND ${v.sql}`, id, ...v.params);
+  return !!(await get(`SELECT 1 FROM tasks t WHERE t.id = ? AND ${v.sql}`, id, ...v.params));
 }
 
-function canEditTask(user, t) {
-  return isAdmin(user) || t.creator_id === user.id || t.assignee_id === user.id || projectRole(user, t.project_id) === 'manager';
+async function canEditTask(user, t) {
+  return isAdmin(user) || t.creator_id === user.id || t.assignee_id === user.id || (await projectRole(user, t.project_id)) === 'manager';
 }
 
-function loadTask(id) {
-  const t = get('SELECT * FROM tasks WHERE id = ?', id);
+async function canDeleteTask(user, t) {
+  return isAdmin(user) || t.creator_id === user.id || (await projectRole(user, t.project_id)) === 'manager';
+}
+
+async function loadTask(id) {
+  const t = await get('SELECT * FROM tasks WHERE id = ?', id);
   if (!t) throw notFound('Công việc không tồn tại');
+  return t;
+}
+
+/** Load a task from the :id param and check the viewer may see it. */
+async function viewableTask(c) {
+  const id = toInt(c.req.param('id'));
+  const t = await loadTask(id);
+  if (!(await canViewTask(c.get('user'), id))) throw forbidden('Bạn không có quyền xem công việc này');
   return t;
 }
 
@@ -82,14 +92,13 @@ function decorateTask(t) {
   return t;
 }
 
-function buildTaskQuery(req) {
-  const u = req.user;
-  const q = req.query;
+const selectTasks = async (user, tail, ...params) => (await all(`${TASK_SELECT} ${tail}`, user.id, user.id, ...params)).map(decorateTask);
+
+function buildTaskQuery(u, q) {
   const vis = taskVisibilitySql(u);
   const where = [vis.sql];
   const params = [...vis.params];
 
-  // Phạm vi (scope)
   switch (q.scope) {
     case 'assigned': where.push('t.assignee_id = ?'); params.push(u.id); break; // CV được giao
     case 'created': where.push('t.creator_id = ? AND IFNULL(t.assignee_id, 0) <> ?'); params.push(u.id, u.id); break; // CV giao đi
@@ -103,13 +112,11 @@ function buildTaskQuery(req) {
     default: break;
   }
 
-  // Công việc con
   if (q.subtasks === 'none') where.push('t.parent_id IS NULL');
   else if (q.subtasks === 'only') where.push('t.parent_id IS NOT NULL');
   const parent = toInt(q.parent_id);
   if (parent) { where.push('t.parent_id = ?'); params.push(parent); }
 
-  // Trạng thái
   if (q.status) {
     const parts = [];
     for (const s of String(q.status).split(',')) {
@@ -149,98 +156,97 @@ function buildTaskQuery(req) {
   const sorts = {
     updated: 't.updated_at DESC, t.id DESC',
     created: 't.created_at DESC, t.id DESC',
-    due: "CASE WHEN t.due_date IS NULL THEN 1 ELSE 0 END, t.due_date ASC, t.id DESC",
+    due: 'CASE WHEN t.due_date IS NULL THEN 1 ELSE 0 END, t.due_date ASC, t.id DESC',
     position: 't.position ASC, t.id ASC',
     title: 't.title COLLATE NOCASE',
   };
   return { where: where.join(' AND '), params, order: sorts[q.sort] || sorts.updated };
 }
 
-r.get('/tasks', (req, res) => {
-  const { where, params, order } = buildTaskQuery(req);
-  const { page, limit, offset } = paginate(req, 50);
-  const total = get(`SELECT COUNT(*) AS c FROM tasks t WHERE ${where}`, ...params).c;
-  const items = all(`${TASK_SELECT} WHERE ${where} ORDER BY ${order} LIMIT ? OFFSET ?`,
-    req.user.id, req.user.id, ...params, limit, offset).map(decorateTask);
-  res.json({ items, total, page, limit });
+r.get('/tasks', async (c) => {
+  const u = c.get('user');
+  const q = c.req.query();
+  const { where, params, order } = buildTaskQuery(u, q);
+  const { page, limit, offset } = paginate(q, 50);
+  const total = (await get(`SELECT COUNT(*) AS c FROM tasks t WHERE ${where}`, ...params)).c;
+  const items = await selectTasks(u, `WHERE ${where} ORDER BY ${order} LIMIT ? OFFSET ?`, ...params, limit, offset);
+  return c.json({ items, total, page, limit });
 });
 
 // ================================================================ dashboard / summary
-r.get('/wework/summary', (req, res) => {
-  const u = req.user;
-  const uid = toInt(req.query.user_id) || u.id;
-  const s = get(`SELECT COUNT(*) AS total,
+r.get('/wework/summary', async (c) => {
+  const u = c.get('user');
+  const uid = u.id;
+  const td = today();
+  const s = await get(`SELECT COUNT(*) AS total,
       SUM(CASE WHEN status = 'done' THEN 1 ELSE 0 END) AS done,
       SUM(CASE WHEN status IN ('todo','doing') AND due_date IS NOT NULL AND date(due_date) < date(?) THEN 1 ELSE 0 END) AS overdue,
       SUM(CASE WHEN status IN ('todo','doing') THEN 1 ELSE 0 END) AS active
-    FROM tasks WHERE assignee_id = ? AND parent_id IS NULL`, today(), uid);
-  const newAssigned = all(`${TASK_SELECT} WHERE t.assignee_id = ? AND t.status IN ('todo','doing')
-    ORDER BY t.created_at DESC LIMIT 5`, u.id, u.id, uid).map(decorateTask);
-  const newCreated = all(`${TASK_SELECT} WHERE t.creator_id = ? AND IFNULL(t.assignee_id,0) <> ?
-    ORDER BY t.created_at DESC LIMIT 5`, u.id, u.id, uid, uid).map(decorateTask);
-  const urgent = all(`${TASK_SELECT} WHERE t.assignee_id = ? AND t.status IN ('todo','doing')
-    AND (t.priority IN ('urgent','important') OR (t.due_date IS NOT NULL AND date(t.due_date) <= date(?, '+2 day')))
-    ORDER BY t.due_date LIMIT 5`, u.id, u.id, uid, today()).map(decorateTask);
-  res.json({
+    FROM tasks WHERE assignee_id = ? AND parent_id IS NULL`, td, uid);
+  return c.json({
     total: s.total || 0, done: s.done || 0, overdue: s.overdue || 0, active: s.active || 0,
     rate: s.total ? Math.round(((s.done || 0) / s.total) * 10000) / 100 : 0,
-    new_assigned: newAssigned, new_created: newCreated, alerts: urgent,
-    goals: all('SELECT * FROM goals WHERE user_id = ? ORDER BY id DESC', uid),
-    team: all(`SELECT u.id, u.name, u.color, u.title,
+    new_assigned: await selectTasks(u, "WHERE t.assignee_id = ? AND t.status IN ('todo','doing') ORDER BY t.created_at DESC LIMIT 5", uid),
+    new_created: await selectTasks(u, 'WHERE t.creator_id = ? AND IFNULL(t.assignee_id,0) <> ? ORDER BY t.created_at DESC LIMIT 5', uid, uid),
+    alerts: await selectTasks(u, `WHERE t.assignee_id = ? AND t.status IN ('todo','doing')
+      AND (t.priority IN ('urgent','important') OR (t.due_date IS NOT NULL AND date(t.due_date) <= date(?, '+2 day')))
+      ORDER BY t.due_date LIMIT 5`, uid, td),
+    goals: await all('SELECT * FROM goals WHERE user_id = ? ORDER BY id DESC', uid),
+    team: await all(`SELECT u.id, u.name, u.color, u.title,
         (SELECT COUNT(*) FROM tasks t WHERE t.assignee_id = u.id AND t.status IN ('todo','doing')) AS active,
         (SELECT COUNT(*) FROM tasks t WHERE t.assignee_id = u.id AND t.status IN ('todo','doing') AND date(t.due_date) < date(?)) AS overdue
-      FROM users u WHERE u.manager_id = ? AND u.active = 1 ORDER BY u.name`, today(), u.id),
+      FROM users u WHERE u.manager_id = ? AND u.active = 1 ORDER BY u.name`, td, uid),
   });
 });
 
-r.get('/wework/reports', (req, res) => {
-  const vis = taskVisibilitySql(req.user);
+r.get('/wework/reports', async (c) => {
+  const q = c.req.query();
+  const vis = taskVisibilitySql(c.get('user'));
   const where = [vis.sql, 't.parent_id IS NULL'];
   const params = [...vis.params];
-  const pid = toInt(req.query.project_id);
+  const pid = toInt(q.project_id);
   if (pid) { where.push('t.project_id = ?'); params.push(pid); }
-  if (req.query.from) { where.push('date(t.created_at) >= date(?)'); params.push(req.query.from); }
-  if (req.query.to) { where.push('date(t.created_at) <= date(?)'); params.push(req.query.to); }
+  if (q.from) { where.push('date(t.created_at) >= date(?)'); params.push(q.from); }
+  if (q.to) { where.push('date(t.created_at) <= date(?)'); params.push(q.to); }
   const w = where.join(' AND ');
   const td = today();
-  const byStatus = all(`SELECT t.status, COUNT(*) AS c FROM tasks t WHERE ${w} GROUP BY t.status`, ...params);
-  const overdue = get(`SELECT COUNT(*) AS c FROM tasks t WHERE ${w} AND t.status IN ('todo','doing') AND date(t.due_date) < date(?)`, ...params, td).c;
-  const late = get(`SELECT COUNT(*) AS c FROM tasks t WHERE ${w} AND t.status = 'done' AND date(t.completed_at) > date(t.due_date)`, ...params).c;
-  const byMember = all(`SELECT u.id, u.name, u.color, COUNT(t.id) AS total,
-      SUM(CASE WHEN t.status = 'done' THEN 1 ELSE 0 END) AS done,
-      SUM(CASE WHEN t.status IN ('todo','doing') THEN 1 ELSE 0 END) AS active,
-      SUM(CASE WHEN t.status IN ('todo','doing') AND date(t.due_date) < date(?) THEN 1 ELSE 0 END) AS overdue,
-      SUM(CASE WHEN t.status = 'failed' THEN 1 ELSE 0 END) AS failed
-    FROM tasks t JOIN users u ON u.id = t.assignee_id WHERE ${w} GROUP BY u.id ORDER BY total DESC`, td, ...params);
-  const byProject = all(`SELECT p.id, p.name, p.color, COUNT(t.id) AS total,
-      SUM(CASE WHEN t.status = 'done' THEN 1 ELSE 0 END) AS done,
-      SUM(CASE WHEN t.status IN ('todo','doing') AND date(t.due_date) < date(?) THEN 1 ELSE 0 END) AS overdue
-    FROM tasks t JOIN projects p ON p.id = t.project_id WHERE ${w} GROUP BY p.id ORDER BY total DESC`, td, ...params);
-  const trend = all(`SELECT date(t.completed_at) AS day, COUNT(*) AS c FROM tasks t
-    WHERE ${w} AND t.status = 'done' AND date(t.completed_at) >= date(?, '-29 day') GROUP BY day ORDER BY day`, ...params, td);
-  const createdTrend = all(`SELECT date(t.created_at) AS day, COUNT(*) AS c FROM tasks t
-    WHERE ${w} AND date(t.created_at) >= date(?, '-29 day') GROUP BY day ORDER BY day`, ...params, td);
-  res.json({ by_status: byStatus, overdue, late, by_member: byMember, by_project: byProject, done_trend: trend, created_trend: createdTrend });
+  return c.json({
+    by_status: await all(`SELECT t.status, COUNT(*) AS c FROM tasks t WHERE ${w} GROUP BY t.status`, ...params),
+    overdue: (await get(`SELECT COUNT(*) AS c FROM tasks t WHERE ${w} AND t.status IN ('todo','doing') AND date(t.due_date) < date(?)`, ...params, td)).c,
+    late: (await get(`SELECT COUNT(*) AS c FROM tasks t WHERE ${w} AND t.status = 'done' AND date(t.completed_at) > date(t.due_date)`, ...params)).c,
+    by_member: await all(`SELECT u.id, u.name, u.color, COUNT(t.id) AS total,
+        SUM(CASE WHEN t.status = 'done' THEN 1 ELSE 0 END) AS done,
+        SUM(CASE WHEN t.status IN ('todo','doing') THEN 1 ELSE 0 END) AS active,
+        SUM(CASE WHEN t.status IN ('todo','doing') AND date(t.due_date) < date(?) THEN 1 ELSE 0 END) AS overdue,
+        SUM(CASE WHEN t.status = 'failed' THEN 1 ELSE 0 END) AS failed
+      FROM tasks t JOIN users u ON u.id = t.assignee_id WHERE ${w} GROUP BY u.id ORDER BY total DESC`, td, ...params),
+    by_project: await all(`SELECT p.id, p.name, p.color, COUNT(t.id) AS total,
+        SUM(CASE WHEN t.status = 'done' THEN 1 ELSE 0 END) AS done,
+        SUM(CASE WHEN t.status IN ('todo','doing') AND date(t.due_date) < date(?) THEN 1 ELSE 0 END) AS overdue
+      FROM tasks t JOIN projects p ON p.id = t.project_id WHERE ${w} GROUP BY p.id ORDER BY total DESC`, td, ...params),
+    done_trend: await all(`SELECT date(t.completed_at) AS day, COUNT(*) AS c FROM tasks t
+      WHERE ${w} AND t.status = 'done' AND date(t.completed_at) >= date(?, '-29 day') GROUP BY day ORDER BY day`, ...params, td),
+    created_trend: await all(`SELECT date(t.created_at) AS day, COUNT(*) AS c FROM tasks t
+      WHERE ${w} AND date(t.created_at) >= date(?, '-29 day') GROUP BY day ORDER BY day`, ...params, td),
+  });
 });
 
 // ================================================================ task detail
-function fullTask(id, user) {
-  const t = decorateTask(get(`${TASK_SELECT} WHERE t.id = ?`, user.id, user.id, id));
-  t.followers = all('SELECT u.id, u.name, u.color FROM task_followers f JOIN users u ON u.id = f.user_id WHERE f.task_id = ? ORDER BY u.name', id);
-  t.checklist = all('SELECT * FROM task_checklist WHERE task_id = ? ORDER BY position, id', id);
-  t.subtasks = all(`${TASK_SELECT} WHERE t.parent_id = ? ORDER BY t.position, t.id`, user.id, user.id, id).map(decorateTask);
-  t.attachments = all(`SELECT a.id, a.original_name, a.mime, a.size, a.created_at, u.name AS user_name FROM task_attachments a
+async function fullTask(id, user) {
+  const [t] = await selectTasks(user, 'WHERE t.id = ?', id);
+  t.followers = await all('SELECT u.id, u.name, u.color FROM task_followers f JOIN users u ON u.id = f.user_id WHERE f.task_id = ? ORDER BY u.name', id);
+  t.checklist = await all('SELECT * FROM task_checklist WHERE task_id = ? ORDER BY position, id', id);
+  t.subtasks = await selectTasks(user, 'WHERE t.parent_id = ? ORDER BY t.position, t.id', id);
+  t.attachments = await all(`SELECT a.id, a.original_name, a.mime, a.size, a.created_at, u.name AS user_name FROM task_attachments a
     LEFT JOIN users u ON u.id = a.user_id WHERE a.task_id = ? ORDER BY a.id`, id);
-  t.parent = t.parent_id ? get('SELECT id, title FROM tasks WHERE id = ?', t.parent_id) : null;
-  t.can_edit = canEditTask(user, t);
+  t.parent = t.parent_id ? await get('SELECT id, title FROM tasks WHERE id = ?', t.parent_id) : null;
+  t.can_edit = await canEditTask(user, t);
   return t;
 }
 
-r.get('/tasks/:id', (req, res) => {
-  const id = toInt(req.params.id);
-  loadTask(id);
-  if (!canViewTask(req.user, id)) throw forbidden('Bạn không có quyền xem công việc này');
-  res.json(fullTask(id, req.user));
+r.get('/tasks/:id', async (c) => {
+  const t = await viewableTask(c);
+  return c.json(await fullTask(t.id, c.get('user')));
 });
 
 function parseTaskBody(b, partial) {
@@ -270,54 +276,54 @@ function parseTaskBody(b, partial) {
   }
   if (b.position !== undefined) out.position = toInt(b.position, 0);
   if (b.goal_id !== undefined) out.goal_id = toInt(b.goal_id);
-  const s = out.start_date, d = out.due_date;
-  if (s && d && s.slice(0, 10) > d.slice(0, 10)) throw badRequest('Thời hạn phải sau ngày bắt đầu');
+  if (out.start_date && out.due_date && out.start_date.slice(0, 10) > out.due_date.slice(0, 10)) {
+    throw badRequest('Thời hạn phải sau ngày bắt đầu');
+  }
   return out;
 }
 
-function checkProjectAccess(user, projectId) {
+async function checkProjectAccess(user, projectId) {
   if (!projectId) return;
-  if (!get('SELECT 1 FROM projects WHERE id = ?', projectId)) throw badRequest('Dự án không tồn tại');
-  if (!projectRole(user, projectId)) throw forbidden('Bạn không phải thành viên dự án này');
+  if (!(await get('SELECT 1 FROM projects WHERE id = ?', projectId))) throw badRequest('Dự án không tồn tại');
+  if (!(await projectRole(user, projectId))) throw forbidden('Bạn không phải thành viên dự án này');
 }
 
-export function createTask(user, data, followers = []) {
-  checkProjectAccess(user, data.project_id);
+export async function createTask(user, data, followers = []) {
+  await checkProjectAccess(user, data.project_id);
   if (data.parent_id) {
-    const parent = get('SELECT * FROM tasks WHERE id = ?', data.parent_id);
+    const parent = await get('SELECT * FROM tasks WHERE id = ?', data.parent_id);
     if (!parent) throw badRequest('Công việc cha không tồn tại');
     data.project_id ??= parent.project_id;
     data.list_id ??= parent.list_id;
   }
   if (data.list_id && data.project_id) {
-    const l = get('SELECT project_id FROM task_lists WHERE id = ?', data.list_id);
+    const l = await get('SELECT project_id FROM task_lists WHERE id = ?', data.list_id);
     if (!l || l.project_id !== data.project_id) data.list_id = null;
   }
-  const pos = get('SELECT COALESCE(MAX(position), 0) + 1 AS p FROM tasks WHERE IFNULL(project_id,0) = IFNULL(?,0)', data.project_id ?? null).p;
-  const info = run(
+  const pos = (await get('SELECT COALESCE(MAX(position), 0) + 1 AS p FROM tasks WHERE IFNULL(project_id,0) = IFNULL(?,0)', data.project_id ?? null)).p;
+  const assignee = data.assignee_id ?? user.id;
+  const { lastId: id } = await run(
     `INSERT INTO tasks(project_id, list_id, parent_id, title, description, creator_id, assignee_id, status, priority,
       start_date, due_date, recurring, position, goal_id, completed_at)
      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
     data.project_id ?? null, data.list_id ?? null, data.parent_id ?? null, data.title, data.description ?? null,
-    user.id, data.assignee_id ?? user.id, data.status ?? 'todo', data.priority ?? 'normal',
+    user.id, assignee, data.status ?? 'todo', data.priority ?? 'normal',
     data.start_date ?? null, data.due_date ?? null, data.recurring ?? null, data.position ?? pos, data.goal_id ?? null,
     data.status === 'done' ? new Date().toISOString() : null
   );
-  const id = Number(info.lastInsertRowid);
-  for (const f of new Set(followers)) run('INSERT OR IGNORE INTO task_followers(task_id, user_id) VALUES (?,?)', id, f);
-  logActivity('task', id, user.id, 'created', 'Tạo công việc');
-  const assignee = data.assignee_id ?? user.id;
-  notify(assignee, { actorId: user.id, app: APP, type: 'assigned',
+  await batch([...new Set(followers)].map((f) => ['INSERT OR IGNORE INTO task_followers(task_id, user_id) VALUES (?,?)', [id, f]]));
+  await logActivity('task', id, user.id, 'created', 'Tạo công việc');
+  await notify(assignee, { actorId: user.id, app: APP, type: 'assigned',
     title: `${user.name} đã giao cho bạn công việc "${data.title}"`, link: `/wework/task/${id}` });
-  notify(followers, { actorId: user.id, app: APP, type: 'follow',
+  await notify(followers, { actorId: user.id, app: APP, type: 'follow',
     title: `Bạn được thêm theo dõi công việc "${data.title}"`, link: `/wework/task/${id}` });
   return id;
 }
 
-r.post('/tasks', (req, res) => {
-  const data = parseTaskBody(req.body || {}, false);
-  const id = tx(() => createTask(req.user, data, idList(req.body?.followers)));
-  res.status(201).json(fullTask(id, req.user));
+r.post('/tasks', async (c) => {
+  const b = await jsonBody(c);
+  const id = await createTask(c.get('user'), parseTaskBody(b, false), idList(b.followers));
+  return c.json(await fullTask(id, c.get('user')), 201);
 });
 
 function shiftDate(value, recurring) {
@@ -330,11 +336,10 @@ function shiftDate(value, recurring) {
   return hasTime ? d.toISOString().slice(0, 16) : d.toISOString().slice(0, 10);
 }
 
-function applyTaskUpdate(user, t, data) {
-  const fields = Object.keys(data);
-  if (!fields.length) return;
+async function applyTaskUpdate(user, t, data) {
+  if (!Object.keys(data).length) return;
   if (data.project_id !== undefined && data.project_id !== t.project_id) {
-    checkProjectAccess(user, data.project_id);
+    await checkProjectAccess(user, data.project_id);
     if (data.list_id === undefined) data.list_id = null;
   }
   if (data.parent_id !== undefined && data.parent_id === t.id) throw badRequest('Công việc cha không hợp lệ');
@@ -342,38 +347,40 @@ function applyTaskUpdate(user, t, data) {
   const due = data.due_date !== undefined ? data.due_date : t.due_date;
   if (start && due && start.slice(0, 10) > due.slice(0, 10)) throw badRequest('Thời hạn phải sau ngày bắt đầu');
 
-  const sets = Object.keys(data).map((k) => `${k} = ?`);
-  const vals = Object.keys(data).map((k) => data[k]);
-  if (data.status !== undefined && data.status !== t.status) {
+  const keys = Object.keys(data);
+  const sets = keys.map((k) => `${k} = ?`);
+  const vals = keys.map((k) => data[k]);
+  const statusChanged = data.status !== undefined && data.status !== t.status;
+  if (statusChanged) {
     sets.push('completed_at = ?');
     vals.push(data.status === 'done' ? new Date().toISOString() : null);
   }
-  run(`UPDATE tasks SET ${sets.join(', ')}, updated_at = datetime('now') WHERE id = ?`, ...vals, t.id);
+  await run(`UPDATE tasks SET ${sets.join(', ')}, updated_at = datetime('now') WHERE id = ?`, ...vals, t.id);
 
   const changes = [];
-  if (data.status !== undefined && data.status !== t.status) {
+  if (statusChanged) {
     changes.push(`Trạng thái: ${STATUS_LABEL[t.status]} → ${STATUS_LABEL[data.status]}`);
-    const watchers = all('SELECT user_id FROM task_followers WHERE task_id = ?', t.id).map((x) => x.user_id);
-    notify([t.creator_id, t.assignee_id, ...watchers], { actorId: user.id, app: APP, type: 'status',
+    const watchers = (await all('SELECT user_id FROM task_followers WHERE task_id = ?', t.id)).map((x) => x.user_id);
+    await notify([t.creator_id, t.assignee_id, ...watchers], { actorId: user.id, app: APP, type: 'status',
       title: `${user.name} đã chuyển "${t.title}" sang ${STATUS_LABEL[data.status]}`, link: `/wework/task/${t.id}` });
     // Công việc lặp lại: tạo kỳ tiếp theo khi hoàn thành
     const recurring = data.recurring !== undefined ? data.recurring : t.recurring;
     if (data.status === 'done' && recurring) {
       const next = { ...t, ...data };
-      const nid = createTask(user, {
+      const nid = await createTask(user, {
         project_id: next.project_id, list_id: next.list_id, parent_id: next.parent_id, title: next.title,
         description: next.description, assignee_id: next.assignee_id, priority: next.priority,
         start_date: shiftDate(next.start_date, recurring), due_date: shiftDate(next.due_date, recurring),
         recurring, goal_id: next.goal_id,
-      }, all('SELECT user_id FROM task_followers WHERE task_id = ?', t.id).map((x) => x.user_id));
-      run('UPDATE tasks SET recurring = NULL WHERE id = ?', t.id);
-      logActivity('task', t.id, user.id, 'recurring', `Tạo kỳ lặp tiếp theo #${nid}`);
+      }, watchers);
+      await run('UPDATE tasks SET recurring = NULL WHERE id = ?', t.id);
+      await logActivity('task', t.id, user.id, 'recurring', `Tạo kỳ lặp tiếp theo #${nid}`);
     }
   }
   if (data.assignee_id !== undefined && data.assignee_id !== t.assignee_id) {
-    const nu = data.assignee_id ? get('SELECT name FROM users WHERE id = ?', data.assignee_id) : null;
+    const nu = data.assignee_id ? await get('SELECT name FROM users WHERE id = ?', data.assignee_id) : null;
     changes.push(`Người thực hiện: ${nu?.name || 'Không có'}`);
-    notify(data.assignee_id, { actorId: user.id, app: APP, type: 'assigned',
+    await notify(data.assignee_id, { actorId: user.id, app: APP, type: 'assigned',
       title: `${user.name} đã giao cho bạn công việc "${data.title || t.title}"`, link: `/wework/task/${t.id}` });
   }
   if (data.due_date !== undefined && data.due_date !== t.due_date) changes.push(`Thời hạn: ${data.due_date || 'Không có'}`);
@@ -383,166 +390,170 @@ function applyTaskUpdate(user, t, data) {
   if (data.description !== undefined && data.description !== t.description) changes.push('Cập nhật mô tả');
   if (data.project_id !== undefined && data.project_id !== t.project_id) changes.push('Chuyển dự án');
   if (data.list_id !== undefined && data.list_id !== t.list_id) changes.push('Chuyển nhóm công việc');
-  if (changes.length) logActivity('task', t.id, user.id, 'updated', changes.join('; '));
+  if (changes.length) await logActivity('task', t.id, user.id, 'updated', changes.join('; '));
 }
 
-r.put('/tasks/:id', (req, res) => {
-  const id = toInt(req.params.id);
-  const t = loadTask(id);
-  if (!canViewTask(req.user, id)) throw forbidden();
-  if (!canEditTask(req.user, t)) throw forbidden('Bạn không có quyền chỉnh sửa công việc này');
-  const data = parseTaskBody(req.body || {}, true);
-  tx(() => {
-    applyTaskUpdate(req.user, t, data);
-    if (req.body?.followers !== undefined) {
-      run('DELETE FROM task_followers WHERE task_id = ?', id);
-      for (const f of idList(req.body.followers)) run('INSERT OR IGNORE INTO task_followers(task_id, user_id) VALUES (?,?)', id, f);
-    }
-  });
-  res.json(fullTask(id, req.user));
-});
-
-r.delete('/tasks/:id', (req, res) => {
-  const id = toInt(req.params.id);
-  const t = loadTask(id);
-  if (!(isAdmin(req.user) || t.creator_id === req.user.id || projectRole(req.user, t.project_id) === 'manager')) {
-    throw forbidden('Chỉ người tạo hoặc quản lý dự án mới được xóa công việc');
+r.put('/tasks/:id', async (c) => {
+  const user = c.get('user');
+  const t = await viewableTask(c);
+  if (!(await canEditTask(user, t))) throw forbidden('Bạn không có quyền chỉnh sửa công việc này');
+  const b = await jsonBody(c);
+  await applyTaskUpdate(user, t, parseTaskBody(b, true));
+  if (b.followers !== undefined) {
+    await batch([
+      ['DELETE FROM task_followers WHERE task_id = ?', [t.id]],
+      ...idList(b.followers).map((f) => ['INSERT OR IGNORE INTO task_followers(task_id, user_id) VALUES (?,?)', [t.id, f]]),
+    ]);
   }
-  const files = all('SELECT filename FROM task_attachments WHERE task_id = ?', id);
-  run('DELETE FROM tasks WHERE id = ?', id);
-  for (const f of files) fs.rm(path.join(UPLOAD_DIR, f.filename), () => {});
-  res.json({ ok: true });
+  return c.json(await fullTask(t.id, user));
 });
 
-r.post('/tasks/bulk', (req, res) => {
-  const ids = idList(req.body?.ids);
-  const action = req.body?.action;
+async function deleteTaskFiles(taskId) {
+  // include attachments of subtasks, which cascade-delete with the parent
+  return all(`WITH RECURSIVE sub(id) AS (SELECT ? UNION ALL SELECT t.id FROM tasks t JOIN sub ON t.parent_id = sub.id)
+    SELECT filename FROM task_attachments WHERE task_id IN (SELECT id FROM sub)`, taskId);
+}
+
+r.delete('/tasks/:id', async (c) => {
+  const t = await loadTask(toInt(c.req.param('id')));
+  if (!(await canDeleteTask(c.get('user'), t))) throw forbidden('Chỉ người tạo hoặc quản lý dự án mới được xóa công việc');
+  const files = await deleteTaskFiles(t.id);
+  await run('DELETE FROM tasks WHERE id = ?', t.id);
+  for (const f of files) await removeFile(f.filename);
+  return c.json({ ok: true });
+});
+
+r.post('/tasks/bulk', async (c) => {
+  const user = c.get('user');
+  const b = await jsonBody(c);
   let affected = 0;
-  tx(() => {
-    for (const id of ids) {
-      const t = get('SELECT * FROM tasks WHERE id = ?', id);
-      if (!t || !canViewTask(req.user, id)) continue;
-      if (action === 'delete') {
-        if (!(isAdmin(req.user) || t.creator_id === req.user.id || projectRole(req.user, t.project_id) === 'manager')) continue;
-        run('DELETE FROM tasks WHERE id = ?', id); affected++;
-      } else if (action === 'star') {
-        run('INSERT OR IGNORE INTO task_stars(task_id, user_id) VALUES (?,?)', id, req.user.id); affected++;
-      } else if (action === 'follow') {
-        run('INSERT OR IGNORE INTO task_followers(task_id, user_id) VALUES (?,?)', id, req.user.id); affected++;
-      } else if (action === 'update' && canEditTask(req.user, t)) {
-        const data = parseTaskBody(req.body.data || {}, true);
-        applyTaskUpdate(req.user, t, data); affected++;
-      }
-    }
-  });
-  res.json({ affected });
+  const data = b.action === 'update' ? parseTaskBody(b.data || {}, true) : null;
+  for (const id of idList(b.ids)) {
+    const t = await get('SELECT * FROM tasks WHERE id = ?', id);
+    if (!t || !(await canViewTask(user, id))) continue;
+    if (b.action === 'delete') {
+      if (!(await canDeleteTask(user, t))) continue;
+      const files = await deleteTaskFiles(id);
+      await run('DELETE FROM tasks WHERE id = ?', id);
+      for (const f of files) await removeFile(f.filename);
+    } else if (b.action === 'star') await run('INSERT OR IGNORE INTO task_stars(task_id, user_id) VALUES (?,?)', id, user.id);
+    else if (b.action === 'follow') await run('INSERT OR IGNORE INTO task_followers(task_id, user_id) VALUES (?,?)', id, user.id);
+    else if (b.action === 'update' && (await canEditTask(user, t))) await applyTaskUpdate(user, t, { ...data });
+    else continue;
+    affected++;
+  }
+  return c.json({ affected });
 });
 
-const toggleTask = (table) => (req, res) => {
-  const id = toInt(req.params.id);
-  loadTask(id);
-  if (!canViewTask(req.user, id)) throw forbidden();
-  const exists = get(`SELECT 1 FROM ${table} WHERE task_id = ? AND user_id = ?`, id, req.user.id);
-  if (exists) run(`DELETE FROM ${table} WHERE task_id = ? AND user_id = ?`, id, req.user.id);
-  else run(`INSERT INTO ${table}(task_id, user_id) VALUES (?,?)`, id, req.user.id);
-  res.json({ active: !exists });
+const toggleTask = (table) => async (c) => {
+  const t = await viewableTask(c);
+  const uid = c.get('user').id;
+  const exists = await get(`SELECT 1 FROM ${table} WHERE task_id = ? AND user_id = ?`, t.id, uid);
+  if (exists) await run(`DELETE FROM ${table} WHERE task_id = ? AND user_id = ?`, t.id, uid);
+  else await run(`INSERT INTO ${table}(task_id, user_id) VALUES (?,?)`, t.id, uid);
+  return c.json({ active: !exists });
 };
 r.post('/tasks/:id/star', toggleTask('task_stars'));
 r.post('/tasks/:id/follow', toggleTask('task_followers'));
 
 // ---------------- checklist
-r.post('/tasks/:id/checklist', (req, res) => {
-  const id = toInt(req.params.id);
-  const t = loadTask(id);
-  if (!canEditTask(req.user, t)) throw forbidden();
-  const content = String(req.body?.content || '').trim();
+const checklist = (id) => all('SELECT * FROM task_checklist WHERE task_id = ? ORDER BY position, id', id);
+
+async function editableTask(c) {
+  const t = await viewableTask(c);
+  if (!(await canEditTask(c.get('user'), t))) throw forbidden();
+  return t;
+}
+
+r.post('/tasks/:id/checklist', async (c) => {
+  const t = await editableTask(c);
+  const content = String((await jsonBody(c)).content || '').trim();
   if (!content) throw badRequest('Nội dung trống');
-  const pos = get('SELECT COALESCE(MAX(position),0)+1 AS p FROM task_checklist WHERE task_id = ?', id).p;
-  run('INSERT INTO task_checklist(task_id, content, position) VALUES (?,?,?)', id, content, pos);
-  res.status(201).json(all('SELECT * FROM task_checklist WHERE task_id = ? ORDER BY position, id', id));
+  const pos = (await get('SELECT COALESCE(MAX(position),0)+1 AS p FROM task_checklist WHERE task_id = ?', t.id)).p;
+  await run('INSERT INTO task_checklist(task_id, content, position) VALUES (?,?,?)', t.id, content, pos);
+  return c.json(await checklist(t.id), 201);
 });
-r.put('/tasks/:id/checklist/:cid', (req, res) => {
-  const id = toInt(req.params.id);
-  const t = loadTask(id);
-  if (!canEditTask(req.user, t)) throw forbidden();
-  const b = req.body || {};
-  run('UPDATE task_checklist SET content = COALESCE(?, content), done = COALESCE(?, done) WHERE id = ? AND task_id = ?',
-    b.content?.trim() || null, b.done === undefined ? null : b.done ? 1 : 0, toInt(req.params.cid), id);
-  res.json(all('SELECT * FROM task_checklist WHERE task_id = ? ORDER BY position, id', id));
+r.put('/tasks/:id/checklist/:cid', async (c) => {
+  const t = await editableTask(c);
+  const b = await jsonBody(c);
+  await run('UPDATE task_checklist SET content = COALESCE(?, content), done = COALESCE(?, done) WHERE id = ? AND task_id = ?',
+    b.content?.trim() || null, b.done === undefined ? null : b.done ? 1 : 0, toInt(c.req.param('cid')), t.id);
+  return c.json(await checklist(t.id));
 });
-r.delete('/tasks/:id/checklist/:cid', (req, res) => {
-  const id = toInt(req.params.id);
-  const t = loadTask(id);
-  if (!canEditTask(req.user, t)) throw forbidden();
-  run('DELETE FROM task_checklist WHERE id = ? AND task_id = ?', toInt(req.params.cid), id);
-  res.json(all('SELECT * FROM task_checklist WHERE task_id = ? ORDER BY position, id', id));
+r.delete('/tasks/:id/checklist/:cid', async (c) => {
+  const t = await editableTask(c);
+  await run('DELETE FROM task_checklist WHERE id = ? AND task_id = ?', toInt(c.req.param('cid')), t.id);
+  return c.json(await checklist(t.id));
 });
 
 // ---------------- comments & activity
-r.get('/tasks/:id/comments', (req, res) => {
-  const id = toInt(req.params.id);
-  if (!canViewTask(req.user, id)) throw forbidden();
-  res.json(all(`SELECT c.*, u.name AS user_name, u.color AS user_color FROM task_comments c
-    LEFT JOIN users u ON u.id = c.user_id WHERE c.task_id = ? ORDER BY c.id`, id));
+const TASK_COMMENT_SELECT = `SELECT c.*, u.name AS user_name, u.color AS user_color FROM task_comments c
+  LEFT JOIN users u ON u.id = c.user_id`;
+
+r.get('/tasks/:id/comments', async (c) => {
+  const t = await viewableTask(c);
+  return c.json(await all(`${TASK_COMMENT_SELECT} WHERE c.task_id = ? ORDER BY c.id`, t.id));
 });
-r.post('/tasks/:id/comments', (req, res) => {
-  const id = toInt(req.params.id);
-  const t = loadTask(id);
-  if (!canViewTask(req.user, id)) throw forbidden();
-  const content = String(req.body?.content || '').trim();
+r.post('/tasks/:id/comments', async (c) => {
+  const user = c.get('user');
+  const t = await viewableTask(c);
+  const content = String((await jsonBody(c)).content || '').trim();
   if (!content) throw badRequest('Nội dung bình luận trống');
-  const info = run('INSERT INTO task_comments(task_id, user_id, content) VALUES (?,?,?)', id, req.user.id, content);
-  const watchers = all('SELECT user_id FROM task_followers WHERE task_id = ?', id).map((x) => x.user_id);
+  const { lastId } = await run('INSERT INTO task_comments(task_id, user_id, content) VALUES (?,?,?)', t.id, user.id, content);
+  const watchers = (await all('SELECT user_id FROM task_followers WHERE task_id = ?', t.id)).map((x) => x.user_id);
   // @mention: @username
-  const mentioned = [...content.matchAll(/@([\w.]+)/g)].map((m) => get('SELECT id FROM users WHERE username = ?', m[1])?.id).filter(Boolean);
-  notify([t.creator_id, t.assignee_id, ...watchers, ...mentioned], { actorId: req.user.id, app: APP, type: 'comment',
-    title: `${req.user.name} đã bình luận trong "${t.title}"`, link: `/wework/task/${id}` });
-  run("UPDATE tasks SET updated_at = datetime('now') WHERE id = ?", id);
-  res.status(201).json(get(`SELECT c.*, u.name AS user_name, u.color AS user_color FROM task_comments c
-    LEFT JOIN users u ON u.id = c.user_id WHERE c.id = ?`, Number(info.lastInsertRowid)));
+  const mentioned = [];
+  for (const m of content.matchAll(/@([\w.]+)/g)) {
+    const u = await get('SELECT id FROM users WHERE username = ?', m[1]);
+    if (u) mentioned.push(u.id);
+  }
+  await notify([t.creator_id, t.assignee_id, ...watchers, ...mentioned], { actorId: user.id, app: APP, type: 'comment',
+    title: `${user.name} đã bình luận trong "${t.title}"`, link: `/wework/task/${t.id}` });
+  await run("UPDATE tasks SET updated_at = datetime('now') WHERE id = ?", t.id);
+  return c.json(await get(`${TASK_COMMENT_SELECT} WHERE c.id = ?`, lastId), 201);
 });
-r.delete('/tasks/:id/comments/:cid', (req, res) => {
-  const c = get('SELECT * FROM task_comments WHERE id = ? AND task_id = ?', toInt(req.params.cid), toInt(req.params.id));
-  if (!c) throw notFound();
-  if (c.user_id !== req.user.id && !isAdmin(req.user)) throw forbidden();
-  run('DELETE FROM task_comments WHERE id = ?', c.id);
-  res.json({ ok: true });
+r.delete('/tasks/:id/comments/:cid', async (c) => {
+  const user = c.get('user');
+  const cm = await get('SELECT * FROM task_comments WHERE id = ? AND task_id = ?', toInt(c.req.param('cid')), toInt(c.req.param('id')));
+  if (!cm) throw notFound();
+  if (cm.user_id !== user.id && !isAdmin(user)) throw forbidden();
+  await run('DELETE FROM task_comments WHERE id = ?', cm.id);
+  return c.json({ ok: true });
 });
-r.get('/tasks/:id/activity', (req, res) => {
-  const id = toInt(req.params.id);
-  if (!canViewTask(req.user, id)) throw forbidden();
-  res.json(all(`SELECT l.*, u.name AS user_name, u.color AS user_color FROM activity_logs l LEFT JOIN users u ON u.id = l.user_id
-    WHERE l.entity_type = 'task' AND l.entity_id = ? ORDER BY l.id DESC`, id));
+r.get('/tasks/:id/activity', async (c) => {
+  const t = await viewableTask(c);
+  return c.json(await all(`SELECT l.*, u.name AS user_name, u.color AS user_color FROM activity_logs l LEFT JOIN users u ON u.id = l.user_id
+    WHERE l.entity_type = 'task' AND l.entity_id = ? ORDER BY l.id DESC`, t.id));
 });
 
 // ---------------- attachments
-r.post('/tasks/:id/attachments', upload.array('files'), (req, res) => {
-  const id = toInt(req.params.id);
-  loadTask(id);
-  if (!canViewTask(req.user, id)) throw forbidden();
-  for (const f of req.files || []) {
-    run('INSERT INTO task_attachments(task_id, filename, original_name, mime, size, user_id) VALUES (?,?,?,?,?,?)',
-      id, f.filename, fixName(f.originalname), f.mimetype, f.size, req.user.id);
-  }
-  if (req.files?.length) logActivity('task', id, req.user.id, 'attached', `Đính kèm ${req.files.length} tệp`);
-  res.status(201).json(fullTask(id, req.user).attachments);
+r.post('/tasks/:id/attachments', async (c) => {
+  const user = c.get('user');
+  const t = await viewableTask(c);
+  const { files } = await formBody(c);
+  const stored = await storeFiles(files);
+  await batch(stored.map((f) => [
+    'INSERT INTO task_attachments(task_id, filename, original_name, mime, size, user_id) VALUES (?,?,?,?,?,?)',
+    [t.id, f.filename, f.original_name, f.mime, f.size, user.id],
+  ]));
+  if (stored.length) await logActivity('task', t.id, user.id, 'attached', `Đính kèm ${stored.length} tệp`);
+  return c.json((await fullTask(t.id, user)).attachments, 201);
 });
-r.get('/tasks/:id/attachments/:aid', (req, res) => {
-  const id = toInt(req.params.id);
-  if (!canViewTask(req.user, id)) throw forbidden();
-  const a = get('SELECT * FROM task_attachments WHERE id = ? AND task_id = ?', toInt(req.params.aid), id);
+r.get('/tasks/:id/attachments/:aid', async (c) => {
+  const t = await viewableTask(c);
+  const a = await get('SELECT * FROM task_attachments WHERE id = ? AND task_id = ?', toInt(c.req.param('aid')), t.id);
   if (!a) throw notFound('Tệp không tồn tại');
-  res.download(path.join(UPLOAD_DIR, a.filename), a.original_name);
+  return sendFile(c, a, c.req.query('inline') === '1');
 });
-r.delete('/tasks/:id/attachments/:aid', (req, res) => {
-  const id = toInt(req.params.id);
-  const t = loadTask(id);
-  const a = get('SELECT * FROM task_attachments WHERE id = ? AND task_id = ?', toInt(req.params.aid), id);
+r.delete('/tasks/:id/attachments/:aid', async (c) => {
+  const user = c.get('user');
+  const t = await viewableTask(c);
+  const a = await get('SELECT * FROM task_attachments WHERE id = ? AND task_id = ?', toInt(c.req.param('aid')), t.id);
   if (!a) throw notFound();
-  if (a.user_id !== req.user.id && !canEditTask(req.user, t)) throw forbidden();
-  run('DELETE FROM task_attachments WHERE id = ?', a.id);
-  fs.rm(path.join(UPLOAD_DIR, a.filename), () => {});
-  res.json({ ok: true });
+  if (a.user_id !== user.id && !(await canEditTask(user, t))) throw forbidden();
+  await run('DELETE FROM task_attachments WHERE id = ?', a.id);
+  await removeFile(a.filename);
+  return c.json({ ok: true });
 });
 
 // ================================================================ projects
@@ -562,34 +573,54 @@ function projectVisibility(user) {
   };
 }
 
-r.get('/projects', (req, res) => {
+r.get('/projects', async (c) => {
+  const q = c.req.query();
   // Mẫu dự án dùng chung cho toàn công ty
-  const v = req.query.template === '1' ? { sql: '1=1', params: [] } : projectVisibility(req.user);
+  const v = q.template === '1' ? { sql: '1=1', params: [] } : projectVisibility(c.get('user'));
   const where = [v.sql];
   const params = [...v.params];
-  if (req.query.kind) { where.push('p.kind = ?'); params.push(req.query.kind); }
-  where.push(req.query.template === '1' ? 'p.is_template = 1' : 'p.is_template = 0');
-  if (req.query.status) { where.push('p.status = ?'); params.push(req.query.status); }
-  else if (req.query.template !== '1') where.push("p.status = 'active'");
-  if (req.query.q) { where.push('p.name LIKE ?'); params.push(`%${req.query.q}%`); }
-  const order = req.query.sort === 'name' ? 'p.name COLLATE NOCASE' : 'p.created_at DESC';
-  res.json(all(`${PROJECT_SELECT} WHERE ${where.join(' AND ')} ORDER BY ${order}`, ...params));
+  if (q.kind) { where.push('p.kind = ?'); params.push(q.kind); }
+  where.push(q.template === '1' ? 'p.is_template = 1' : 'p.is_template = 0');
+  if (q.status) { where.push('p.status = ?'); params.push(q.status); }
+  else if (q.template !== '1') where.push("p.status = 'active'");
+  if (q.q) { where.push('p.name LIKE ?'); params.push(`%${q.q}%`); }
+  const order = q.sort === 'name' ? 'p.name COLLATE NOCASE' : 'p.created_at DESC';
+  return c.json(await all(`${PROJECT_SELECT} WHERE ${where.join(' AND ')} ORDER BY ${order}`, ...params));
 });
 
-function fullProject(id, user) {
-  const p = get(`${PROJECT_SELECT} WHERE p.id = ?`, id);
-  p.members = all(`SELECT u.id, u.name, u.color, u.title, u.username, m.role FROM project_members m JOIN users u ON u.id = m.user_id
+const projectLists = (id) => all('SELECT * FROM task_lists WHERE project_id = ? ORDER BY position, id', id);
+
+async function fullProject(id, user) {
+  const p = await get(`${PROJECT_SELECT} WHERE p.id = ?`, id);
+  p.members = await all(`SELECT u.id, u.name, u.color, u.title, u.username, m.role FROM project_members m JOIN users u ON u.id = m.user_id
     WHERE m.project_id = ? ORDER BY m.role, u.name`, id);
-  p.lists = all('SELECT * FROM task_lists WHERE project_id = ? ORDER BY position, id', id);
-  p.my_role = projectRole(user, id);
+  p.lists = await projectLists(id);
+  p.my_role = await projectRole(user, id);
   return p;
 }
 
-r.get('/projects/:id', (req, res) => {
-  const id = toInt(req.params.id);
-  if (!get('SELECT 1 FROM projects WHERE id = ?', id)) throw notFound('Dự án không tồn tại');
-  if (!projectRole(req.user, id)) throw forbidden('Bạn không phải thành viên dự án này');
-  res.json(fullProject(id, req.user));
+async function projectOr404(c) {
+  const id = toInt(c.req.param('id'));
+  const p = await get('SELECT * FROM projects WHERE id = ?', id);
+  if (!p) throw notFound('Dự án không tồn tại');
+  return p;
+}
+
+async function memberProject(c) {
+  const p = await projectOr404(c);
+  if (!(await projectRole(c.get('user'), p.id))) throw forbidden('Bạn không phải thành viên dự án này');
+  return p;
+}
+
+async function managedProject(c, msg) {
+  const p = await projectOr404(c);
+  if ((await projectRole(c.get('user'), p.id)) !== 'manager') throw forbidden(msg);
+  return p;
+}
+
+r.get('/projects/:id', async (c) => {
+  const p = await memberProject(c);
+  return c.json(await fullProject(p.id, c.get('user')));
 });
 
 function parseProject(b, partial) {
@@ -602,218 +633,199 @@ function parseProject(b, partial) {
   if (b.kind !== undefined) out.kind = b.kind === 'department' ? 'department' : 'project';
   if (b.status !== undefined) out.status = b.status === 'archived' ? 'archived' : 'active';
   if (b.department_id !== undefined) out.department_id = toInt(b.department_id);
-  if (b.owner_id !== undefined) out.owner_id = toInt(b.owner_id);
   if (b.is_template !== undefined) out.is_template = b.is_template ? 1 : 0;
   return out;
 }
 
-function copyProjectContent(fromId, toId, user) {
+async function copyProjectContent(fromId, toId, user) {
   const listMap = {};
-  for (const l of all('SELECT * FROM task_lists WHERE project_id = ? ORDER BY position', fromId)) {
-    const info = run('INSERT INTO task_lists(project_id, name, position) VALUES (?,?,?)', toId, l.name, l.position);
-    listMap[l.id] = Number(info.lastInsertRowid);
+  for (const l of await all('SELECT * FROM task_lists WHERE project_id = ? ORDER BY position', fromId)) {
+    listMap[l.id] = (await run('INSERT INTO task_lists(project_id, name, position) VALUES (?,?,?)', toId, l.name, l.position)).lastId;
   }
   const taskMap = {};
-  const tasks = all('SELECT * FROM tasks WHERE project_id = ? ORDER BY parent_id IS NOT NULL, id', fromId);
-  for (const t of tasks) {
-    const info = run(`INSERT INTO tasks(project_id, list_id, parent_id, title, description, creator_id, assignee_id, status, priority, position)
+  for (const t of await all('SELECT * FROM tasks WHERE project_id = ? ORDER BY parent_id IS NOT NULL, id', fromId)) {
+    taskMap[t.id] = (await run(`INSERT INTO tasks(project_id, list_id, parent_id, title, description, creator_id, assignee_id, status, priority, position)
       VALUES (?,?,?,?,?,?,?, 'todo', ?, ?)`, toId, listMap[t.list_id] ?? null, taskMap[t.parent_id] ?? null,
-      t.title, t.description, user.id, user.id, t.priority, t.position);
-    taskMap[t.id] = Number(info.lastInsertRowid);
-    for (const c of all('SELECT * FROM task_checklist WHERE task_id = ?', t.id)) {
-      run('INSERT INTO task_checklist(task_id, content, position) VALUES (?,?,?)', taskMap[t.id], c.content, c.position);
-    }
+    t.title, t.description, user.id, user.id, t.priority, t.position)).lastId;
+    const items = await all('SELECT * FROM task_checklist WHERE task_id = ?', t.id);
+    await batch(items.map((ci) => ['INSERT INTO task_checklist(task_id, content, position) VALUES (?,?,?)', [taskMap[t.id], ci.content, ci.position]]));
   }
 }
 
-r.post('/projects', (req, res) => {
-  const b = req.body || {};
+r.post('/projects', async (c) => {
+  const user = c.get('user');
+  const b = await jsonBody(c);
   const data = parseProject(b, false);
-  const id = tx(() => {
-    const info = run(`INSERT INTO projects(name, kind, description, color, owner_id, department_id, group_name, is_template, start_date, end_date)
-      VALUES (?,?,?,?,?,?,?,?,?,?)`, data.name, data.kind || 'project', data.description ?? null, data.color || '#2d7ff9',
-      req.user.id, data.department_id ?? null, data.group_name ?? null, data.is_template ?? 0, data.start_date ?? null, data.end_date ?? null);
-    const pid = Number(info.lastInsertRowid);
-    run("INSERT INTO project_members(project_id, user_id, role) VALUES (?,?, 'manager')", pid, req.user.id);
-    for (const m of idList(b.members)) run("INSERT OR IGNORE INTO project_members(project_id, user_id, role) VALUES (?,?, 'member')", pid, m);
-    for (const m of idList(b.managers)) {
-      run("INSERT INTO project_members(project_id, user_id, role) VALUES (?,?, 'manager') ON CONFLICT DO UPDATE SET role = 'manager'", pid, m);
-    }
-    const tpl = toInt(b.template_id);
-    if (tpl) {
-      if (!get('SELECT 1 FROM projects WHERE id = ? AND is_template = 1', tpl)) throw badRequest('Mẫu không tồn tại');
-      copyProjectContent(tpl, pid, req.user);
-    } else {
-      const lists = Array.isArray(b.lists) && b.lists.length ? b.lists : ['Cần làm', 'Đang làm', 'Hoàn thành'];
-      lists.forEach((n, i) => run('INSERT INTO task_lists(project_id, name, position) VALUES (?,?,?)', pid, String(n), i + 1));
-    }
-    notify(idList(b.members), { actorId: req.user.id, app: APP, type: 'project',
-      title: `${req.user.name} đã thêm bạn vào ${data.kind === 'department' ? 'phòng ban' : 'dự án'} "${data.name}"`, link: `/wework/project/${pid}` });
-    logActivity('project', pid, req.user.id, 'created', 'Tạo dự án');
-    return pid;
-  });
-  res.status(201).json(fullProject(id, req.user));
+  const tpl = toInt(b.template_id);
+  if (tpl && !(await get('SELECT 1 FROM projects WHERE id = ? AND is_template = 1', tpl))) throw badRequest('Mẫu không tồn tại');
+  const { lastId: pid } = await run(`INSERT INTO projects(name, kind, description, color, owner_id, department_id, group_name, is_template, start_date, end_date)
+    VALUES (?,?,?,?,?,?,?,?,?,?)`, data.name, data.kind || 'project', data.description ?? null, data.color || '#2d7ff9',
+  user.id, data.department_id ?? null, data.group_name ?? null, data.is_template ?? 0, data.start_date ?? null, data.end_date ?? null);
+  const members = idList(b.members);
+  const managers = idList(b.managers);
+  await batch([
+    ["INSERT INTO project_members(project_id, user_id, role) VALUES (?,?, 'manager')", [pid, user.id]],
+    ...members.map((m) => ["INSERT OR IGNORE INTO project_members(project_id, user_id, role) VALUES (?,?, 'member')", [pid, m]]),
+    ...managers.map((m) => ["INSERT INTO project_members(project_id, user_id, role) VALUES (?,?, 'manager') ON CONFLICT DO UPDATE SET role = 'manager'", [pid, m]]),
+  ]);
+  if (tpl) await copyProjectContent(tpl, pid, user);
+  else {
+    const lists = Array.isArray(b.lists) && b.lists.length ? b.lists : ['Cần làm', 'Đang làm', 'Hoàn thành'];
+    await batch(lists.map((n, i) => ['INSERT INTO task_lists(project_id, name, position) VALUES (?,?,?)', [pid, String(n), i + 1]]));
+  }
+  await notify([...members, ...managers], { actorId: user.id, app: APP, type: 'project',
+    title: `${user.name} đã thêm bạn vào ${data.kind === 'department' ? 'phòng ban' : 'dự án'} "${data.name}"`, link: `/wework/project/${pid}` });
+  await logActivity('project', pid, user.id, 'created', 'Tạo dự án');
+  return c.json(await fullProject(pid, user), 201);
 });
 
-r.post('/projects/:id/save-template', (req, res) => {
-  const id = toInt(req.params.id);
-  const p = get('SELECT * FROM projects WHERE id = ?', id);
-  if (!p) throw notFound();
-  if (projectRole(req.user, id) !== 'manager') throw forbidden();
-  const nid = tx(() => {
-    const info = run(`INSERT INTO projects(name, kind, description, color, owner_id, is_template) VALUES (?,?,?,?,?,1)`,
-      req.body?.name || `Mẫu - ${p.name}`, p.kind, p.description, p.color, req.user.id);
-    const tid = Number(info.lastInsertRowid);
-    run("INSERT INTO project_members(project_id, user_id, role) VALUES (?,?, 'manager')", tid, req.user.id);
-    copyProjectContent(id, tid, req.user);
-    return tid;
-  });
-  res.status(201).json(fullProject(nid, req.user));
+r.post('/projects/:id/save-template', async (c) => {
+  const user = c.get('user');
+  const p = await managedProject(c);
+  const { lastId: tid } = await run('INSERT INTO projects(name, kind, description, color, owner_id, is_template) VALUES (?,?,?,?,?,1)',
+    (await jsonBody(c)).name || `Mẫu - ${p.name}`, p.kind, p.description, p.color, user.id);
+  await run("INSERT INTO project_members(project_id, user_id, role) VALUES (?,?, 'manager')", tid, user.id);
+  await copyProjectContent(p.id, tid, user);
+  return c.json(await fullProject(tid, user), 201);
 });
 
-r.put('/projects/:id', (req, res) => {
-  const id = toInt(req.params.id);
-  if (!get('SELECT 1 FROM projects WHERE id = ?', id)) throw notFound();
-  if (projectRole(req.user, id) !== 'manager') throw forbidden('Chỉ quản lý dự án mới được chỉnh sửa');
-  const data = parseProject(req.body || {}, true);
+r.put('/projects/:id', async (c) => {
+  const p = await managedProject(c, 'Chỉ quản lý dự án mới được chỉnh sửa');
+  const data = parseProject(await jsonBody(c), true);
   const keys = Object.keys(data);
-  if (keys.length) run(`UPDATE projects SET ${keys.map((k) => `${k} = ?`).join(', ')} WHERE id = ?`, ...keys.map((k) => data[k]), id);
-  logActivity('project', id, req.user.id, 'updated', 'Cập nhật dự án');
-  res.json(fullProject(id, req.user));
+  if (keys.length) await run(`UPDATE projects SET ${keys.map((k) => `${k} = ?`).join(', ')} WHERE id = ?`, ...keys.map((k) => data[k]), p.id);
+  await logActivity('project', p.id, c.get('user').id, 'updated', 'Cập nhật dự án');
+  return c.json(await fullProject(p.id, c.get('user')));
 });
 
-r.delete('/projects/:id', (req, res) => {
-  const id = toInt(req.params.id);
-  const p = get('SELECT * FROM projects WHERE id = ?', id);
-  if (!p) throw notFound();
-  if (!(isAdmin(req.user) || p.owner_id === req.user.id)) throw forbidden('Chỉ chủ dự án mới được xóa');
-  run('DELETE FROM projects WHERE id = ?', id);
-  res.json({ ok: true });
+r.delete('/projects/:id', async (c) => {
+  const user = c.get('user');
+  const p = await projectOr404(c);
+  if (!(isAdmin(user) || p.owner_id === user.id)) throw forbidden('Chỉ chủ dự án mới được xóa');
+  const files = await all(`SELECT a.filename FROM task_attachments a JOIN tasks t ON t.id = a.task_id WHERE t.project_id = ?`, p.id);
+  await run('DELETE FROM projects WHERE id = ?', p.id);
+  for (const f of files) await removeFile(f.filename);
+  return c.json({ ok: true });
 });
 
-r.put('/projects/:id/members', (req, res) => {
-  const id = toInt(req.params.id);
-  const p = get('SELECT * FROM projects WHERE id = ?', id);
-  if (!p) throw notFound();
-  if (projectRole(req.user, id) !== 'manager') throw forbidden();
-  const members = Array.isArray(req.body?.members) ? req.body.members : [];
-  const before = new Set(all('SELECT user_id FROM project_members WHERE project_id = ?', id).map((x) => x.user_id));
-  tx(() => {
-    run('DELETE FROM project_members WHERE project_id = ?', id);
-    for (const m of members) {
-      const uid = toInt(m.user_id ?? m.id);
-      if (!uid) continue;
-      run('INSERT OR REPLACE INTO project_members(project_id, user_id, role) VALUES (?,?,?)', id, uid, m.role === 'manager' ? 'manager' : 'member');
-    }
-    if (p.owner_id) run("INSERT OR REPLACE INTO project_members(project_id, user_id, role) VALUES (?,?, 'manager')", id, p.owner_id);
-  });
+r.put('/projects/:id/members', async (c) => {
+  const user = c.get('user');
+  const p = await managedProject(c);
+  const b = await jsonBody(c);
+  const members = Array.isArray(b.members) ? b.members : [];
+  const before = new Set((await all('SELECT user_id FROM project_members WHERE project_id = ?', p.id)).map((x) => x.user_id));
+  const stmts = [['DELETE FROM project_members WHERE project_id = ?', [p.id]]];
+  for (const m of members) {
+    const uid = toInt(m.user_id ?? m.id);
+    if (uid) stmts.push(['INSERT OR REPLACE INTO project_members(project_id, user_id, role) VALUES (?,?,?)', [p.id, uid, m.role === 'manager' ? 'manager' : 'member']]);
+  }
+  if (p.owner_id) stmts.push(["INSERT OR REPLACE INTO project_members(project_id, user_id, role) VALUES (?,?, 'manager')", [p.id, p.owner_id]]);
+  await batch(stmts);
   const added = members.map((m) => toInt(m.user_id ?? m.id)).filter((x) => x && !before.has(x));
-  notify(added, { actorId: req.user.id, app: APP, type: 'project',
-    title: `${req.user.name} đã thêm bạn vào "${p.name}"`, link: `/wework/project/${id}` });
-  res.json(fullProject(id, req.user));
+  await notify(added, { actorId: user.id, app: APP, type: 'project',
+    title: `${user.name} đã thêm bạn vào "${p.name}"`, link: `/wework/project/${p.id}` });
+  return c.json(await fullProject(p.id, user));
 });
 
 // ---------------- task lists (nhóm công việc)
-r.post('/projects/:id/lists', (req, res) => {
-  const id = toInt(req.params.id);
-  if (!projectRole(req.user, id)) throw forbidden();
-  const name = String(req.body?.name || '').trim();
+r.post('/projects/:id/lists', async (c) => {
+  const p = await memberProject(c);
+  const name = String((await jsonBody(c)).name || '').trim();
   if (!name) throw badRequest('Tên nhóm công việc là bắt buộc');
-  const pos = get('SELECT COALESCE(MAX(position),0)+1 AS p FROM task_lists WHERE project_id = ?', id).p;
-  run('INSERT INTO task_lists(project_id, name, position) VALUES (?,?,?)', id, name, pos);
-  res.status(201).json(all('SELECT * FROM task_lists WHERE project_id = ? ORDER BY position, id', id));
+  const pos = (await get('SELECT COALESCE(MAX(position),0)+1 AS p FROM task_lists WHERE project_id = ?', p.id)).p;
+  await run('INSERT INTO task_lists(project_id, name, position) VALUES (?,?,?)', p.id, name, pos);
+  return c.json(await projectLists(p.id), 201);
 });
-r.put('/projects/:id/lists/:lid', (req, res) => {
-  const id = toInt(req.params.id);
-  if (!projectRole(req.user, id)) throw forbidden();
-  const b = req.body || {};
-  run('UPDATE task_lists SET name = COALESCE(?, name), position = COALESCE(?, position) WHERE id = ? AND project_id = ?',
-    b.name?.trim() || null, toInt(b.position), toInt(req.params.lid), id);
-  res.json(all('SELECT * FROM task_lists WHERE project_id = ? ORDER BY position, id', id));
+r.put('/projects/:id/lists/:lid', async (c) => {
+  const p = await memberProject(c);
+  const b = await jsonBody(c);
+  await run('UPDATE task_lists SET name = COALESCE(?, name), position = COALESCE(?, position) WHERE id = ? AND project_id = ?',
+    b.name?.trim() || null, toInt(b.position), toInt(c.req.param('lid')), p.id);
+  return c.json(await projectLists(p.id));
 });
-r.delete('/projects/:id/lists/:lid', (req, res) => {
-  const id = toInt(req.params.id);
-  if (projectRole(req.user, id) !== 'manager') throw forbidden();
-  run('DELETE FROM task_lists WHERE id = ? AND project_id = ?', toInt(req.params.lid), id);
-  res.json(all('SELECT * FROM task_lists WHERE project_id = ? ORDER BY position, id', id));
+r.delete('/projects/:id/lists/:lid', async (c) => {
+  const p = await managedProject(c);
+  await run('DELETE FROM task_lists WHERE id = ? AND project_id = ?', toInt(c.req.param('lid')), p.id);
+  return c.json(await projectLists(p.id));
 });
 
-r.get('/projects/:id/activity', (req, res) => {
-  const id = toInt(req.params.id);
-  if (!projectRole(req.user, id)) throw forbidden();
-  res.json(all(`SELECT l.*, u.name AS user_name, u.color AS user_color, t.title AS task_title FROM activity_logs l
+r.get('/projects/:id/activity', async (c) => {
+  const p = await memberProject(c);
+  return c.json(await all(`SELECT l.*, u.name AS user_name, u.color AS user_color, t.title AS task_title FROM activity_logs l
     LEFT JOIN users u ON u.id = l.user_id JOIN tasks t ON t.id = l.entity_id
-    WHERE l.entity_type = 'task' AND t.project_id = ? ORDER BY l.id DESC LIMIT 100`, id));
+    WHERE l.entity_type = 'task' AND t.project_id = ? ORDER BY l.id DESC LIMIT 100`, p.id));
 });
 
 // ================================================================ members overview
-r.get('/wework/members', (req, res) => {
-  const td = today();
-  res.json(all(`SELECT u.id, u.name, u.username, u.color, u.title, u.email, d.name AS department_name, u.manager_id,
+r.get('/wework/members', async (c) => {
+  const team = c.req.query('team') === '1';
+  return c.json(await all(`SELECT u.id, u.name, u.username, u.color, u.title, u.email, d.name AS department_name, u.manager_id,
       (SELECT COUNT(*) FROM tasks t WHERE t.assignee_id = u.id AND t.parent_id IS NULL) AS total,
       (SELECT COUNT(*) FROM tasks t WHERE t.assignee_id = u.id AND t.status IN ('todo','doing')) AS active,
       (SELECT COUNT(*) FROM tasks t WHERE t.assignee_id = u.id AND t.status = 'done') AS done,
       (SELECT COUNT(*) FROM tasks t WHERE t.assignee_id = u.id AND t.status IN ('todo','doing') AND date(t.due_date) < date(?)) AS overdue
     FROM users u LEFT JOIN departments d ON d.id = u.department_id WHERE u.active = 1
-    ${req.query.team === '1' ? 'AND u.manager_id = ?' : ''}
-    ORDER BY u.name COLLATE NOCASE`, td, ...(req.query.team === '1' ? [req.user.id] : [])));
+    ${team ? 'AND u.manager_id = ?' : ''}
+    ORDER BY u.name COLLATE NOCASE`, today(), ...(team ? [c.get('user').id] : [])));
 });
 
 // ================================================================ goals
-r.get('/goals', (req, res) => {
-  res.json(all(`SELECT g.*, (SELECT COUNT(*) FROM tasks t WHERE t.goal_id = g.id) AS task_count,
+const clampPct = (v) => Math.min(100, Math.max(0, toInt(v, 0)));
+
+r.get('/goals', async (c) => c.json(await all(`SELECT g.*, (SELECT COUNT(*) FROM tasks t WHERE t.goal_id = g.id) AS task_count,
     (SELECT COUNT(*) FROM tasks t WHERE t.goal_id = g.id AND t.status = 'done') AS task_done
-    FROM goals g WHERE g.user_id = ? ORDER BY g.id DESC`, req.user.id));
-});
-r.post('/goals', (req, res) => {
-  const title = String(req.body?.title || '').trim();
+    FROM goals g WHERE g.user_id = ? ORDER BY g.id DESC`, c.get('user').id)));
+r.post('/goals', async (c) => {
+  const b = await jsonBody(c);
+  const title = String(b.title || '').trim();
   if (!title) throw badRequest('Tên mục tiêu là bắt buộc');
-  const info = run('INSERT INTO goals(user_id, title, progress, due_date) VALUES (?,?,?,?)',
-    req.user.id, title, Math.min(100, Math.max(0, toInt(req.body.progress, 0))), req.body.due_date || null);
-  res.status(201).json(get('SELECT * FROM goals WHERE id = ?', Number(info.lastInsertRowid)));
+  const { lastId } = await run('INSERT INTO goals(user_id, title, progress, due_date) VALUES (?,?,?,?)',
+    c.get('user').id, title, clampPct(b.progress), b.due_date || null);
+  return c.json(await get('SELECT * FROM goals WHERE id = ?', lastId), 201);
 });
-r.put('/goals/:id', (req, res) => {
-  const g = get('SELECT * FROM goals WHERE id = ? AND user_id = ?', toInt(req.params.id), req.user.id);
+r.put('/goals/:id', async (c) => {
+  const g = await get('SELECT * FROM goals WHERE id = ? AND user_id = ?', toInt(c.req.param('id')), c.get('user').id);
   if (!g) throw notFound();
-  const b = req.body || {};
-  run('UPDATE goals SET title = COALESCE(?, title), progress = COALESCE(?, progress), due_date = ? WHERE id = ?',
-    b.title?.trim() || null, b.progress === undefined ? null : Math.min(100, Math.max(0, toInt(b.progress, 0))),
+  const b = await jsonBody(c);
+  await run('UPDATE goals SET title = COALESCE(?, title), progress = COALESCE(?, progress), due_date = ? WHERE id = ?',
+    b.title?.trim() || null, b.progress === undefined ? null : clampPct(b.progress),
     b.due_date === undefined ? g.due_date : b.due_date || null, g.id);
-  res.json(get('SELECT * FROM goals WHERE id = ?', g.id));
+  return c.json(await get('SELECT * FROM goals WHERE id = ?', g.id));
 });
-r.delete('/goals/:id', (req, res) => {
-  run('DELETE FROM goals WHERE id = ? AND user_id = ?', toInt(req.params.id), req.user.id);
-  res.json({ ok: true });
+r.delete('/goals/:id', async (c) => {
+  await run('DELETE FROM goals WHERE id = ? AND user_id = ?', toInt(c.req.param('id')), c.get('user').id);
+  return c.json({ ok: true });
 });
 
 // ================================================================ custom filters
-r.get('/filters', (req, res) => {
-  res.json(all('SELECT * FROM custom_filters WHERE user_id = ? AND app = ? ORDER BY id', req.user.id, req.query.app || 'wework'));
-});
-r.post('/filters', (req, res) => {
-  const name = String(req.body?.name || '').trim();
+r.get('/filters', async (c) => c.json(await all('SELECT * FROM custom_filters WHERE user_id = ? AND app = ? ORDER BY id',
+  c.get('user').id, c.req.query('app') || 'wework')));
+r.post('/filters', async (c) => {
+  const b = await jsonBody(c);
+  const name = String(b.name || '').trim();
   if (!name) throw badRequest('Tên bộ lọc là bắt buộc');
-  const query = typeof req.body.query === 'string' ? req.body.query : JSON.stringify(req.body.query || {});
-  const info = run('INSERT INTO custom_filters(user_id, app, name, query) VALUES (?,?,?,?)', req.user.id, req.body.app || 'wework', name, query);
-  res.status(201).json(get('SELECT * FROM custom_filters WHERE id = ?', Number(info.lastInsertRowid)));
+  const query = typeof b.query === 'string' ? b.query : JSON.stringify(b.query || {});
+  const { lastId } = await run('INSERT INTO custom_filters(user_id, app, name, query) VALUES (?,?,?,?)', c.get('user').id, b.app || 'wework', name, query);
+  return c.json(await get('SELECT * FROM custom_filters WHERE id = ?', lastId), 201);
 });
-r.delete('/filters/:id', (req, res) => {
-  run('DELETE FROM custom_filters WHERE id = ? AND user_id = ?', toInt(req.params.id), req.user.id);
-  res.json({ ok: true });
+r.delete('/filters/:id', async (c) => {
+  await run('DELETE FROM custom_filters WHERE id = ? AND user_id = ?', toInt(c.req.param('id')), c.get('user').id);
+  return c.json({ ok: true });
 });
 
 // ================================================================ global search
-r.get('/search', (req, res) => {
-  const q = String(req.query.q || '').trim();
-  if (!q) return res.json({ tasks: [], projects: [], users: [] });
+r.get('/search', async (c) => {
+  const user = c.get('user');
+  const q = String(c.req.query('q') || '').trim();
+  if (!q) return c.json({ tasks: [], projects: [], users: [] });
   const like = `%${q}%`;
-  const vis = taskVisibilitySql(req.user);
-  const pv = projectVisibility(req.user);
-  res.json({
-    tasks: all(`SELECT t.id, t.title, t.status, p.name AS project_name FROM tasks t LEFT JOIN projects p ON p.id = t.project_id
+  const vis = taskVisibilitySql(user);
+  const pv = projectVisibility(user);
+  return c.json({
+    tasks: await all(`SELECT t.id, t.title, t.status, p.name AS project_name FROM tasks t LEFT JOIN projects p ON p.id = t.project_id
       WHERE ${vis.sql} AND t.title LIKE ? ORDER BY t.updated_at DESC LIMIT 8`, ...vis.params, like),
-    projects: all(`SELECT p.id, p.name, p.kind, p.color FROM projects p WHERE ${pv.sql} AND p.is_template = 0 AND p.name LIKE ? LIMIT 5`, ...pv.params, like),
-    users: all('SELECT id, name, color, title FROM users WHERE active = 1 AND name LIKE ? LIMIT 5', like),
+    projects: await all(`SELECT p.id, p.name, p.kind, p.color FROM projects p WHERE ${pv.sql} AND p.is_template = 0 AND p.name LIKE ? LIMIT 5`, ...pv.params, like),
+    users: await all('SELECT id, name, color, title FROM users WHERE active = 1 AND name LIKE ? LIMIT 5', like),
   });
 });
 

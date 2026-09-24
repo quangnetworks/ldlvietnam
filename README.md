@@ -29,10 +29,16 @@ Webapp nội bộ gồm 2 phân hệ, giao diện và chức năng mô phỏng *
 - **Quản trị** (`/admin`): người dùng, phân quyền, quản lý trực tiếp, phòng ban, tên công ty; tùy chỉnh loại văn bản / kho / thư mục.
 
 ## Công nghệ
-- **Backend**: Node.js ≥ 22.5, Express 5, SQLite (`node:sqlite` tích hợp sẵn — không cần cài CSDL), JWT cookie, Multer upload.
+- **Backend**: [Hono](https://hono.dev) — cùng một mã nguồn chạy trên **Cloudflare Workers** (D1 + R2) hoặc **Node.js ≥ 22.5** (SQLite tích hợp `node:sqlite` + thư mục tệp).
 - **Frontend**: React 19 + Vite, React Router, lucide-react.
+- Mật khẩu băm PBKDF2-SHA256 (Web Crypto), phiên đăng nhập JWT trong cookie HttpOnly.
 
-## Chạy thử
+## Deploy lên Cloudflare
+
+Xem **[DEPLOY.md](DEPLOY.md)** — chỉ cần thêm 2 secret (`CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`) vào GitHub,
+workflow sẽ tự tạo D1, R2, dữ liệu ban đầu và deploy.
+
+## Chạy trên máy (Node.js)
 
 ```bash
 npm run install:all   # cài phụ thuộc cho server và client
@@ -47,4 +53,4 @@ Phát triển (hot reload): `npm run dev:server` và `npm run dev:client` (mở 
 
 Tạo lại dữ liệu mẫu: `npm run seed`. Kiểm thử API: `npm test`.
 
-Biến môi trường: `PORT` (mặc định 4000), `DATA_DIR` (thư mục CSDL & tệp tải lên, mặc định `server/data`), `JWT_SECRET`.
+Biến môi trường (Node): `PORT` (mặc định 4000), `DATA_DIR` (CSDL & tệp tải lên, mặc định `server/data`), `JWT_SECRET`.

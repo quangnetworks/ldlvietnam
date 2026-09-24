@@ -3,21 +3,24 @@
   "version": "1.0.0",
   "private": true,
   "type": "module",
-  "main": "src/index.js",
+  "main": "src/node.js",
   "engines": {
     "node": ">=22.5"
   },
   "scripts": {
-    "start": "node --no-warnings=ExperimentalWarning src/index.js",
-    "dev": "node --no-warnings=ExperimentalWarning --watch src/index.js",
-    "seed": "node --no-warnings=ExperimentalWarning src/seed.js --reset",
-    "test": "node --no-warnings=ExperimentalWarning --test test/*.test.js"
+    "start": "node --no-warnings=ExperimentalWarning src/node.js",
+    "dev": "node --no-warnings=ExperimentalWarning --watch src/node.js",
+    "seed": "node --no-warnings=ExperimentalWarning src/node.js --seed",
+    "seed:sql": "node src/seed.js --sql",
+    "test": "node --no-warnings=ExperimentalWarning --test test/*.test.js",
+    "cf:dev": "npm --prefix ../client run build && wrangler dev",
+    "cf:deploy": "npm --prefix ../client run build && wrangler deploy"
   },
   "dependencies": {
-    "bcryptjs": "^3.0.3",
-    "cookie-parser": "^1.4.7",
-    "express": "^5.2.1",
-    "jsonwebtoken": "^9.0.3",
-    "multer": "^2.4.0"
+    "@hono/node-server": "^2.1.1",
+    "hono": "^4.13.8"
+  },
+  "devDependencies": {
+    "wrangler": "^4.137.0"
   }
 }

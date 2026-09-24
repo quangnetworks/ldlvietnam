@@ -8,19 +8,17 @@ const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'ldl-test-'));
 process.env.DATA_DIR = tmp;
 process.env.JWT_SECRET = 'test-secret';
 
-const { createApp } = await import('../src/index.js');
-const { seed } = await import('../src/seed.js');
+const { initNode } = await import('../src/node.js');
+const { createApp } = await import('../src/app.js');
 
-let server;
-let base;
+let app;
+const base = 'http://test.local/api';
+const fetch = (url, opts) => app.fetch(new Request(url, opts));
 before(async () => {
-  seed({ reset: true });
-  server = createApp().listen(0);
-  await new Promise((r) => server.once('listening', r));
-  base = `http://127.0.0.1:${server.address().port}/api`;
+  await initNode({ dataDir: tmp, reset: true });
+  app = createApp();
 });
 after(() => {
-  server.close();
   fs.rmSync(tmp, { recursive: true, force: true });
 });
 
@@ -184,4 +182,21 @@ test('admin-only endpoints are protected', async () => {
   const u = await admin.post('/users', { username: 'newbie', password: '123456', name: 'Nhân viên mới' });
   assert.equal(u.status, 201);
   await login('newbie');
+});
+
+test('attachments: unicode names kept, unsafe types never rendered inline', async () => {
+  const hr = await login('chilan');
+  const fd = new FormData();
+  fd.append('title', 'Có tệp đính kèm');
+  fd.append('files', new Blob(['<script>alert(1)</script>'], { type: 'text/html' }), 'trang.html');
+  fd.append('files', new Blob(['%PDF-1.4'], { type: 'application/pdf' }), 'Biên bản.pdf');
+  const { data: doc } = await hr.post('/documents', fd);
+  const [html, pdf] = doc.attachments;
+  assert.equal(pdf.original_name, 'Biên bản.pdf');
+  const token = (await (await fetch(`${base}/auth/login`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username: 'chilan', password: '123456' }) })).json()).token;
+  const res = await fetch(`${base}/documents/${doc.id}/attachments/${html.id}?inline=1`, { headers: { Authorization: `Bearer ${token}` } });
+  assert.match(res.headers.get('content-disposition'), /^attachment/);
+  assert.match(res.headers.get('content-security-policy'), /sandbox/);
+  const res2 = await fetch(`${base}/documents/${doc.id}/attachments/${pdf.id}?inline=1`, { headers: { Authorization: `Bearer ${token}` } });
+  assert.match(res2.headers.get('content-disposition'), /^inline/);
 });
