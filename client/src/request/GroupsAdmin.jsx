@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
-import { Search, ChevronDown, Pencil, Plus, Trash2, ArrowUp, ArrowDown, User, Users, Copy, BookOpen, Upload, FileText, Workflow } from 'lucide-react';
+import { Search, ChevronDown, Pencil, Plus, Trash2, ArrowUp, ArrowDown, User, Users, Copy, BookOpen, Upload, FileText, Workflow, Printer } from 'lucide-react';
 import { api, toFormData } from '../api.js';
 import { useApp, useFetch, useToast } from '../context.jsx';
 import { Field, UserPicker, Spinner, Dropdown, MenuItem, Empty, Avatar, Modal, RichEditor, FileChip } from '../components/ui.jsx';
@@ -286,16 +286,50 @@ export function GroupEditor() {
           </div>
           <div className="card">
             <h3 className="card-title">Quy trình duyệt</h3>
+            <div className="stage-setup">
+              <div className="stage-setup-row">
+                <span className="stage-no">1</span>
+                <div className="grow">
+                  <label className="check"><input type="checkbox" checked={!!g.manager_approval} onChange={set('manager_approval')} /> <b>Quản lý trực tiếp duyệt trước</b></label>
+                  <small className="muted block">Nhân viên gửi đề xuất → quản lý trực tiếp (hoặc trưởng phòng nếu chưa có quản lý) duyệt trước khi chuyển các phòng ban. Người không có cấp trên bỏ qua bước này.</small>
+                </div>
+              </div>
+              <div className="stage-setup-row">
+                <span className="stage-no">2</span>
+                <div className="grow">
+                  <b>Phòng ban / người duyệt liên quan</b>
+                  <small className="muted block">Duyệt lần lượt theo thứ tự bên dưới (ví dụ: Kế toán → Hành chính).</small>
+                </div>
+              </div>
+              <div className="stage-setup-row">
+                <span className="stage-no">3</span>
+                <div className="grow">
+                  <b>Người duyệt cuối cùng</b>
+                  <UserPicker users={users} value={g.final_approver_id || null} onChange={set('final_approver_id')} placeholder="Không có (tuỳ chọn) — ví dụ: Giám đốc" />
+                </div>
+              </div>
+              {(g.manager_approval || g.final_approver_id) && <small className="muted">Nhóm có luồng theo chặng luôn duyệt lần lượt: 1 → 2 → 3.</small>}
+            </div>
             <div className="seg-choice">
               <label className={cx(g.flow === 'sequential' && 'on')}><input type="radio" checked={g.flow === 'sequential'} onChange={() => setG({ ...g, flow: 'sequential' })} />
                 <b><Users size={14} /> Duyệt lần lượt</b><small className="muted">Từng người duyệt theo thứ tự; tất cả đồng ý mới được chấp thuận.</small></label>
               <label className={cx(g.flow === 'any' && 'on')}><input type="radio" checked={g.flow === 'any'} onChange={() => setG({ ...g, flow: 'any' })} />
                 <b><User size={14} /> Chỉ cần một người duyệt</b><small className="muted">Một trong các người duyệt đồng ý là đề xuất được chấp thuận.</small></label>
             </div>
-            <Field label="Người duyệt mặc định (theo thứ tự)"><UserPicker users={users} multiple value={g.approvers} onChange={set('approvers')} placeholder="Chọn người duyệt" /></Field>
+            <Field label={g.manager_approval || g.final_approver_id ? 'Chặng 2 — Người duyệt phòng ban liên quan (theo thứ tự)' : 'Người duyệt mặc định (theo thứ tự)'}><UserPicker users={users} multiple value={g.approvers} onChange={set('approvers')} placeholder="Chọn người duyệt" /></Field>
             <label className="check mt"><input type="checkbox" checked={g.custom_approvers} onChange={set('custom_approvers')} /> Cho phép người tạo chọn / thêm người duyệt</label>
             <h3 className="card-title">Người theo dõi mặc định</h3>
             <UserPicker users={users} multiple value={g.followers} onChange={set('followers')} placeholder="Ví dụ: kế toán, HCNS" />
+          </div>
+          <div className="card">
+            <h3 className="card-title"><Printer size={16} /> Mẫu in (bản cứng / PDF)</h3>
+            <p className="muted small">Mỗi đề xuất in ra theo mẫu: tiêu đề, mã biểu mẫu, thông tin người đề nghị, các trường đã điền, thời gian gửi
+              và bảng phê duyệt theo luồng (dấu ✓, người duyệt, thời gian, ý kiến) kèm ô ký xác nhận.</p>
+            <div className="form-grid">
+              <div className="span-2"><Field label="Tiêu đề trên phiếu in" hint="Để trống: dùng tên nhóm đề xuất"><input className="input" value={g.print_title || ''} onChange={set('print_title')} placeholder="VD: GIẤY ĐỀ NGHỊ TẠM ỨNG" /></Field></div>
+              <Field label="Mã biểu mẫu"><input className="input" value={g.print_code || ''} onChange={set('print_code')} placeholder="VD: BM-KT-01" /></Field>
+              <div className="span-2"><Field label="Ghi chú / cam kết cuối phiếu"><textarea className="input" rows={2} value={g.print_note || ''} onChange={set('print_note')} placeholder="VD: Tôi cam kết hoàn ứng trong vòng 07 ngày kể từ ngày hoàn thành công việc." /></Field></div>
+            </div>
           </div>
           <div className="card">
             <h3 className="card-title">Xem trước biểu mẫu</h3>

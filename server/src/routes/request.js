@@ -180,7 +180,12 @@ async function fullRequest(id, user) {
   const raw = await get('SELECT content, data FROM requests WHERE id = ?', id);
   q.content = raw.content;
   q.data = parseJson(raw.data, {});
-  const group = q.group_id ? await get('SELECT id, name, fields, custom_approvers, sla_hours, guide FROM request_groups WHERE id = ?', q.group_id) : null;
+  const group = q.group_id ? await get(`SELECT id, name, fields, custom_approvers, sla_hours, guide, manager_approval, final_approver_id,
+    print_title, print_code, print_note FROM request_groups WHERE id = ?`, q.group_id) : null;
+  const extra = await get('SELECT submitted_at FROM requests WHERE id = ?', id);
+  q.submitted_at = extra?.submitted_at || null;
+  q.print = group ? { title: group.print_title || null, code: group.print_code || null, note: group.print_note || null } : {};
+  q.staged_flow = group ? staged(group) : false;
   q.fields = group ? parseJson(group.fields, []) : [];
   // biểu mẫu / quy trình của nhóm đề xuất để người làm & người duyệt đối chiếu
   q.group_guide = group?.guide || null;
@@ -238,22 +243,50 @@ function deadlineFrom(slaHours) {
   return new Date(Date.now() + slaHours * 3600 * 1000).toISOString().replace('T', ' ').slice(0, 19);
 }
 
-async function approverPlan(group, extra) {
-  const fixed = await all('SELECT user_id, step FROM request_group_approvers WHERE group_id = ? ORDER BY step', group.id);
-  const plan = fixed.map((a) => ({ user_id: a.user_id, step: a.step }));
-  if (group.custom_approvers) {
-    let step = plan.reduce((m, a) => Math.max(m, a.step), 0);
-    for (const uid of extra) if (!plan.some((a) => a.user_id === uid)) plan.push({ user_id: uid, step: ++step });
-  }
+/** Quản lý trực tiếp của người tạo; không có thì trưởng phòng ban chính (khác chính họ). */
+async function directManagerOf(userId) {
+  const u = await get('SELECT id, manager_id, department_id FROM users WHERE id = ?', userId);
+  if (!u) return null;
+  if (u.manager_id && u.manager_id !== u.id) return u.manager_id;
+  const d = u.department_id ? await get('SELECT head_id FROM departments WHERE id = ?', u.department_id) : null;
+  return d?.head_id && d.head_id !== u.id ? d.head_id : null;
+}
+
+/** Nhóm có luồng duyệt theo chặng (quản lý trực tiếp / người duyệt cuối) → luôn duyệt lần lượt. */
+const staged = (group) => !!(group.manager_approval || group.final_approver_id);
+
+/**
+ * Kế hoạch duyệt theo 3 chặng:
+ *  1. Quản lý trực tiếp của người tạo (nếu nhóm bật "Quản lý trực tiếp duyệt trước"; người không có cấp trên thì bỏ qua)
+ *  2. Phòng ban / người duyệt liên quan: người duyệt mặc định của nhóm (theo thứ tự) + người tạo tự thêm (nếu nhóm cho phép)
+ *  3. Người duyệt cuối cùng (nếu nhóm có cấu hình)
+ * Mỗi người chỉ xuất hiện một lần; người tạo không tự duyệt ở chặng 1 và 3.
+ */
+async function approverPlan(group, extra, creatorId) {
+  const plan = [];
+  const used = new Set();
+  const add = (uid, stage) => {
+    if (!uid || used.has(uid)) return;
+    used.add(uid);
+    plan.push({ user_id: uid, step: plan.length + 1, stage });
+  };
+  const final = group.final_approver_id && group.final_approver_id !== creatorId ? group.final_approver_id : null;
+  if (final) used.add(final); // giữ chỗ cho chặng cuối
+  if (group.manager_approval) add(await directManagerOf(creatorId), 'manager');
+  const fixed = await all('SELECT user_id FROM request_group_approvers WHERE group_id = ? ORDER BY step', group.id);
+  for (const a of fixed) add(a.user_id, 'dept');
+  if (group.custom_approvers) for (const uid of extra) add(uid, 'dept');
+  if (final) { used.delete(final); add(final, 'final'); }
   return plan;
 }
+const planRows = (id, plan) => plan.map((a) => ['INSERT INTO request_approvers(request_id, user_id, step, stage) VALUES (?,?,?,?)', [id, a.user_id, a.step, a.stage]]);
 
 /** Start (or restart) the approval flow and notify whoever acts first. */
 async function startFlow(id, user) {
   const q = await get('SELECT * FROM requests WHERE id = ?', id);
   const group = q.group_id ? await get('SELECT sla_hours FROM request_groups WHERE id = ?', q.group_id) : null;
   await run("UPDATE request_approvers SET status = 'pending', comment = NULL, acted_at = NULL WHERE request_id = ?", id);
-  await run("UPDATE requests SET status = 'pending', deadline_at = ?, completed_at = NULL, updated_at = datetime('now') WHERE id = ?",
+  await run("UPDATE requests SET status = 'pending', deadline_at = ?, completed_at = NULL, submitted_at = datetime('now'), updated_at = datetime('now') WHERE id = ?",
     deadlineFrom(group?.sla_hours), id);
   await notifyCurrent(id, user, `${user.name} gửi đề xuất "${q.title}" cần bạn duyệt`);
 }
@@ -283,14 +316,14 @@ r.post('/requests', async (c) => {
   const draft = truthy(b.draft);
   const title = String(b.title || '').trim() || group.name;
   const data = validateData(parseJson(group.fields, []), parseJson(b.data || '{}', {}), !draft);
-  const plan = await approverPlan(group, idList(b.approvers).filter((x) => x !== user.id || isAdmin(user)));
+  const plan = await approverPlan(group, idList(b.approvers).filter((x) => x !== user.id || isAdmin(user)), user.id);
   if (!draft && !plan.length) throw badRequest('Đề xuất cần ít nhất một người duyệt');
   const { lastId: id } = await run(`INSERT INTO requests(group_id, title, content, data, flow, creator_id, status) VALUES (?,?,?,?,?,?, 'draft')`,
-    group.id, title.slice(0, 300), b.content || null, JSON.stringify(data), group.flow, user.id);
+    group.id, title.slice(0, 300), b.content || null, JSON.stringify(data), staged(group) ? 'sequential' : group.flow, user.id);
   const groupFollowers = (await all('SELECT user_id FROM request_group_followers WHERE group_id = ?', group.id)).map((x) => x.user_id);
   const followers = [...new Set([...groupFollowers, ...idList(b.followers)])];
   await batch([
-    ...plan.map((a) => ['INSERT INTO request_approvers(request_id, user_id, step) VALUES (?,?,?)', [id, a.user_id, a.step]]),
+    ...planRows(id, plan),
     ...followers.map((f) => ['INSERT OR IGNORE INTO request_followers(request_id, user_id) VALUES (?,?)', [id, f]]),
   ]);
   await saveFiles(id, files, user.id);
@@ -316,10 +349,10 @@ r.put('/requests/:id', async (c) => {
   await run("UPDATE requests SET title = ?, content = ?, data = ?, updated_at = datetime('now') WHERE id = ?",
     String(b.title || '').trim().slice(0, 300) || q.title, b.content || null, JSON.stringify(data), q.id);
   if (group && b.approvers !== undefined) {
-    const plan = await approverPlan(group, idList(b.approvers));
+    const plan = await approverPlan(group, idList(b.approvers), q.creator_id);
     await batch([
       ['DELETE FROM request_approvers WHERE request_id = ?', [q.id]],
-      ...plan.map((a) => ['INSERT INTO request_approvers(request_id, user_id, step) VALUES (?,?,?)', [q.id, a.user_id, a.step]]),
+      ...planRows(q.id, plan),
     ]);
   }
   if (b.followers !== undefined) {
@@ -507,11 +540,27 @@ r.get('/request-groups/:id', async (c) => {
   g.fields = parseJson(g.fields, []);
   g.active = !!g.active;
   g.custom_approvers = !!g.custom_approvers;
+  g.manager_approval = !!g.manager_approval;
+  g.final_approver = g.final_approver_id ? await get('SELECT id, name, title FROM users WHERE id = ?', g.final_approver_id) : null;
   g.approvers = await all(`SELECT a.user_id, a.step, u.name, u.color, u.title FROM request_group_approvers a JOIN users u ON u.id = a.user_id
     WHERE a.group_id = ? ORDER BY a.step`, g.id);
   g.followers = await all(`SELECT f.user_id, u.name, u.color FROM request_group_followers f JOIN users u ON u.id = f.user_id WHERE f.group_id = ?`, g.id);
   g.files = await groupFiles(g.id);
   return c.json(g);
+});
+
+/** Xem trước luồng duyệt 3 chặng của nhóm cho người đang tạo đề xuất (quản lý trực tiếp của họ, phòng ban, người duyệt cuối). */
+r.get('/request-groups/:id/plan', async (c) => {
+  const g = await get('SELECT * FROM request_groups WHERE id = ?', toInt(c.req.param('id')));
+  if (!g) throw notFound('Nhóm đề xuất không tồn tại');
+  const user = c.get('user');
+  const plan = await approverPlan(g, idList(c.req.query('extra')), user.id);
+  const ids = plan.map((p) => p.user_id);
+  const users = ids.length ? await all(`SELECT id, name, color, title FROM users WHERE id IN (${ids.map(() => '?').join(',')})`, ...ids) : [];
+  const byId = Object.fromEntries(users.map((u) => [u.id, u]));
+  return c.json({ staged: staged(g), flow: staged(g) ? 'sequential' : g.flow, manager_approval: !!g.manager_approval,
+    no_manager: !!g.manager_approval && !plan.some((p) => p.stage === 'manager'),
+    steps: plan.map((p) => ({ ...p, ...byId[p.user_id] })) });
 });
 
 // ---------------- biểu mẫu & quy trình của nhóm đề xuất (quản trị viên tải lên, mọi người xem / tải về)
@@ -569,7 +618,16 @@ function parseGroup(b) {
     fields: JSON.stringify(fields), flow: b.flow === 'any' ? 'any' : 'sequential',
     custom_approvers: b.custom_approvers === false ? 0 : 1, sla_hours: sla && sla > 0 ? sla : null,
     active: b.active === false ? 0 : 1, approvers: idList(b.approvers), followers: idList(b.followers),
+    manager_approval: b.manager_approval ? 1 : 0, final_approver_id: toInt(b.final_approver_id) || null,
+    print_title: String(b.print_title || '').trim().slice(0, 200) || null, print_code: String(b.print_code || '').trim().slice(0, 50) || null,
+    print_note: String(b.print_note || '').trim().slice(0, 2000) || null,
   };
+}
+
+/** Luồng duyệt theo chặng + mẫu in. */
+function saveGroupExtras(id, g) {
+  return run(`UPDATE request_groups SET manager_approval = ?, final_approver_id = ?, print_title = ?, print_code = ?, print_note = ? WHERE id = ?`,
+    g.manager_approval, g.final_approver_id, g.print_title, g.print_code, g.print_note, id);
 }
 
 async function saveGroupRelations(id, g) {
@@ -585,6 +643,7 @@ r.post('/request-groups', requireAdmin, async (c) => {
   const g = parseGroup(await jsonBody(c));
   const { lastId } = await run(`INSERT INTO request_groups(name, description, category, fields, flow, custom_approvers, sla_hours, active, created_by, guide)
     VALUES (?,?,?,?,?,?,?,?,?,?)`, g.name, g.description, g.category, g.fields, g.flow, g.custom_approvers, g.sla_hours, g.active, c.get('user').id, g.guide);
+  await saveGroupExtras(lastId, g);
   await saveGroupRelations(lastId, g);
   await logActivity('request_group', lastId, c.get('user').id, 'created', `Tạo nhóm đề xuất "${g.name}"`);
   return c.json({ id: lastId }, 201);
@@ -596,6 +655,7 @@ r.put('/request-groups/:id', requireAdmin, async (c) => {
   const g = parseGroup(await jsonBody(c));
   await run(`UPDATE request_groups SET name = ?, description = ?, category = ?, fields = ?, flow = ?, custom_approvers = ?, sla_hours = ?,
     active = ?, guide = ?, updated_at = datetime('now') WHERE id = ?`, g.name, g.description, g.category, g.fields, g.flow, g.custom_approvers, g.sla_hours, g.active, g.guide, id);
+  await saveGroupExtras(id, g);
   await saveGroupRelations(id, g);
   await logActivity('request_group', id, c.get('user').id, 'updated', `Cập nhật nhóm đề xuất "${g.name}"`);
   return c.json({ id });

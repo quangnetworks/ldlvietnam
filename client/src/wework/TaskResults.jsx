@@ -142,7 +142,7 @@ export default function TaskResults({ task, onChanged }) {
       )}
       <div className="res-list">
         {list.map((r) => {
-          const mine = r.user_id === user.id || user.role === 'admin';
+          const mine = (r.user_id === user.id || user.role === 'admin') && !task.locked;
           if (editing === r.id) {
             return <ResultForm key={r.id} taskId={task.id} initial={r} onDone={() => { setEditing(null); changed(); }} onCancel={() => setEditing(null)} />;
           }

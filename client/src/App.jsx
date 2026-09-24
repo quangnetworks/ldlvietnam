@@ -30,6 +30,7 @@ import RequestForm from './request/RequestForm.jsx';
 import RequestDetail from './request/RequestDetail.jsx';
 import { GroupsAdmin, GroupEditor, TemplatesPage, GroupHistory, RequestGuide } from './request/GroupsAdmin.jsx';
 import RequestReports from './request/RequestReports.jsx';
+import RequestPrint from './request/RequestPrint.jsx';
 import { useApp as useAppCtx } from './context.jsx';
 import { TwoFactorPage, SecuritySettingsPage } from './account/SecurityPages.jsx';
 import { WebhooksPage } from './request/Webhooks.jsx';
@@ -137,6 +138,7 @@ export default function App() {
         <Route path="2fa" element={<TwoFactorPage />} />
         <Route path="security" element={<SecuritySettingsPage />} />
       </Route>
+      <Route path="/request/:id/print" element={<RequireApp app="request"><RequestPrint /></RequireApp>} />
       <Route path="/request" element={<RequireApp app="request"><RequestLayout /></RequireApp>}>
         <Route index element={<RequestList />} />
         <Route path="new" element={<RequestForm />} />

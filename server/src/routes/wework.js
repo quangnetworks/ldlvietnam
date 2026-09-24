@@ -94,6 +94,36 @@ async function checkOwnerFields(user, t, data) {
   }
 }
 
+// ---------------- duyệt hoàn thành (Tài khoản → Phòng ban → "Công việc cần quản lý duyệt hoàn thành")
+/** Công việc của người thuộc (một trong) các phòng ban bật duyệt hoàn thành. */
+async function needsApproval(t) {
+  if (!t.assignee_id) return false;
+  return !!(await get(`SELECT 1 FROM departments d JOIN users u ON u.id = ?
+    WHERE d.task_approval = 1 AND ${inDeptSql('u', 'd.id')}`, t.assignee_id));
+}
+/**
+ * Cấp quản lý được duyệt hoàn thành: quản lý trực tiếp của người thực hiện, trưởng phòng ban của họ,
+ * quản lý dự án, người giao việc (khác người thực hiện). Không có ai → người thực hiện tự hoàn thành.
+ */
+async function taskApprovers(t) {
+  const ids = new Set();
+  const a = t.assignee_id ? await get('SELECT id, manager_id FROM users WHERE id = ?', t.assignee_id) : null;
+  if (a?.manager_id) ids.add(a.manager_id);
+  if (a) for (const d of await all(`SELECT d.head_id FROM departments d JOIN users u ON u.id = ? WHERE d.head_id IS NOT NULL AND ${inDeptSql('u', 'd.id')}`, a.id)) ids.add(d.head_id);
+  if (t.project_id) {
+    for (const m of await all(`SELECT owner_id AS id FROM projects WHERE id = ? AND owner_id IS NOT NULL
+      UNION SELECT user_id FROM project_members WHERE project_id = ? AND role = 'manager'`, t.project_id, t.project_id)) ids.add(m.id);
+  }
+  if (t.creator_id) ids.add(t.creator_id);
+  ids.delete(t.assignee_id);
+  return [...ids];
+}
+async function canApproveTask(user, t) {
+  if (isAdmin(user)) return true;
+  const list = await taskApprovers(t);
+  return list.includes(user.id) || (!list.length && t.assignee_id === user.id);
+}
+
 /**
  * Quyền giao việc: quản trị viên giao cho mọi người; ai cũng tự giao cho mình;
  * quản lý trực tiếp giao cho nhân viên mình quản lý (kể cả cấp dưới gián tiếp); trưởng phòng giao cho nhân sự trong phòng ban;
@@ -587,6 +617,16 @@ async function fullTask(id, user) {
   // người chỉ được giao việc: không đổi thời gian, mô tả, dự án, lặp lại, không xoá
   t.can_manage = await isTaskOwner(user, t);
   t.can_delete = await canDeleteTask(user, t);
+  // duyệt hoàn thành & khoá sau khi hoàn thành
+  t.requires_approval = await needsApproval(t);
+  t.can_approve = await canApproveTask(user, t);
+  t.locked = t.status === 'done';
+  t.can_reopen = t.locked && (t.requires_approval ? t.can_approve : t.can_edit);
+  if (t.requires_approval) {
+    const ids = await taskApprovers(t);
+    t.approvers = ids.length ? await all(`SELECT id, name, color FROM users WHERE id IN (${ids.map(() => '?').join(',')}) ORDER BY name`, ...ids) : [];
+  }
+  if (t.locked) { t.can_edit = false; t.can_contribute = false; }
   return t;
 }
 
@@ -688,6 +728,20 @@ function shiftDate(value, recurring) {
 
 async function applyTaskUpdate(user, t, data) {
   if (!Object.keys(data).length) return;
+  // Đã hoàn thành: khoá — chỉ bình luận; người có quyền duyệt / quản lý được "Mở lại" (đổi trạng thái)
+  if (t.status === 'done') {
+    const others = Object.keys(data).filter((k) => k !== 'status' && k !== 'position' && String(data[k] ?? '') !== String(t[k] ?? ''));
+    if (others.length || data.status === undefined || data.status === 'done') {
+      if (others.length) throw forbidden('Công việc đã hoàn thành — chỉ được bình luận. Cần "Mở lại" để cập nhật.');
+      return;
+    }
+    const can = (await needsApproval(t)) ? await canApproveTask(user, t) : await canEditTask(user, t);
+    if (!can) throw forbidden('Chỉ cấp quản lý mới được mở lại công việc đã hoàn thành');
+  }
+  // Phòng ban bật duyệt hoàn thành: nhân viên chọn "Hoàn thành" → chuyển sang "Chờ đánh giá" để quản lý duyệt
+  if (data.status === 'done' && t.status !== 'done' && (await needsApproval(t)) && !(await canApproveTask(user, t))) {
+    data.status = 'review';
+  }
   if (data.goal_id && !(await get('SELECT 1 FROM goals WHERE id = ?', data.goal_id))) throw badRequest('Mục tiêu không tồn tại');
   await checkOwnerFields(user, t, data);
   if (data.assignee_id !== undefined && data.assignee_id !== t.assignee_id) {
@@ -713,6 +767,10 @@ async function applyTaskUpdate(user, t, data) {
   await run(`UPDATE tasks SET ${sets.join(', ')}, updated_at = datetime('now') WHERE id = ?`, ...vals, t.id);
 
   const changes = [];
+  if (statusChanged && data.status === 'review' && (await needsApproval(t))) {
+    await notify(await taskApprovers(t), { actorId: user.id, app: APP, type: 'approval',
+      title: `${user.name} đã gửi duyệt hoàn thành công việc "${t.title}"`, link: `/wework/task/${t.id}` });
+  }
   if (statusChanged) {
     changes.push(`Trạng thái: ${STATUS_LABEL[t.status]} → ${STATUS_LABEL[data.status]}`);
     const watchers = (await all('SELECT user_id FROM task_followers WHERE task_id = ?', t.id)).map((x) => x.user_id);
@@ -821,12 +879,40 @@ const toggleTask = (table) => async (c) => {
 r.post('/tasks/:id/star', toggleTask('task_stars'));
 r.post('/tasks/:id/follow', toggleTask('task_followers'));
 
+/** Cấp quản lý duyệt hoàn thành (approve → Hoàn thành) hoặc trả lại (reject → Đang làm, kèm lý do). */
+r.post('/tasks/:id/review', async (c) => {
+  const user = c.get('user');
+  const t = await viewableTask(c);
+  if (!(await canApproveTask(user, t))) throw forbidden('Chỉ cấp quản lý mới được duyệt hoàn thành công việc này');
+  if (t.status === 'done') throw badRequest('Công việc đã hoàn thành');
+  const b = await jsonBody(c);
+  const comment = String(b.comment || '').trim().slice(0, 2000);
+  if (b.decision === 'approve') {
+    await applyTaskUpdate(user, t, { status: 'done' });
+    await logActivity('task', t.id, user.id, 'approved', `Duyệt hoàn thành${comment ? `: ${comment}` : ''}`);
+  } else if (b.decision === 'reject') {
+    if (!comment) throw badRequest('Vui lòng nhập lý do trả lại');
+    await applyTaskUpdate(user, t, { status: 'doing' });
+    await run('INSERT INTO task_comments(task_id, user_id, content) VALUES (?,?,?)', t.id, user.id, `↩ Trả lại, chưa duyệt hoàn thành: ${comment}`);
+    await logActivity('task', t.id, user.id, 'returned', `Trả lại: ${comment}`);
+    await notify(t.assignee_id, { actorId: user.id, app: APP, type: 'approval',
+      title: `${user.name} trả lại công việc "${t.title}": ${comment.slice(0, 80)}`, link: `/wework/task/${t.id}` });
+  } else throw badRequest('Quyết định không hợp lệ');
+  return c.json(await fullTask(t.id, user));
+});
+
+/** Công việc đã hoàn thành: không thêm / sửa checklist, tệp, kết quả (chỉ bình luận). */
+function assertNotLocked(t) {
+  if (t.status === 'done') throw forbidden('Công việc đã hoàn thành — chỉ được bình luận. Cần "Mở lại" để cập nhật.');
+}
+
 // ---------------- checklist
 const checklist = (id) => all('SELECT * FROM task_checklist WHERE task_id = ? ORDER BY position, id', id);
 
 async function editableTask(c) {
   const t = await viewableTask(c);
   if (!(await canEditTask(c.get('user'), t))) throw forbidden();
+  assertNotLocked(t);
   return t;
 }
 
@@ -896,6 +982,7 @@ r.get('/tasks/:id/activity', async (c) => {
 r.post('/tasks/:id/attachments', async (c) => {
   const user = c.get('user');
   const t = await viewableTask(c);
+  assertNotLocked(t);
   const { files } = await formBody(c);
   const stored = await storeFiles(files);
   await batch(stored.map((f) => [
@@ -917,6 +1004,7 @@ r.delete('/tasks/:id/attachments/:aid', async (c) => {
   const a = await get('SELECT * FROM task_attachments WHERE id = ? AND task_id = ?', toInt(c.req.param('aid')), t.id);
   if (!a) throw notFound();
   if (a.user_id !== user.id && !(await canEditTask(user, t))) throw forbidden();
+  assertNotLocked(t);
   await run('DELETE FROM task_attachments WHERE id = ?', a.id);
   await removeFile(a.filename);
   return c.json({ ok: true });
@@ -971,6 +1059,7 @@ async function editableResult(c) {
   if (res.user_id !== user.id && !isAdmin(user) && (await projectRole(user, t.project_id)) !== 'manager') {
     throw forbidden('Chỉ người cập nhật kết quả hoặc quản lý mới được sửa / xoá');
   }
+  assertNotLocked(t);
   return { t, res };
 }
 
@@ -983,6 +1072,7 @@ r.post('/tasks/:id/results', async (c) => {
   const user = c.get('user');
   const t = await viewableTask(c);
   if (!(await canContribute(user, t))) throw forbidden('Chỉ người thực hiện, người phối hợp / theo dõi, người giao việc hoặc quản lý dự án mới cập nhật được kết quả');
+  assertNotLocked(t);
   const { fields, files } = await formBody(c);
   const content = blankHtml(fields.content) ? null : String(fields.content);
   const links = parseLinks(fields.links);

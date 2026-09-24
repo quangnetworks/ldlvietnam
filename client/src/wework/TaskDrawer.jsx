@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
   X, Star, Eye, Trash2, Link2, Paperclip, Plus, CheckSquare, GitBranch, Calendar, User, Flag, Repeat, FolderKanban,
-  MessageSquare, History, Download, Target,
+  MessageSquare, History, Download, Target, CheckCircle2, RotateCcw, ShieldCheck, Undo2, Send,
 } from 'lucide-react';
 import { api, toFormData } from '../api.js';
 import { useApp, useFetch, useToast } from '../context.jsx';
@@ -96,15 +96,32 @@ export function TaskDetail({ id, onClose, onChanged, standalone }) {
       toast(e.message, 'error');
     }
   };
+  // Phòng ban bật duyệt hoàn thành: nhân viên chọn "Hoàn thành" → máy chủ chuyển sang "Chờ đánh giá" cho quản lý duyệt
+  const needApprove = t.requires_approval && !t.can_approve;
+  const setStatus = (s) => update({ status: s }, s === 'done' ? (needApprove ? 'Đã gửi quản lý duyệt hoàn thành' : 'Đã hoàn thành công việc') : null);
+  const review = async (decision) => {
+    let comment = '';
+    if (decision === 'reject') {
+      comment = window.prompt('Lý do trả lại (nhân viên sẽ nhận được thông báo):', '') || '';
+      if (!comment.trim()) return;
+    }
+    try {
+      await api.post(`/tasks/${id}/review`, { decision, comment });
+      toast(decision === 'approve' ? 'Đã duyệt hoàn thành công việc' : 'Đã trả lại công việc');
+      reload(); reloadActivity(); reloadComments(); onChanged?.();
+    } catch (e) { toast(e.message, 'error'); }
+  };
   const checklistPct = t.checklist.length ? Math.round((t.checklist.filter((c) => c.done).length / t.checklist.length) * 100) : 0;
 
   return (
     <div className="task-detail">
       <div className="td-head">
-        <StatusCircle task={t} size={30} onChange={(s) => update({ status: s }, s === 'done' ? 'Đã hoàn thành công việc' : null)} />
-        <select className="status-select" disabled={ro} value={t.status} onChange={(e) => update({ status: e.target.value })}
+        <StatusCircle task={t} size={30} onChange={(s) => (t.locked ? null : setStatus(s))} />
+        <select className="status-select" disabled={ro} value={t.status} onChange={(e) => setStatus(e.target.value)}
           style={{ color: TASK_STATUS[t.status].color, borderColor: TASK_STATUS[t.status].color }}>
-          {Object.entries(TASK_STATUS).map(([k, s]) => <option key={k} value={k}>{s.label}</option>)}
+          {Object.entries(TASK_STATUS).map(([k, s]) => (
+            <option key={k} value={k} disabled={k === 'done' && needApprove}>{k === 'done' && needApprove ? `${s.label} (cần quản lý duyệt)` : s.label}</option>
+          ))}
         </select>
         <div className="grow" />
         <button className={cx('icon-btn', t.starred && 'starred')} title="Đánh dấu sao" onClick={async () => { await api.post(`/tasks/${id}/star`); reload(); onChanged?.(); }}>
@@ -119,6 +136,32 @@ export function TaskDetail({ id, onClose, onChanged, standalone }) {
         {t.can_delete && <button className="icon-btn" title="Xóa công việc" onClick={del}><Trash2 size={18} /></button>}
         {!standalone && <button className="icon-btn" onClick={onClose} aria-label="Đóng"><X size={20} /></button>}
       </div>
+
+      {t.locked ? (
+        <div className="td-banner done">
+          <CheckCircle2 size={18} />
+          <div className="grow"><b>Đã hoàn thành{t.completed_at ? ` · ${fmtDateTime(t.completed_at)}` : ''}</b>
+            <small className="block">Công việc đã khoá: không cập nhật thông tin, tệp hay kết quả — chỉ bình luận.</small></div>
+          {t.can_reopen && <button className="btn btn-sm" onClick={() => update({ status: 'doing' }, 'Đã mở lại công việc')}><RotateCcw size={14} /> Mở lại</button>}
+        </div>
+      ) : t.requires_approval && t.status === 'review' && t.can_approve ? (
+        <div className="td-banner review">
+          <ShieldCheck size={18} />
+          <div className="grow"><b>Chờ bạn duyệt hoàn thành</b>
+            <small className="block">{t.assignee_name || 'Nhân viên'} đã gửi duyệt. Kiểm tra kết quả rồi duyệt hoặc trả lại kèm lý do.</small></div>
+          <button className="btn btn-sm btn-danger-ghost" onClick={() => review('reject')}><Undo2 size={14} /> Trả lại</button>
+          <button className="btn btn-sm btn-success" onClick={() => review('approve')}><CheckCircle2 size={14} /> Duyệt hoàn thành</button>
+        </div>
+      ) : needApprove ? (
+        <div className="td-banner info">
+          <ShieldCheck size={18} />
+          <div className="grow"><b>{t.status === 'review' ? 'Đang chờ quản lý duyệt hoàn thành' : 'Phòng ban yêu cầu quản lý duyệt khi hoàn thành'}</b>
+            <small className="block">Người duyệt: {(t.approvers || []).map((a) => a.name).join(', ') || 'quản lý trực tiếp'}.</small></div>
+          {!ro && ['todo', 'doing', 'failed'].includes(t.status) && (
+            <button className="btn btn-sm btn-primary" onClick={() => update({ status: 'review' }, 'Đã gửi quản lý duyệt hoàn thành')}><Send size={14} /> Gửi duyệt hoàn thành</button>
+          )}
+        </div>
+      ) : null}
 
       <div className="td-body">
       <div className="td-scroll">
@@ -242,9 +285,11 @@ export function TaskDetail({ id, onClose, onChanged, standalone }) {
 
         <section className="td-section">
           <div className="td-section-head"><b><GitBranch size={15} /> Công việc con ({t.subtasks.length})</b>
-            <button className="link-btn" onClick={() => openCreate({ parent_id: t.id, project_id: t.project_id, assignee_id: t.assignee_id, openAfter: false })}>
-              <Plus size={14} /> Thêm công việc con
-            </button>
+            {!t.locked && (
+              <button className="link-btn" onClick={() => openCreate({ parent_id: t.id, project_id: t.project_id, assignee_id: t.assignee_id, openAfter: false })}>
+                <Plus size={14} /> Thêm công việc con
+              </button>
+            )}
           </div>
           {t.subtasks.map((s) => (
             <div key={s.id} className="subtask" onClick={() => openTask(s.id)}>
@@ -257,9 +302,11 @@ export function TaskDetail({ id, onClose, onChanged, standalone }) {
 
         <section className="td-section">
           <div className="td-section-head"><b>Tệp đính kèm ({t.attachments.length})</b>
-            <label className="link-btn"><Paperclip size={14} /> Tải lên
-              <input type="file" multiple hidden onChange={(e) => { upload([...e.target.files]); e.target.value = ''; }} />
-            </label>
+            {!t.locked && (
+              <label className="link-btn"><Paperclip size={14} /> Tải lên
+                <input type="file" multiple hidden onChange={(e) => { upload([...e.target.files]); e.target.value = ''; }} />
+              </label>
+            )}
           </div>
           <div className="attach-list">
             {t.attachments.map((a, i) => (
@@ -267,7 +314,7 @@ export function TaskDetail({ id, onClose, onChanged, standalone }) {
                 <FileChip file={a} onOpen={() => setViewing(i)} />
                 <small className="muted grow">{a.user_name} · {timeAgo(a.created_at)}</small>
                 <a className="icon-btn sm" href={api.url(`/tasks/${id}/attachments/${a.id}`)} aria-label="Tải về"><Download size={14} /></a>
-                <button className="icon-btn sm" onClick={async () => { await api.del(`/tasks/${id}/attachments/${a.id}`); reload(); }} aria-label="Xóa"><X size={14} /></button>
+                {!t.locked && <button className="icon-btn sm" onClick={async () => { await api.del(`/tasks/${id}/attachments/${a.id}`); reload(); }} aria-label="Xóa"><X size={14} /></button>}
               </div>
             ))}
           </div>

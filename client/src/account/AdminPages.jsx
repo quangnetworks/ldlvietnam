@@ -393,11 +393,12 @@ export function DepartmentsPage() {
       <div className="page-head"><h1>Phòng ban</h1><button className="btn btn-success" onClick={() => setEdit({ name: '', code: '', parent_id: '' })}><Plus size={15} /> Thêm phòng ban</button></div>
       <div className="table-wrap">
         <table className="table">
-          <thead><tr><th>Phòng ban</th><th>Mã</th><th>Trưởng phòng</th><th>Trực thuộc</th><th>Số nhân sự</th><th /></tr></thead>
+          <thead><tr><th>Phòng ban</th><th>Mã</th><th>Trưởng phòng</th><th>Trực thuộc</th><th>Số nhân sự</th><th>Duyệt hoàn thành</th><th /></tr></thead>
           <tbody>
             {departments.map((d) => (
               <tr key={d.id}>
                 <td>{d.name}</td><td>{d.code}</td><td>{d.head_name || <span className="muted">—</span>}</td><td>{departments.find((x) => x.id === d.parent_id)?.name}</td><td>{d.member_count}</td>
+                <td>{d.task_approval ? <span className="badge badge-green">Bật</span> : <span className="muted">—</span>}</td>
                 <td className="nowrap">
                   <button className="icon-btn sm" onClick={() => setEdit({ ...d, parent_id: d.parent_id || '', head_id: d.head_id || null })} aria-label="Sửa"><Pencil size={15} /></button>
                   <button className="icon-btn sm" aria-label="Xoá" onClick={async () => { if (window.confirm(`Xoá phòng ban ${d.name}?`)) { await api.del(`/departments/${d.id}`); loadDirectory(); } }}><Trash2 size={15} /></button>
@@ -416,6 +417,11 @@ export function DepartmentsPage() {
             <Field label="Trưởng phòng" hint="Trưởng phòng được giao việc cho mọi nhân sự của phòng ban (kể cả người kiêm nhiệm)">
               <UserPicker users={users} value={edit.head_id} onChange={(v) => setEdit({ ...edit, head_id: v })} placeholder="Chưa chọn" />
             </Field>
+            <label className="check">
+              <input type="checkbox" checked={!!edit.task_approval} onChange={(e) => setEdit({ ...edit, task_approval: e.target.checked })} />
+              <span><b>Công việc của nhân viên cần quản lý duyệt hoàn thành</b>
+                <small className="muted block">Nhân viên không tự bấm "Hoàn thành": công việc chuyển sang "Chờ đánh giá" để quản lý trực tiếp / trưởng phòng / người giao việc duyệt.</small></span>
+            </label>
             <Field label="Trực thuộc">
               <select className="input" value={edit.parent_id || ''} onChange={(e) => setEdit({ ...edit, parent_id: e.target.value })}>
                 <option value="">— Cấp gốc —</option>

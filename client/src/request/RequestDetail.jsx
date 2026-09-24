@@ -55,7 +55,7 @@ export default function RequestDetail() {
         <button className={cx('icon-btn', q.starred && 'starred')} title="Đánh dấu" onClick={() => act(() => api.post(`/requests/${id}/star`))}><Star size={18} fill={q.starred ? 'currentColor' : 'none'} /></button>
         <button className={cx('icon-btn', q.following && 'text-blue')} title={q.following ? 'Bỏ theo dõi' : 'Theo dõi'} onClick={() => act(() => api.post(`/requests/${id}/follow`))}><Eye size={18} /></button>
         <button className="icon-btn" title="Sao chép liên kết" onClick={() => { navigator.clipboard?.writeText(window.location.href); toast('Đã sao chép liên kết'); }}><Link2 size={18} /></button>
-        <button className="icon-btn" title="In" onClick={() => window.print()}><Printer size={18} /></button>
+        <button className="icon-btn" title="In phiếu đề xuất / lưu PDF" onClick={() => navigate(`/request/${id}/print`)}><Printer size={18} /></button>
       </div>
 
       {q.my_turn && (

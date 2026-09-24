@@ -247,17 +247,19 @@ r.get('/departments', async (c) => c.json(await all(
    FROM departments d LEFT JOIN users h ON h.id = d.head_id ORDER BY d.name COLLATE NOCASE`
 )));
 r.post('/departments', requireAdmin, async (c) => {
-  const { name, code, parent_id, head_id } = await jsonBody(c);
+  const { name, code, parent_id, head_id, task_approval } = await jsonBody(c);
   if (!name?.trim()) throw badRequest('Tên phòng ban là bắt buộc');
-  const { lastId } = await run('INSERT INTO departments(name, code, parent_id, head_id) VALUES (?,?,?,?)', name.trim(), code || null, toInt(parent_id), toInt(head_id));
+  const { lastId } = await run('INSERT INTO departments(name, code, parent_id, head_id, task_approval) VALUES (?,?,?,?,?)',
+    name.trim(), code || null, toInt(parent_id), toInt(head_id), task_approval ? 1 : 0);
   return c.json(await get('SELECT * FROM departments WHERE id = ?', lastId), 201);
 });
 r.put('/departments/:id', requireAdmin, async (c) => {
   const id = toInt(c.req.param('id'));
-  const { name, code, parent_id, head_id } = await jsonBody(c);
+  const { name, code, parent_id, head_id, task_approval } = await jsonBody(c);
   if (toInt(parent_id) === id) throw badRequest('Phòng ban cha không hợp lệ');
   await run('UPDATE departments SET name = COALESCE(?, name), code = ?, parent_id = ?, head_id = ? WHERE id = ?',
     name?.trim() || null, code || null, toInt(parent_id), toInt(head_id), id);
+  if (task_approval !== undefined) await run('UPDATE departments SET task_approval = ? WHERE id = ?', task_approval ? 1 : 0, id);
   return c.json(await get('SELECT * FROM departments WHERE id = ?', id));
 });
 r.delete('/departments/:id', requireAdmin, async (c) => {

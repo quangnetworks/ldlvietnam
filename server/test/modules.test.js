@@ -741,3 +741,75 @@ test('@mentions in request, document and chat comments: notify and grant access 
   await demo.post(`/chat/channels/${chung.id}/messages`, m2);
   assert.ok((await unread()).items.some((n) => n.type === 'mention' && n.link === `/message/${chung.id}`));
 });
+
+test('task completion approval per department: staff sends for review, manager approves; completed tasks are locked (comments only)', async () => {
+  const admin = await login('admin');
+  const kd = await login('truongkd');
+  const demo = await login('demo');
+  const dep = (await admin.get('/departments')).data.find((d) => d.name === 'Phòng Kinh doanh');
+  await admin.put(`/departments/${dep.id}`, { ...dep, task_approval: true });
+  const t = (await kd.post('/tasks', { title: 'Báo cáo doanh số tuần', assignee_id: demo.user.id })).data;
+  let d = (await demo.get(`/tasks/${t.id}`)).data;
+  assert.equal(d.requires_approval, true);
+  assert.equal(d.can_approve, false);
+  assert.ok(d.approvers.some((u) => u.id === kd.user.id));
+  // nhân viên bấm Hoàn thành → chuyển "Chờ đánh giá", quản lý nhận thông báo
+  d = (await demo.put(`/tasks/${t.id}`, { status: 'done' })).data;
+  assert.equal(d.status, 'review');
+  assert.ok((await kd.get('/notifications?limit=20')).data.items.some((n) => n.link === `/wework/task/${t.id}` && /gửi duyệt hoàn thành/.test(n.title)));
+  assert.equal((await demo.post(`/tasks/${t.id}/review`, { decision: 'approve' })).status, 403);
+  // trả lại cần lý do
+  assert.equal((await kd.post(`/tasks/${t.id}/review`, { decision: 'reject' })).status, 400);
+  d = (await kd.post(`/tasks/${t.id}/review`, { decision: 'reject', comment: 'Thiếu số liệu miền Trung' })).data;
+  assert.equal(d.status, 'doing');
+  await demo.put(`/tasks/${t.id}`, { status: 'review' });
+  d = (await kd.post(`/tasks/${t.id}/review`, { decision: 'approve' })).data;
+  assert.equal(d.status, 'done');
+  assert.equal(d.locked, true);
+  // đã hoàn thành: không sửa / thêm kết quả / tệp / checklist; vẫn bình luận được
+  assert.equal((await demo.put(`/tasks/${t.id}`, { title: 'Sửa tên' })).status, 403);
+  const fd = new FormData(); fd.append('content', '<p>Kết quả bổ sung</p>');
+  assert.equal((await demo.post(`/tasks/${t.id}/results`, fd)).status, 403);
+  assert.equal((await kd.post(`/tasks/${t.id}/checklist`, { content: 'x' })).status, 403);
+  assert.equal((await demo.post(`/tasks/${t.id}/comments`, { content: 'Em cảm ơn anh' })).status, 201);
+  // chỉ quản lý mở lại được
+  assert.equal((await demo.put(`/tasks/${t.id}`, { status: 'doing' })).status, 403);
+  assert.equal((await kd.put(`/tasks/${t.id}`, { status: 'doing' })).data.status, 'doing');
+  await admin.put(`/departments/${dep.id}`, { ...dep, task_approval: false });
+  // phòng ban tắt duyệt: nhân viên tự hoàn thành như trước
+  assert.equal((await demo.put(`/tasks/${t.id}`, { status: 'done' })).data.status, 'done');
+});
+
+test('request staged approval flow: direct manager → related departments → final approver; printable data', async () => {
+  const admin = await login('admin');
+  const users = (await admin.get('/users')).data;
+  const id = (u) => users.find((x) => x.username === u).id;
+  const g = (await admin.post('/request-groups', {
+    name: 'Đề nghị thanh toán kiểm thử', category: 'Tài chính', fields: [{ label: 'Số tiền', type: 'money', required: true }],
+    flow: 'any', approvers: [id('thuhuyen')], custom_approvers: true, manager_approval: true, final_approver_id: id('giamdoc'),
+    print_title: 'GIẤY ĐỀ NGHỊ THANH TOÁN', print_code: 'BM-KT-02', print_note: 'Kèm hoá đơn chứng từ hợp lệ.',
+  })).data;
+  const demo = await login('demo');
+  const preview = (await demo.get(`/request-groups/${g.id}/plan`)).data;
+  assert.deepEqual(preview.steps.map((s) => [s.stage, s.user_id]), [['manager', id('truongkd')], ['dept', id('thuhuyen')], ['final', id('giamdoc')]]);
+  const key = (await demo.get(`/request-groups/${g.id}`)).data.fields[0].key;
+  const fd = new FormData(); fd.append('group_id', g.id); fd.append('data', JSON.stringify({ [key]: '2.500.000' }));
+  const q = (await demo.post('/requests', fd)).data;
+  assert.equal(q.flow, 'sequential');
+  assert.ok(q.submitted_at);
+  assert.equal(q.print.code, 'BM-KT-02');
+  assert.deepEqual(q.approvers.map((a) => a.stage), ['manager', 'dept', 'final']);
+  // phải đúng thứ tự: quản lý trực tiếp → kế toán → giám đốc
+  const gd = await login('giamdoc');
+  assert.equal((await gd.post(`/requests/${q.id}/decide`, { action: 'approve' })).status, 403);
+  const kd = await login('truongkd');
+  await kd.post(`/requests/${q.id}/decide`, { action: 'approve' });
+  const kt = await login('thuhuyen');
+  await kt.post(`/requests/${q.id}/decide`, { action: 'approve' });
+  const done = (await gd.post(`/requests/${q.id}/decide`, { action: 'approve' })).data;
+  assert.equal(done.status, 'approved');
+  assert.ok(done.approvers.every((a) => a.status === 'approved' && a.acted_at));
+  // trưởng phòng gửi: quản lý của họ chính là người duyệt cuối → không duyệt 2 lần
+  const plan2 = (await kd.get(`/request-groups/${g.id}/plan`)).data;
+  assert.deepEqual(plan2.steps.map((s) => s.stage), ['dept', 'final']);
+});

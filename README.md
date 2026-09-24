@@ -38,6 +38,8 @@ Webapp nội bộ gồm 2 phân hệ, giao diện và chức năng mô phỏng *
 - Chỉnh sửa công ty, lịch sử hệ thống (audit), đổi mật khẩu hàng loạt.
 
 ### Đề xuất (Request) — `/request`
+- **Luồng duyệt 3 chặng** (cài trong nhóm đề xuất): ① **Quản lý trực tiếp** duyệt trước (tự lấy quản lý của người tạo, hoặc trưởng phòng; người không có cấp trên bỏ qua) → ② **Phòng ban / người duyệt liên quan** theo thứ tự → ③ **Người duyệt cuối cùng**. Luôn duyệt lần lượt; mỗi người chỉ duyệt một lần (VD trưởng phòng gửi mà quản lý chính là giám đốc duyệt cuối thì không duyệt hai lần). Màn hình tạo đề xuất hiển thị trước luồng duyệt của chính người tạo.
+- **Phiếu in / PDF theo mẫu** (nút máy in ở chi tiết đề xuất): tiêu đề & mã biểu mẫu cấu hình theo nhóm, thông tin người đề nghị, các trường đã điền, thời gian tạo / gửi / hoàn tất, bảng phê duyệt theo luồng (☑ đã duyệt / ☒ từ chối / ↩ trả lại / ☐ chờ, người duyệt, thời gian, ý kiến), ô ký xác nhận điện tử, ghi chú cam kết; dấu mờ "ĐANG CHỜ DUYỆT / BẢN NHÁP…" khi chưa hoàn tất. In A4 hoặc "Lưu dưới dạng PDF".
 - Nhóm đề xuất theo danh mục, **biểu mẫu tuỳ chỉnh** (văn bản, đoạn văn, số, số tiền, ngày, danh sách chọn, ô tích, nhân sự).
 - Quy trình **duyệt lần lượt** hoặc **chỉ cần một người duyệt**, người duyệt mặc định + người tạo tự chọn thêm, người theo dõi mặc định, **SLA**.
 - Tab Tất cả / Đến lượt duyệt / Quá hạn / Chờ xử lý / Đã chấp thuận / Đã từ chối / Đã trả lại / Đã đánh dấu / Đã lưu nháp; Gửi đến tôi / Tôi gửi đi / Đang theo dõi.
@@ -58,6 +60,8 @@ Webapp nội bộ gồm 2 phân hệ, giao diện và chức năng mô phỏng *
 - Đánh dấu yêu thích, theo dõi, cất giữ, tạm xóa / khôi phục / xóa vĩnh viễn, thao tác hàng loạt, **xuất CSV**, **quét văn bản** (tải bản scan → tạo văn bản đến nháp).
 
 ### Công việc & dự án (Wework) — `/wework`
+- **Duyệt hoàn thành theo phòng ban** (Tài khoản → Phòng ban → "Công việc của nhân viên cần quản lý duyệt hoàn thành"): nhân viên không tự "Hoàn thành" — bấm Hoàn thành / **Gửi duyệt hoàn thành** sẽ chuyển sang **Chờ đánh giá** và báo cho quản lý trực tiếp, trưởng phòng, quản lý dự án, người giao việc; họ **Duyệt hoàn thành** hoặc **Trả lại** (bắt buộc lý do, ghi vào thảo luận).
+- **Đã hoàn thành = khoá**: không cập nhật thông tin, checklist, tệp, kết quả — chỉ bình luận; cấp quản lý (hoặc người có quyền khi phòng ban không bật duyệt) bấm **Mở lại** để chỉnh sửa tiếp.
 - **Công việc của tôi** (dạng bảng theo Base Wework): tab *Giao cho tôi / Tôi giao đi / Đang theo dõi*; nhóm theo *Thời hạn* (Trước đây, Hôm nay, Ngày mai, 7 ngày tới, Trong tương lai, Không thời hạn), trạng thái, dự án hoặc mức ưu tiên; lọc trạng thái / dự án, sắp xếp, tìm kiếm; cột trạng thái, thời gian bắt đầu, thời hạn, hoàn thành, dự án, công việc cha, nhãn, kết quả, tạo bởi, giao cho (*Tuỳ chỉnh cột*); tích để hoàn thành, tạo nhanh công việc trong từng nhóm.
 - **Phân quyền giao việc**: quản trị viên giao cho mọi người; quản lý trực tiếp giao cho nhân viên mình quản lý (cả cấp dưới gián tiếp); trưởng phòng giao cho nhân sự trong phòng ban; quản lý dự án giao cho thành viên dự án; ai cũng tự giao cho mình. Người được giao việc cập nhật trạng thái, kết quả, checklist, tệp, thảo luận nhưng **không được xoá công việc, đổi thời gian bắt đầu / thời hạn, sửa mô tả, đổi dự án, đổi lặp lại**.
 - Trang Công việc: nhóm theo tuần, lọc *Giao & được giao / CV được giao / CV giao đi*, công việc con, trạng thái (Cần làm, Đang làm, Chờ đánh giá, Hoàn thành, Thất bại, Quá hạn, Hoàn thành muộn, Khẩn cấp, Quan trọng), dự án, sắp xếp.
