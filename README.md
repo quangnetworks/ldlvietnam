@@ -14,6 +14,12 @@ Webapp nội bộ gồm 2 phân hệ, giao diện và chức năng mô phỏng *
 ### Giao diện
 - Ngôn ngữ thiết kế chung lấy cảm hứng iOS 27: chữ hệ thống Apple, bo góc lớn, nút dạng viên thuốc, vật liệu kính mờ cho menu / hộp thoại / thông báo, điều khiển phân đoạn, chuyển động mềm.
 
+### iPhone & điện thoại
+- Thiết kế riêng cho màn hình iPhone (SE 375pt → Pro Max 440pt): né tai thỏ / Dynamic Island và thanh Home (safe-area), chiều cao màn hình chuẩn `dvh` (không bị thanh địa chỉ Safari che), ô nhập cỡ 16px để Safari không tự phóng to, vùng chạm ~44pt.
+- **Thanh tab dưới đáy**: Trang chủ · Công việc · Tin nhắn (số chưa đọc) · Văn bản · Thêm (mọi ứng dụng, liên hệ nhanh, tài khoản). Tự ẩn trong cuộc trò chuyện và khi bàn phím mở.
+- Hộp thoại thành **bảng trượt từ dưới lên**, menu thả xuống thành **action sheet**, chi tiết công việc toàn màn hình; thanh bên các phân hệ thành **ngăn kéo** (chạm ra ngoài để đóng); thanh dọc của Tài khoản / Đề xuất thành thanh ngang; danh sách thành viên, đề xuất hiển thị dạng thẻ; bảng "Công việc của tôi" giữ cột tên cố định và vuốt ngang các cột còn lại.
+- Thêm vào màn hình chính (Add to Home Screen) để chạy toàn màn hình như ứng dụng.
+
 ### Giao diện sáng / tối
 - Mọi phân hệ hỗ trợ giao diện **Sáng**, **Tối** hoặc **Theo hệ thống** — chọn trong menu tài khoản (góc phải trên) hoặc nút mặt trời / mặt trăng ở Home. Lựa chọn được nhớ trên trình duyệt và đồng bộ theo tài khoản.
 - **Màu thương hiệu** (nút bảng màu ở Home, 6 lựa chọn): áp cho Home, thanh trên cùng, thanh bên và rail của mọi phân hệ, trang đăng nhập.
@@ -21,7 +27,9 @@ Webapp nội bộ gồm 2 phân hệ, giao diện và chức năng mô phỏng *
 
 ### Tài khoản (Account) — `/account` — nền tảng cho mọi phân hệ
 - Hồ sơ cá nhân: thông tin liên hệ, quản lý trực tiếp, người báo cáo trực tiếp, nhóm, học vấn, kinh nghiệm, giải thưởng; đổi mật khẩu, **ảnh đại diện** (tự cắt vuông, hiển thị trên toàn hệ thống; quản trị viên đổi được cho từng thành viên), màu hiển thị, lịch sử đăng nhập.
-- Thành viên: tìm kiếm, tab Tất cả / Quản trị hệ thống / Vô hiệu hoá / Lịch sử đăng nhập; tạo, sửa, vô hiệu hoá, đặt lại mật khẩu; **nhập / xuất Excel (CSV)**.
+- Thành viên: tìm kiếm, tab Tất cả / Quản trị hệ thống / Vô hiệu hoá / Lịch sử đăng nhập; tạo, sửa, vô hiệu hoá, đặt lại mật khẩu; **nhập / xuất Excel (CSV)**; nút **nhắn tin / gọi điện** ngay trên từng thành viên và hồ sơ.
+- Vai trò: Thành viên · Tài khoản khách · **Quản trị hệ thống** (quản trị cấp cao) · **Chủ doanh nghiệp** (cấp cao nhất, toàn quyền như quản trị hệ thống). Quản trị viên thường không sửa, khoá, đổi mật khẩu hay đặt lại bảo mật được tài khoản Chủ doanh nghiệp; chỉ Chủ doanh nghiệp trao / thu hồi vai trò này (khi hệ thống chưa có Chủ doanh nghiệp, quản trị viên trao được lần đầu); luôn giữ ít nhất một Chủ doanh nghiệp.
+- **Liên hệ nhanh** (biểu tượng danh bạ trên thanh trên cùng mọi phân hệ, hoặc tab Thêm trên điện thoại): tìm thành viên theo tên / chức danh / phòng ban / số điện thoại → **nhắn tin** qua LDL Message hoặc **gọi di động** (nếu đã có số); chọn nhiều người để **nhắn nhóm** (tạo kênh riêng tư).
 - Nhóm người dùng, phòng ban (có **trưởng phòng**); một tài khoản có thể thuộc **nhiều phòng ban** (phòng ban chính + kiêm nhiệm: nhận văn bản, kênh chat, tài liệu của mọi phòng ban) và nhiều dự án; **Quản lý ứng dụng**: bật/tắt từng ứng dụng và phân quyền sử dụng theo tài khoản (được kiểm tra ở cả API).
 - Chỉnh sửa công ty, lịch sử hệ thống (audit), đổi mật khẩu hàng loạt.
 
@@ -82,7 +90,7 @@ Webapp nội bộ gồm 2 phân hệ, giao diện và chức năng mô phỏng *
 - Chia sẻ cho thành viên / phòng ban / nhóm với quyền Xem hoặc Chỉnh sửa (kế thừa theo thư mục cha).
 
 ### LDL Message — `/message`
-- Kênh công khai / riêng tư, tin nhắn 1-1, số tin chưa đọc, gửi tệp / ảnh (**xem trước** mọi định dạng), **biểu tượng cảm xúc**, sửa / xoá tin nhắn của mình, nhắc tên `@tên_đăng_nhập` (có thông báo), tìm kiếm tin nhắn.
+- Kênh công khai / riêng tư, tin nhắn 1-1 (nút **gọi điện** trong cuộc trò chuyện 1-1 khi người kia có số điện thoại), số tin chưa đọc, gửi tệp / ảnh (**xem trước** mọi định dạng), **biểu tượng cảm xúc**, sửa / xoá tin nhắn của mình, nhắc tên `@tên_đăng_nhập` (có thông báo), tìm kiếm tin nhắn.
 - Thêm thành viên vào kênh riêng tư: chọn quyền **xem toàn bộ tin nhắn cũ / 7 ngày gần đây / không xem tin cũ**. Quản trị viên (hoặc người tạo) **xoá kênh** cùng toàn bộ tin nhắn và tệp.
 - Enter gửi / Shift+Enter xuống dòng; chống gửi trùng khi nhấn Enter liên tiếp hoặc đang gõ dấu tiếng Việt; tin hiện ngay khi gửi; mỗi cặp người chỉ có một cuộc trò chuyện 1-1 (bấm liên tục không tạo trùng).
 - Cập nhật tin nhắn mới mỗi ~2,5 giây trong cuộc trò chuyện đang mở (polling nhẹ, tạm dừng khi tab ẩn).

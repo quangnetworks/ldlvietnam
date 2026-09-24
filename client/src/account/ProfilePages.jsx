@@ -6,6 +6,7 @@ import { useApp, useFetch, useToast } from '../context.jsx';
 import { Avatar, Spinner, Field, Pagination } from '../components/ui.jsx';
 import { fmtDate, fmtDateTime } from '../utils.js';
 import AvatarEditor from '../components/AvatarEditor.jsx';
+import { ContactButtons } from '../components/Contact.jsx';
 import { MODULE_APPS } from '../apps.jsx';
 
 const SECTIONS = [
@@ -44,14 +45,15 @@ export function ProfileView() {
         <button className="icon-btn" onClick={() => navigate(-1)} aria-label="Quay lại"><ArrowLeft size={18} /></button>
         <div className="grow"><small className="muted">TÀI KHOẢN</small><div className="acc-head-name">{p.name} · <span className="muted">@{p.username}</span></div></div>
         {own && <Link to="/account/edit" className="btn btn-success"><ArrowUp size={15} /> Chỉnh sửa tài khoản của tôi</Link>}
-        {!own && user.role === 'admin' && <Link to={`/account/members?edit=${p.id}`} className="btn btn-success">Sửa tài khoản</Link>}
+        {!own && user.role === 'admin' && (!p.is_owner || !!user.is_owner) && <Link to={`/account/members?edit=${p.id}`} className="btn btn-success">Sửa tài khoản</Link>}
       </div>
       <div className="profile">
         <div className="profile-top">
           <AvatarEditor userId={p.id} name={p.name} color={p.color} size={100} onChanged={reload} />
           <div className="grow">
             <h1>{p.name} {!p.active && <span className="badge badge-gray">VÔ HIỆU HOÁ</span>}</h1>
-            <div className="muted">{p.title || 'Chưa nhập chức danh'}{p.role === 'admin' && <span className="text-red"> · Quản trị hệ thống</span>}</div>
+            <div className="muted">{p.title || 'Chưa nhập chức danh'}{p.is_owner ? <span className="owner-badge">Chủ doanh nghiệp</span> : p.role === 'admin' && <span className="text-red"> · Quản trị hệ thống</span>}</div>
+            {!own && <ContactButtons user={p} className="profile-contact" />}
             <dl className="profile-dl">
               <dt>Email</dt><dd>{p.email || '—'}</dd>
               <dt>Số điện thoại</dt><dd>{p.phone || 'Chưa nhập số điện thoại'}</dd>

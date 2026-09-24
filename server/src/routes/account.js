@@ -1,6 +1,6 @@
 import { Hono } from 'hono';
 import { all, get, run, batch, getSetting, setSetting } from '../db.js';
-import { requireAdmin, hashPassword, verifyPassword, loadUser, PUBLIC_USER_FIELDS, deptIn, userDeptIds, inDeptSql } from '../auth.js';
+import { requireAdmin, assertCanManage, hashPassword, verifyPassword, loadUser, PUBLIC_USER_FIELDS, deptIn, userDeptIds, inDeptSql } from '../auth.js';
 import { randomBase32, otpauthUrl, verifyTotp, securitySettings, validIpRule, clientIp, ipMatches } from '../security.js';
 import { badRequest, notFound, forbidden, toInt, idList, jsonBody, paginate, formBody, storeFiles, removeFile, sendFile } from '../util.js';
 import { MODULES, userApps, grantApps, audit } from '../platform.js';
@@ -51,16 +51,16 @@ r.get('/account/members', async (c) => {
        m.username AS manager_username, m.title AS manager_title,
        (SELECT group_concat(x.app_key) FROM app_access x WHERE x.user_id = u.id) AS app_keys
      FROM users u LEFT JOIN departments d ON d.id = u.department_id LEFT JOIN users m ON m.id = u.manager_id
-     WHERE ${where.join(' AND ')} ORDER BY u.name COLLATE NOCASE`,
+     WHERE ${where.join(' AND ')} ORDER BY ${q.tab === 'admins' ? 'u.is_owner DESC, ' : ''}u.name COLLATE NOCASE`,
     ...params
   );
   for (const u of items) {
     u.apps = u.role === 'admin' ? Object.keys(MODULES) : (u.app_keys ? u.app_keys.split(',') : []);
     delete u.app_keys;
   }
-  const counts = await get(`SELECT SUM(active = 1) AS all_count, SUM(active = 1 AND role = 'admin') AS admins, SUM(active = 0) AS disabled,
+  const counts = await get(`SELECT SUM(active = 1) AS all_count, SUM(active = 1 AND role = 'admin') AS admins, SUM(active = 1 AND is_owner = 1) AS owners, SUM(active = 0) AS disabled,
     SUM(active = 1 AND role = 'guest') AS guests FROM users`);
-  return c.json({ items, counts: { all: counts.all_count || 0, admins: counts.admins || 0, disabled: counts.disabled || 0, guests: counts.guests || 0 } });
+  return c.json({ items, counts: { all: counts.all_count || 0, admins: counts.admins || 0, owners: counts.owners || 0, disabled: counts.disabled || 0, guests: counts.guests || 0 } });
 });
 
 const csvEsc = (v) => `"${String(v ?? '').replace(/^[=+\-@\t\r]/, "'$&").replace(/"/g, '""')}"`;
@@ -132,7 +132,8 @@ r.post('/account/members/import', requireAdmin, async (c) => {
       }
     }
     const role = v('role') === 'admin' ? 'admin' : 'member';
-    const existing = await get('SELECT id FROM users WHERE lower(username) = lower(?)', username);
+    const existing = await get('SELECT id, is_owner FROM users WHERE lower(username) = lower(?)', username);
+    if (existing?.is_owner && !c.get('user').is_owner) { result.errors.push(`Dòng ${i + 1}: @${username} là Chủ doanh nghiệp — không được cập nhật`); continue; }
     if (existing) {
       await run(`UPDATE users SET name = ?, email = COALESCE(NULLIF(?, ''), email), phone = COALESCE(NULLIF(?, ''), phone),
         title = COALESCE(NULLIF(?, ''), title), department_id = COALESCE(?, department_id), birthday = COALESCE(NULLIF(?, ''), birthday) WHERE id = ?`,
@@ -159,6 +160,7 @@ r.post('/account/members/reset-passwords', requireAdmin, async (c) => {
   const ids = idList(b.ids).filter((id) => id !== c.get('user').id);
   if (!ids.length) throw badRequest('Chưa chọn tài khoản');
   if (!b.password || String(b.password).length < 6) throw badRequest('Mật khẩu mới phải có ít nhất 6 ký tự');
+  await assertCanManage(c.get('user'), ids);
   const hash = await hashPassword(b.password);
   await batch(ids.map((id) => ['UPDATE users SET password_hash = ? WHERE id = ?', [hash, id]]));
   await audit(c.get('user').id, 'user.password', `Đổi mật khẩu hàng loạt cho ${ids.length} tài khoản`);
@@ -490,6 +492,7 @@ r.post('/account/2fa/disable', async (c) => {
 r.post('/account/2fa/reset/:id', requireAdmin, async (c) => {
   const u = await get('SELECT id, username FROM users WHERE id = ?', toInt(c.req.param('id')));
   if (!u) throw notFound();
+  await assertCanManage(c.get('user'), u.id);
   await run('UPDATE users SET totp_enabled = 0, totp_secret = NULL WHERE id = ?', u.id);
   await audit(c.get('user').id, 'security.2fa', `Đặt lại bảo mật hai lớp cho @${u.username}`);
   return c.json({ ok: true });
@@ -519,6 +522,7 @@ async function avatarTarget(c) {
   const user = c.get('user');
   const id = toInt(c.req.param('id'));
   if (id !== user.id && user.role !== 'admin') throw forbidden('Chỉ quản trị viên được đổi ảnh đại diện của người khác');
+  if (id !== user.id) await assertCanManage(user, id);
   const target = await get('SELECT id, username, avatar FROM users WHERE id = ?', id);
   if (!target) throw notFound('Tài khoản không tồn tại');
   return target;

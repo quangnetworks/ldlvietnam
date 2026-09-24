@@ -602,3 +602,31 @@ test('department / project tasks: outside people join a single task without join
   assert.equal((await hr.get(`/projects/${p.id}`)).status, 403);
   assert.ok(!(await hr.get(`/tasks?project_id=${p.id}&scope=all`)).data.items.some((x) => x.id !== t.id));
 });
+
+test('business owner: top admin tier, protected from other admins; only an owner grants the role', async () => {
+  const gd = await login('giamdoc');
+  const admin = await login('admin');
+  assert.equal(gd.user.is_owner, 1);
+  assert.equal(gd.user.role, 'admin');
+  const chilan = admin.user && (await admin.get('/users')).data.find((u) => u.username === 'chilan');
+  // quản trị viên thường không sửa / khoá / đổi mật khẩu được Chủ doanh nghiệp
+  assert.equal((await admin.put(`/users/${gd.user.id}`, { name: 'X', role: 'member' })).status, 403);
+  assert.equal((await admin.del(`/users/${gd.user.id}`)).status, 403);
+  assert.equal((await admin.post('/account/members/reset-passwords', { ids: [gd.user.id], password: 'abcdef' })).status, 403);
+  // quản trị viên thường không trao được vai trò Chủ doanh nghiệp khi đã có Chủ doanh nghiệp
+  assert.equal((await admin.put(`/users/${chilan.id}`, { ...chilan, role: 'owner' })).status, 403);
+  // Chủ doanh nghiệp trao vai trò cho người khác → người đó có toàn quyền quản trị
+  const up = await gd.put(`/users/${chilan.id}`, { ...chilan, role: 'owner' });
+  assert.equal(up.status, 200);
+  assert.equal(up.data.is_owner, 1);
+  assert.equal(up.data.role, 'admin');
+  const lan = await login('chilan');
+  assert.equal((await lan.get('/account/security')).status, 200);
+  const members = await admin.get('/account/members?tab=admins');
+  assert.equal(members.data.counts.owners, 2);
+  assert.equal(members.data.items[0].is_owner, 1);
+  // thu hồi; không được bỏ Chủ doanh nghiệp cuối cùng
+  assert.equal((await gd.put(`/users/${chilan.id}`, { ...chilan, role: 'member' })).data.is_owner, 0);
+  const me = (await gd.get(`/users/${gd.user.id}`)).data;
+  assert.equal((await gd.put(`/users/${gd.user.id}`, { ...me, role: 'admin' })).status, 400);
+});

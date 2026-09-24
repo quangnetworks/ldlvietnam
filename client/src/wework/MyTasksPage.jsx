@@ -242,7 +242,7 @@ export default function MyTasksPage() {
       <div className={cx('mt-table-wrap', loading && data && 'refetching')}>
         {!data ? <Spinner /> : (
           <table className="mt-table">
-            <colgroup><col style={{ width: 420 }} />{shown.map((c) => <col key={c.key} style={{ width: c.width }} />)}</colgroup>
+            <colgroup><col className="mt-name-colw" style={{ width: 420 }} />{shown.map((c) => <col key={c.key} style={{ width: c.width }} />)}</colgroup>
             <thead>
               <tr>
                 <th className="mt-name-col">

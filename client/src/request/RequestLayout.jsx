@@ -1,12 +1,13 @@
-import { createContext, useCallback, useContext, useMemo, useState } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { Link, NavLink, Outlet, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import {
   Home, Bell, BarChart3, Settings, PlusCircle, PlayCircle, LayoutGrid, Inbox, Send, Eye, Star, ChevronLeft, Search, ChevronDown,
-  FolderCog, History, ListChecks, Copy, PlusSquare, Webhook,
+  FolderCog, History, ListChecks, Copy, PlusSquare, Webhook, Menu,
 } from 'lucide-react';
 import { api } from '../api.js';
 import { useApp, useFetch } from '../context.jsx';
 import { AppSwitcher, UserMenu } from '../components/shell.jsx';
+import { ContactsButton } from '../components/Contact.jsx';
 import { cx } from '../utils.js';
 
 const RequestCtx = createContext(null);
@@ -21,13 +22,14 @@ export function groupByCategory(groups) {
   return [...map.entries()].map(([category, items]) => ({ category, items }));
 }
 
-function Rail() {
+function Rail({ onMenu }) {
   const { user } = useApp();
   const link = (to, Icon, title, end) => (
     <NavLink to={to} end={end} className={({ isActive }) => cx('rq-rail-link', isActive && 'active')} title={title}><Icon size={20} /></NavLink>
   );
   return (
     <nav className="rq-rail">
+      <button className="rq-rail-link rq-rail-menu" onClick={onMenu} aria-label="Nhóm đề xuất"><Menu size={20} /></button>
       <Link to="/" title="Về trang chủ"><img src="/logo-192.png" alt="LDL" className="rq-rail-logo" /></Link>
       {link('/request', Home, 'Danh sách đề xuất', true)}
       <Link to="/account/notifications" className="rq-rail-link" title="Thông báo"><Bell size={20} /></Link>
@@ -37,6 +39,7 @@ function Rail() {
       {link('/request/new', PlusCircle, 'Tạo đề xuất')}
       {link('/request/guide', PlayCircle, 'Hướng dẫn')}
       <div className="grow" />
+      <ContactsButton dark />
       <AppSwitcher dark />
     </nav>
   );
@@ -112,6 +115,8 @@ export default function RequestLayout() {
   const location = useLocation();
   const navigate = useNavigate();
   const [collapsed, setCollapsed] = useState(false);
+  const [side, setSide] = useState(false);
+  useEffect(() => setSide(false), [location.key]);
   const [version, setVersion] = useState(0);
   const [groups, reloadGroups] = useFetch(() => api.get('/request-groups'), [version]);
   const [counts, reloadCounts] = useFetch(() => api.get('/request/counts'), [version, location.key]);
@@ -127,8 +132,9 @@ export default function RequestLayout() {
   return (
     <RequestCtx.Provider value={ctx}>
       <div className={cx('rq', collapsed && 'collapsed')}>
-        <Rail />
-        <aside className="rq-side">
+        <Rail onMenu={() => setSide(!side)} />
+        {side && <div className="side-backdrop" onClick={() => setSide(false)} />}
+        <aside className={cx('rq-side', side && 'open')}>
           <button className="rq-collapse" onClick={() => setCollapsed(!collapsed)} aria-label="Thu gọn"><ChevronLeft size={14} /></button>
           {settings ? <SettingsSidebar /> : <MainSidebar groups={groups} toggleStar={toggleStar} />}
         </aside>

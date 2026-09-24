@@ -2,9 +2,9 @@ import { Hono } from 'hono';
 import { setCookie, deleteCookie } from 'hono/cookie';
 import { all, get, run, batch, getSetting, setSetting } from '../db.js';
 import {
-  COOKIE, TOKEN_TTL, signToken, loadUser, requireAdmin, PUBLIC_USER_FIELDS, hashPassword, verifyPassword, inDeptSql,
+  COOKIE, TOKEN_TTL, signToken, loadUser, requireAdmin, assertCanManage, PUBLIC_USER_FIELDS, hashPassword, verifyPassword, inDeptSql,
 } from '../auth.js';
-import { badRequest, notFound, toInt, idList, jsonBody } from '../util.js';
+import { badRequest, forbidden, notFound, toInt, idList, jsonBody } from '../util.js';
 import { userApps, grantApps, audit, recordLogin, MODULES } from '../platform.js';
 import { verifyTotp, ipAllowed } from '../security.js';
 import { isExpired } from '../auth.js';
@@ -142,13 +142,34 @@ function validateUserBody(b, creating) {
     if (!b.password || String(b.password).length < 6) throw badRequest('Mật khẩu phải có ít nhất 6 ký tự');
     if (!b.name?.trim()) throw badRequest('Họ tên là bắt buộc');
   }
-  if (b.role && !['admin', 'member', 'guest'].includes(b.role)) throw badRequest('Vai trò không hợp lệ');
+  if (b.role && !['owner', 'admin', 'member', 'guest'].includes(b.role)) throw badRequest('Vai trò không hợp lệ');
   if (b.expires_at && !/^\d{4}-\d{2}-\d{2}$/.test(b.expires_at)) throw badRequest('Ngày hết hạn không hợp lệ');
+}
+
+/**
+ * Vai trò "owner" (Chủ doanh nghiệp) = role 'admin' + is_owner = 1.
+ * Chỉ Chủ doanh nghiệp được trao / thu hồi vai trò này — trừ khi hệ thống chưa có Chủ doanh nghiệp nào.
+ * Trả về is_owner mới (0/1) hoặc undefined nếu không đổi vai trò.
+ */
+async function ownerFlag(actor, b, targetId) {
+  if (b.role === undefined || b.role === null || b.role === '') return undefined;
+  const want = b.role === 'owner' ? 1 : 0;
+  if (b.role === 'owner') b.role = 'admin';
+  const current = targetId ? (await get('SELECT is_owner FROM users WHERE id = ?', targetId))?.is_owner || 0 : 0;
+  if (want === current) return want;
+  if (!actor.is_owner && (await get('SELECT 1 FROM users WHERE is_owner = 1 AND active = 1'))) {
+    throw forbidden('Chỉ Chủ doanh nghiệp mới được trao hoặc thu hồi vai trò Chủ doanh nghiệp');
+  }
+  if (!want && !(await get('SELECT 1 FROM users WHERE is_owner = 1 AND active = 1 AND id <> ?', targetId))) {
+    throw badRequest('Hệ thống cần ít nhất một Chủ doanh nghiệp');
+  }
+  return want;
 }
 
 r.post('/users', requireAdmin, async (c) => {
   const b = await jsonBody(c);
   validateUserBody(b, true);
+  const owner = await ownerFlag(c.get('user'), b, null);
   if (await get('SELECT 1 FROM users WHERE lower(username) = lower(?)', b.username.trim())) {
     throw badRequest('Tên đăng nhập đã tồn tại');
   }
@@ -161,6 +182,7 @@ r.post('/users', requireAdmin, async (c) => {
   await run('UPDATE users SET birthday = ?, address = ?, expires_at = ? WHERE id = ?', b.birthday || null, b.address || null,
     b.role === 'guest' ? b.expires_at || null : null, lastId);
   // Tài khoản khách: chỉ nhận ứng dụng được chọn rõ ràng
+  if (owner) await run('UPDATE users SET is_owner = 1 WHERE id = ?', lastId);
   await grantApps(lastId, Array.isArray(b.apps) ? b.apps : b.role === 'guest' ? [] : null);
   if (b.extra_department_ids !== undefined) await saveExtraDepartments(lastId, toInt(b.department_id), b.extra_department_ids);
   await audit(c.get('user').id, 'user.create', `Tạo tài khoản @${b.username.trim()}`);
@@ -172,6 +194,8 @@ r.put('/users/:id', requireAdmin, async (c) => {
   const b = await jsonBody(c);
   validateUserBody(b, false);
   if (!(await get('SELECT 1 FROM users WHERE id = ?', id))) throw notFound();
+  await assertCanManage(c.get('user'), id);
+  const owner = await ownerFlag(c.get('user'), b, id);
   if (toInt(b.manager_id) === id) throw badRequest('Không thể tự làm quản lý của chính mình');
   if (b.active === undefined || Object.keys(b).length > 1) {
     await run(
@@ -181,6 +205,7 @@ r.put('/users/:id', requireAdmin, async (c) => {
       toInt(b.manager_id), b.role || null, b.color || null, id
     );
   }
+  if (owner !== undefined) await run('UPDATE users SET is_owner = ? WHERE id = ?', owner, id);
   if (b.birthday !== undefined || b.address !== undefined) {
     await run('UPDATE users SET birthday = COALESCE(?, birthday), address = COALESCE(?, address) WHERE id = ?',
       b.birthday ?? null, b.address ?? null, id);
@@ -209,6 +234,7 @@ r.put('/users/:id', requireAdmin, async (c) => {
 r.delete('/users/:id', requireAdmin, async (c) => {
   const id = toInt(c.req.param('id'));
   if (id === c.get('user').id) throw badRequest('Không thể vô hiệu hóa chính mình');
+  await assertCanManage(c.get('user'), id);
   await run('UPDATE users SET active = 0 WHERE id = ?', id);
   const target = await get('SELECT username FROM users WHERE id = ?', id);
   await audit(c.get('user').id, 'user.disable', `Vô hiệu hoá @${target?.username}`);

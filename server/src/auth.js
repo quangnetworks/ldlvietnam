@@ -2,6 +2,7 @@ import { sign, verify } from 'hono/jwt';
 import { getCookie } from 'hono/cookie';
 import { get, getSetting, setSetting } from './db.js';
 import { ipAllowed } from './security.js';
+import { forbidden } from './util.js';
 
 export const COOKIE = 'ldl_token';
 const ITERATIONS = 60000;
@@ -67,7 +68,7 @@ export async function verifyFileToken(c, token) {
 }
 
 export const PUBLIC_USER_FIELDS =
-  'u.id, u.username, u.name, u.email, u.phone, u.title, u.department_id, u.manager_id, u.role, u.color, u.active, u.birthday, u.address, u.bio, u.profile, u.last_login_at, u.created_at, u.totp_enabled, u.expires_at, u.avatar_version, '
+  'u.id, u.username, u.name, u.email, u.phone, u.title, u.department_id, u.manager_id, u.role, u.color, u.active, u.birthday, u.address, u.bio, u.profile, u.last_login_at, u.created_at, u.totp_enabled, u.expires_at, u.avatar_version, u.is_owner, '
   + '(SELECT GROUP_CONCAT(ud.department_id) FROM user_departments ud WHERE ud.user_id = u.id) AS extra_departments';
 
 /** "3,5" (GROUP_CONCAT) → [3, 5] */
@@ -117,6 +118,20 @@ export async function requireAuth(c, next) {
   if (!(await ipAllowed(c, user))) return c.json({ error: 'Địa chỉ IP của bạn không nằm trong danh sách được phép truy cập' }, 403);
   c.set('user', user);
   await next();
+}
+
+/**
+ * Chủ doanh nghiệp (is_owner) là cấp quản trị cao nhất: quản trị viên thường không được sửa, khoá,
+ * đổi mật khẩu hay đặt lại bảo mật của tài khoản chủ doanh nghiệp.
+ */
+export async function assertCanManage(actor, ids) {
+  if (actor.is_owner) return;
+  const list = [].concat(ids).filter(Boolean);
+  if (!list.length) return;
+  const hit = await get(`SELECT name FROM users WHERE is_owner = 1 AND id IN (${list.map(() => '?').join(',')})`, ...list);
+  if (hit) {
+    throw forbidden(`Chỉ Chủ doanh nghiệp mới được thay đổi tài khoản của ${hit.name}`);
+  }
 }
 
 export async function requireAdmin(c, next) {

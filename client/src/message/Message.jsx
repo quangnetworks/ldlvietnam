@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { Hash, Lock, Plus, Send, Paperclip, Search, Pencil, Trash2, Users, ArrowLeft, MessageCircle, X, EyeOff } from 'lucide-react';
+import { Hash, Lock, Plus, Send, Paperclip, Search, Pencil, Trash2, Users, ArrowLeft, MessageCircle, X, EyeOff, Phone } from 'lucide-react';
 import { api, toFormData } from '../api.js';
 import { useApp, useToast } from '../context.jsx';
 import { Avatar, Spinner, Modal, Field, UserPicker, Empty } from '../components/ui.jsx';
 import { AppSwitcher, NotificationBell, UserMenu, useDebounced } from '../components/shell.jsx';
+import { ContactsButton, phoneHref } from '../components/Contact.jsx';
 import { parseDate, fmtDate, fileSize, cx } from '../utils.js';
 import FileViewer from '../components/FileViewer.jsx';
 import EmojiPicker, { insertAtCursor } from '../components/EmojiPicker.jsx';
@@ -100,7 +101,10 @@ function NewDirect({ onClose }) {
       <input className="input" autoFocus placeholder="Tìm đồng nghiệp" value={q} onChange={(e) => setQ(e.target.value)} />
       <div className="move-list mt">
         {list.map((u) => (
-          <button key={u.id} className="drive-row plain" disabled={!!busy} onClick={() => start(u)}><Avatar name={u.name} color={u.color} size={28} /><span className="grow">{u.name}<small className="muted block">{u.title}</small></span></button>
+          <div key={u.id} className="row gap-sm">
+            <button className="drive-row plain grow" disabled={!!busy} onClick={() => start(u)}><Avatar name={u.name} color={u.color} size={28} /><span className="grow">{u.name}<small className="muted block">{u.title}</small></span><MessageCircle size={16} className="muted" /></button>
+            {phoneHref(u) && <a className="icon-btn" href={phoneHref(u)} title={`Gọi ${u.phone}`} aria-label={`Gọi ${u.name}`}><Phone size={16} /></a>}
+          </div>
         ))}
       </div>
     </Modal>
@@ -141,7 +145,7 @@ function ChannelMembers({ channel, onClose, onSaved }) {
 }
 
 function Conversation({ channelId, onActivity }) {
-  const { user } = useApp();
+  const { user, users } = useApp();
   const toast = useToast();
   const [channel, setChannel] = useState(null);
   const [msgs, setMsgs] = useState(null);
@@ -269,6 +273,9 @@ function Conversation({ channelId, onActivity }) {
         <Link to="/message" className="icon-btn mobile-only" aria-label="Quay lại"><ArrowLeft size={18} /></Link>
         {peer ? <Avatar name={peer.name} color={peer.color} size={30} /> : channel.kind === 'department' ? <Users size={18} /> : channel.kind === 'private' ? <Lock size={18} /> : <Hash size={18} />}
         <div className="grow"><b>{title}</b>{channel.description && <small className="muted block ellipsis">{channel.description}</small>}{peer && <small className="muted block">@{peer.username}</small>}</div>
+        {peer && phoneHref(users.find((u) => u.id === peer.id)) && (
+          <a className="icon-btn" href={phoneHref(users.find((u) => u.id === peer.id))} title={`Gọi ${users.find((u) => u.id === peer.id).phone}`} aria-label="Gọi điện"><Phone size={17} /></a>
+        )}
         {!peer && <button className="btn btn-sm" onClick={() => setShowMembers(true)}><Users size={14} /> {channel.members.length}</button>}
         {canDelete && <button className="icon-btn" title={user.role === 'admin' ? 'Xoá kênh (quản trị viên)' : 'Xoá kênh'} onClick={deleteChannel}><Trash2 size={16} /></button>}
       </div>
@@ -377,6 +384,7 @@ export default function MessagePage() {
         <Link to="/" className="brand"><img className="brand-logo" src="/logo-192.png" alt="LDL" /><span className="brand-name">{company}</span></Link>
         <span className="topbar-app">LDL Message</span>
         <div className="grow" />
+        <ContactsButton dark />
         <NotificationBell app="message" dark />
         <AppSwitcher dark />
         <UserMenu dark />

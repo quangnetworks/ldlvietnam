@@ -7,6 +7,7 @@ import {
 import { api } from '../api.js';
 import { useApp, useFetch, useToast } from '../context.jsx';
 import { Avatar, Modal, Field, UserPicker, Spinner, Dropdown, MenuItem, Empty, Tabs, Pagination, MultiSelect } from '../components/ui.jsx';
+import { ContactButtons } from '../components/Contact.jsx';
 import { MODULE_APPS, AppIcon } from '../apps.jsx';
 import { fmtDate, fmtDateTime, cx } from '../utils.js';
 import { LoginHistory } from './ProfilePages.jsx';
@@ -15,11 +16,12 @@ import AvatarEditor from '../components/AvatarEditor.jsx';
 const appByKey = Object.fromEntries(MODULE_APPS.map((a) => [a.module, a]));
 
 // ---------------------------------------------------------------- user form
-function UserModal({ user: editing, guest = false, onClose, onSaved }) {
+function UserModal({ user: editing, guest = false, ownersCount, onClose, onSaved }) {
   const { users, departments } = useApp();
   const toast = useToast();
   const extraOf = (u) => String(u.extra_departments || '').split(',').map(Number).filter((x) => x && x !== u.department_id);
-  const [f, setF] = useState(editing ? { ...editing, password: '', department_id: editing.department_id || '', extra_department_ids: extraOf(editing) } : {
+  const { user: me } = useApp();
+  const [f, setF] = useState(editing ? { ...editing, role: editing.is_owner ? 'owner' : editing.role, password: '', department_id: editing.department_id || '', extra_department_ids: extraOf(editing) } : {
     username: '', password: '', name: '', email: '', phone: '', title: '', department_id: '', manager_id: null, role: guest ? 'guest' : 'member',
     birthday: '', apps: guest ? [] : MODULE_APPS.map((a) => a.module), expires_at: '', extra_department_ids: [],
   });
@@ -70,17 +72,23 @@ function UserModal({ user: editing, guest = false, onClose, onSaved }) {
         <Field label="Vai trò">
           <select className="input" value={f.role} onChange={(e) => setF({ ...f, role: e.target.value, apps: e.target.value === 'guest' && !editing ? [] : f.apps })}>
             <option value="member">Thành viên</option>
-            <option value="admin">Quản trị hệ thống</option>
+            <option value="admin">Quản trị hệ thống (quản trị cấp cao)</option>
+            {(!!me.is_owner || f.role === 'owner' || ownersCount === 0) && <option value="owner">Chủ doanh nghiệp (quản trị cao nhất)</option>}
             <option value="guest">Tài khoản khách (đối tác, NPP…)</option>
           </select>
         </Field>
+        {f.role === 'owner' && (
+          <Field label=" ">
+            <small className="muted">Chủ doanh nghiệp có toàn quyền như quản trị hệ thống; chỉ Chủ doanh nghiệp mới sửa, khoá hoặc đổi mật khẩu được tài khoản này.</small>
+          </Field>
+        )}
         {f.role === 'guest' && (
           <Field label="Hạn truy cập" hint="Tài khoản khách tự khoá sau ngày này; chỉ thấy nội dung được chia sẻ trực tiếp">
             <input type="date" className="input" value={f.expires_at || ''} onChange={set('expires_at')} />
           </Field>
         )}
         <div className="span-2">
-          <span className="field-label">Ứng dụng được sử dụng {f.role === 'admin' && <small className="muted">(quản trị viên dùng được tất cả)</small>}</span>
+          <span className="field-label">Ứng dụng được sử dụng {['admin', 'owner'].includes(f.role) && <small className="muted">(quản trị viên dùng được tất cả)</small>}</span>
           <div className="app-checks">
             {MODULE_APPS.map((a) => (
               <label key={a.key} className={cx('app-check', (f.apps || []).includes(a.module) && 'on')}>
@@ -163,7 +171,7 @@ export function MembersPage() {
   };
   const tabs = [
     { value: 'all', label: `TẤT CẢ (${data?.counts.all ?? '…'})` },
-    { value: 'admins', label: 'QUẢN TRỊ HỆ THỐNG' },
+    { value: 'admins', label: `QUẢN TRỊ HỆ THỐNG (${data?.counts.admins ?? 0})` },
     { value: 'guests', label: `TK KHÁCH (${data?.counts.guests ?? 0})` },
     ...(admin ? [{ value: 'disabled', label: 'VÔ HIỆU HOÁ' }, { value: 'logins', label: 'LỊCH SỬ ĐĂNG NHẬP' }] : []),
   ];
@@ -195,7 +203,8 @@ export function MembersPage() {
                   <Link to={`/account/u/${u.id}`} className="mem-title">{u.name}</Link>
                   <div className="small"><b>@{u.username}</b> · <i className="muted">{u.title || 'Chưa nhập chức danh'}</i></div>
                   <div className="mem-apps">
-                    {u.role === 'admin' && <span className="text-red small">Quản trị cấp cao · </span>}
+                    {u.is_owner ? <span className="owner-badge">Chủ doanh nghiệp</span>
+                      : u.role === 'admin' && <span className="text-red small">Quản trị cấp cao · </span>}
                     {u.role === 'guest' && <span className="badge badge-gray">KHÁCH{u.expires_at ? ` · HẾT HẠN ${fmtDate(u.expires_at)}` : ''}</span>}
                     {!!u.totp_enabled && <span className="small text-green" title="Đã bật bảo mật hai lớp">2FA · </span>}
                     {u.apps.map((k) => appByKey[k] && <span key={k} title={appByKey[k].name}><AppIcon app={appByKey[k]} size={16} /></span>)}
@@ -207,26 +216,28 @@ export function MembersPage() {
                 <div>{u.email || <i className="muted">Chưa nhập email</i>}</div>
                 <div>{u.phone || <i className="muted">Chưa nhập số điện thoại</i>}</div>
                 <div>{u.birthday ? fmtDate(u.birthday) : <i className="muted">Chưa nhập ngày sinh</i>}</div>
+                {u.active ? <ContactButtons user={u} compact /> : null}
               </div>
               <div className="mem-manager">
                 {u.manager_name && (<><Avatar name={u.manager_name} color={u.manager_color} size={40} />
                   <div><b>{u.manager_name}</b><div className="small muted">@{u.manager_username}{u.manager_title ? ` · ${u.manager_title}` : ''}</div></div></>)}
               </div>
               <div className="mem-actions">
+                {(() => { const manage = admin && (!u.is_owner || !!user.is_owner); return (
                 <Dropdown align="right" trigger={(o, t) => <button className="icon-btn sm" onClick={t} aria-label="Thao tác"><MoreHorizontal size={16} /></button>}>
                   <MenuItem icon={Eye} onClick={() => { window.location.href = `/account/u/${u.id}`; }}>Xem hồ sơ</MenuItem>
-                  {admin && <MenuItem icon={Pencil} onClick={() => setEdit(u)}>Sửa tài khoản</MenuItem>}
-                  {admin && u.id !== user.id && <MenuItem icon={KeyRound} onClick={() => setResetFor(u)}>Đặt lại mật khẩu</MenuItem>}
-                  {admin && !!u.totp_enabled && <MenuItem icon={ShieldCheck} onClick={async () => {
+                  {manage && <MenuItem icon={Pencil} onClick={() => setEdit(u)}>Sửa tài khoản</MenuItem>}
+                  {manage && u.id !== user.id && <MenuItem icon={KeyRound} onClick={() => setResetFor(u)}>Đặt lại mật khẩu</MenuItem>}
+                  {manage && !!u.totp_enabled && <MenuItem icon={ShieldCheck} onClick={async () => {
                     if (!window.confirm(`Tắt bảo mật hai lớp của ${u.name}? (dùng khi nhân viên mất điện thoại)`)) return;
                     await api.post(`/account/2fa/reset/${u.id}`);
                     toast('Đã đặt lại bảo mật hai lớp');
                     refresh();
                   }}>Đặt lại bảo mật 2 lớp</MenuItem>}
-                  {admin && u.id !== user.id && (u.active
+                  {manage && u.id !== user.id && (u.active
                     ? <MenuItem icon={UserX} danger onClick={() => setActive(u, false)}>Vô hiệu hoá</MenuItem>
                     : <MenuItem icon={UserCheck} onClick={() => setActive(u, true)}>Kích hoạt lại</MenuItem>)}
-                </Dropdown>
+                </Dropdown>); })()}
                 <small className="muted">{fmtDate(u.created_at)}</small>
               </div>
             </div>
@@ -234,7 +245,7 @@ export function MembersPage() {
           {!data.items.length && <Empty icon={Users} title="Không có thành viên nào" />}
         </div>
       )}
-      {edit && <UserModal user={edit.id ? edit : null} guest={!!edit.guest} onClose={() => { setEdit(null); if (params.get('edit')) setParams({}); }} onSaved={() => { setEdit(null); refresh(); }} />}
+      {edit && <UserModal user={edit.id ? edit : null} guest={!!edit.guest} ownersCount={data?.counts.owners} onClose={() => { setEdit(null); if (params.get('edit')) setParams({}); }} onSaved={() => { setEdit(null); refresh(); }} />}
       {importing && <ImportModal onClose={() => setImporting(false)} onDone={refresh} />}
       {resetFor && <ResetPasswordModal ids={[resetFor.id]} title={`Đặt lại mật khẩu cho ${resetFor.name}`} onClose={() => setResetFor(null)} />}
     </div>

@@ -6,6 +6,7 @@ import {
 import { api } from '../api.js';
 import { useApp } from '../context.jsx';
 import { AppSwitcher, NotificationBell, UserMenu, QuickCreate } from '../components/shell.jsx';
+import { ContactsButton } from '../components/Contact.jsx';
 import { buildTree, cx } from '../utils.js';
 
 function Section({ title, children, defaultOpen = true, action }) {
@@ -83,11 +84,13 @@ export default function OfficeLayout() {
           <Search size={16} />
         </form>
         <QuickCreate />
+        <ContactsButton dark />
         <NotificationBell app="office" dark />
         <AppSwitcher dark />
         <UserMenu dark />
       </header>
       <div className="office-body">
+        {mobileNav && <div className="side-backdrop" onClick={() => setMobileNav(false)} />}
         <aside className={cx('office-side', mobileNav && 'open')}>
           <div className="side-company ellipsis">{company}</div>
           {boxLink('home', 'Trang chủ', LayoutGrid)}

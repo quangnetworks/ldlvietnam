@@ -43,6 +43,7 @@ export async function buildSeed() {
   };
   addUser('admin', 'admin', 'Quản trị hệ thống', 'Quản trị viên', 'it', 'admin');
   addUser('gd', 'giamdoc', 'Võ Trung Cang', 'Giám đốc', 'bgd', 'admin');
+  add('UPDATE users SET is_owner = 1 WHERE id = ?', users.gd);
   addUser('hr', 'chilan', 'Đinh Phạm Chi Lan', 'Trưởng phòng HCNS', 'hcns', 'member', 'gd');
   addUser('kd', 'truongkd', 'Lê Trường Giang', 'Trưởng phòng Kinh doanh', 'kd', 'member', 'gd');
   addUser('mkt', 'minhtrang', 'Nguyễn Minh Trang', 'Trưởng phòng Marketing', 'mkt', 'member', 'gd');

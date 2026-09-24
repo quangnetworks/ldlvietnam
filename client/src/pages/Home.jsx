@@ -4,6 +4,7 @@ import { Search, StickyNote, Palette, Users, Lock, X, Plus, Trash2, Cake, Megaph
 import { api } from '../api.js';
 import { useApp, useFetch, useToast } from '../context.jsx';
 import { NotificationBell, UserMenu, ThemeToggle } from '../components/shell.jsx';
+import { ContactsButton } from '../components/Contact.jsx';
 import HomeAgenda from '../home/HomeAgenda.jsx';
 import { BRANDS, applyBrand, getBrandIndex } from '../theme.js';
 import HomeChat from '../home/HomeChat.jsx';
@@ -110,7 +111,8 @@ export default function Home() {
         <div className="home2-top">
           <Link to="/" className="brand"><img className="brand-logo" src="/logo-192.png" alt="LDL" /><span className="brand-name">{company}</span></Link>
           <div className="grow" />
-          <Link to="/account/members" className="icon-btn on-dark" title="Thành viên"><Users size={18} /></Link>
+          <Link to="/account/members" className="icon-btn on-dark hide-sm" title="Thành viên"><Users size={18} /></Link>
+          <ContactsButton dark />
           <button className="icon-btn on-dark" title="Ghi chú" onClick={() => setNotesOpen(true)}><StickyNote size={18} /></button>
           <button className="icon-btn on-dark" title="Màu thương hiệu" onClick={() => setBgOpen((o) => !o)}><Palette size={18} /></button>
           <ThemeToggle dark />

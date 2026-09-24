@@ -8,6 +8,7 @@ import { api } from '../api.js';
 import { useApp } from '../context.jsx';
 import { Avatar, useClickOutside } from '../components/ui.jsx';
 import { NotificationBell, AppSwitcher, UserMenu, useDebounced } from '../components/shell.jsx';
+import { ContactsButton } from '../components/Contact.jsx';
 import { cx } from '../utils.js';
 import TaskDrawer from './TaskDrawer.jsx';
 import TaskCreateModal from './TaskCreateModal.jsx';
@@ -112,6 +113,7 @@ export default function WeworkLayout() {
   return (
     <WeworkCtx.Provider value={ctx}>
       <div className="wework">
+        {mobileNav && <div className="side-backdrop" onClick={() => setMobileNav(false)} />}
         <aside className={cx('ww-side', mobileNav && 'open')}>
           <Link to="/" className="brand side-brand" title="Về trang chủ">
             <img className="brand-logo" src="/logo-192.png" alt="LDL" />
@@ -120,6 +122,7 @@ export default function WeworkLayout() {
           <div className="ww-user">
             <UserMenu dark />
             <div className="grow" />
+            <ContactsButton dark />
             <NotificationBell app="wework" dark />
             <AppSwitcher dark />
           </div>
@@ -165,7 +168,16 @@ export default function WeworkLayout() {
           </div>
         </aside>
         <div className="ww-content">
-          <button className="icon-btn mobile-only ww-burger" onClick={() => setMobileNav(!mobileNav)} aria-label="Menu"><Menu size={20} /></button>
+          <header className="topbar ww-mobilebar">
+            <button className="icon-btn on-dark" onClick={() => setMobileNav(!mobileNav)} aria-label="Menu Wework"><Menu size={20} /></button>
+            <Link to="/" className="brand"><img className="brand-logo" src="/logo-192.png" alt="LDL" /></Link>
+            <span className="topbar-title">Wework</span>
+            <div className="grow" />
+            <button className="icon-btn on-dark" onClick={() => ctx.openCreate({})} aria-label="Tạo công việc"><PlusSquare size={19} /></button>
+            <ContactsButton dark />
+            <NotificationBell app="wework" dark />
+            <UserMenu dark showName={false} />
+          </header>
           <Outlet />
         </div>
       </div>

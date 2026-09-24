@@ -38,6 +38,7 @@ import { CheckinHome, CheckinTeam, CheckinSettings } from './hrm/Checkin.jsx';
 import { TimeoffHome, TimeoffCalendar, TimeoffBalances } from './hrm/Timeoff.jsx';
 import DrivePage from './drive/Drive.jsx';
 import MessagePage from './message/Message.jsx';
+import MobileTabBar from './components/MobileNav.jsx';
 
 /** Guard a module route by the user's app access (Account → Ứng dụng). */
 function RequireApp({ app, children }) {
@@ -65,6 +66,7 @@ export default function App() {
     return <Login />;
   }
   return (
+    <>
     <Routes>
       <Route path="/login" element={<Navigate to={location.state?.from || '/'} replace />} />
       <Route path="/" element={<Home />} />
@@ -147,5 +149,7 @@ export default function App() {
       <Route path="/message/:channelId" element={<RequireApp app="message"><MessagePage /></RequireApp>} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
+    <MobileTabBar />
+    </>
   );
 }
