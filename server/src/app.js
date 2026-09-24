@@ -19,7 +19,8 @@ export function createApp() {
   const app = new Hono();
 
   app.use('/api/*', async (c, next) => {
-    if (PUBLIC_API.has(c.req.path)) return next();
+    // /api/public/*: signed, short-lived file links (the token itself is the credential)
+    if (PUBLIC_API.has(c.req.path) || c.req.path.startsWith('/api/public/')) return next();
     return requireAuth(c, () => requireModule(c, next));
   });
   app.get('/api/health', (c) => c.json({ ok: true }));

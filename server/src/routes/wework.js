@@ -1,5 +1,7 @@
 import { Hono } from 'hono';
-import { all, get, run, batch, logActivity, notify } from '../db.js';
+import { all, get, run, batch, logActivity, notify, getSetting, setSetting } from '../db.js';
+import { requireAdmin, signFileToken, verifyFileToken } from '../auth.js';
+import { audit } from '../platform.js';
 import {
   badRequest, notFound, forbidden, toInt, idList, paginate, today, jsonBody, formBody, storeFiles, removeFile, sendFile,
 } from '../util.js';
@@ -37,7 +39,34 @@ function taskVisibilitySql(user) {
   };
 }
 
+// ---------------- report permission (Cài đặt Wework → Quyền xem báo cáo)
+const DEFAULT_SETTINGS = { report_users: [], report_groups: [], report_departments: [] };
+
+async function weworkSettings() {
+  try { return { ...DEFAULT_SETTINGS, ...JSON.parse((await getSetting('wework_settings')) || '{}') }; } catch { return { ...DEFAULT_SETTINGS }; }
+}
+
+/** Báo cáo chỉ dành cho quản trị viên và các cá nhân / nhóm / phòng ban được cấp quyền (tài khoản khách chỉ khi được chọn đích danh). */
+export async function canViewReports(user, st) {
+  if (isAdmin(user)) return true;
+  const s = st || (await weworkSettings());
+  if (s.report_users.includes(user.id)) return true;
+  if (user.role === 'guest') return false;
+  if (user.department_id && s.report_departments.includes(user.department_id)) return true;
+  if (s.report_groups.length) {
+    return !!(await get(`SELECT 1 FROM user_group_members WHERE user_id = ? AND group_id IN (${s.report_groups.map(() => '?').join(',')})`,
+      user.id, ...s.report_groups));
+  }
+  return false;
+}
+
+async function requireReports(c) {
+  if (!(await canViewReports(c.get('user')))) throw forbidden('Chỉ quản trị viên và người được cấp quyền mới xem được báo cáo');
+}
+
 async function canViewTask(user, id) {
+  // người xem báo cáo mở được công việc từ popup chi tiết của báo cáo
+  if (await canViewReports(user)) return !!(await get('SELECT 1 FROM tasks WHERE id = ?', id));
   const v = taskVisibilitySql(user);
   return !!(await get(`SELECT 1 FROM tasks t WHERE t.id = ? AND ${v.sql}`, id, ...v.params));
 }
@@ -74,6 +103,7 @@ const TASK_SELECT = `
     (SELECT COUNT(*) FROM task_checklist k WHERE k.task_id = t.id) AS checklist_count,
     (SELECT COUNT(*) FROM task_checklist k WHERE k.task_id = t.id AND k.done = 1) AS checklist_done,
     (SELECT COUNT(*) FROM task_comments cm WHERE cm.task_id = t.id) AS comment_count,
+    (SELECT COUNT(*) FROM task_results rs WHERE rs.task_id = t.id) AS result_count,
     EXISTS (SELECT 1 FROM task_stars st WHERE st.task_id = t.id AND st.user_id = ?) AS starred,
     EXISTS (SELECT 1 FROM task_followers tf2 WHERE tf2.task_id = t.id AND tf2.user_id = ?) AS following
   FROM tasks t
@@ -204,8 +234,9 @@ const BUCKET_SQL = `CASE WHEN t.status IN ('todo','doing') AND t.due_date IS NOT
   ELSE t.status END`;
 
 r.get('/wework/reports', async (c) => {
+  await requireReports(c);
   const q = c.req.query();
-  const vis = taskVisibilitySql(c.get('user'));
+  const vis = { sql: '1=1', params: [] };
   const where = [vis.sql, 't.parent_id IS NULL'];
   const params = [...vis.params];
   const pid = toInt(q.project_id);
@@ -276,23 +307,43 @@ function taskBucket(t, td) {
 }
 const emptyCounts = () => Object.fromEntries([...BUCKETS.map((b) => [b, 0]), ['total', 0]]);
 
-r.get('/wework/reports/overview', async (c) => {
-  const user = c.get('user');
-  const q = c.req.query();
+/**
+ * Phạm vi dữ liệu chung của báo cáo tổng hợp và popup chi tiết: khoảng ngày theo mốc (tạo / thời hạn / bắt đầu / hoàn thành),
+ * dự án, công việc con, trạng thái. Người xem báo cáo thấy toàn bộ công việc của công ty.
+ */
+function reportScope(q) {
   const td = today();
-  const vis = taskVisibilitySql(user);
   const basis = BASIS[q.basis] ? q.basis : 'created';
   const col = BASIS[basis];
   const iso = (v) => (/^\d{4}-\d{2}-\d{2}$/.test(v || '') ? v : null);
   const to = iso(q.to) || td;
   const from = iso(q.from) || new Date(new Date(`${to}T00:00:00Z`).getTime() - 29 * 864e5).toISOString().slice(0, 10);
-  const where = [vis.sql, `${col} IS NOT NULL`, `date(${col}) BETWEEN date(?) AND date(?)`];
-  const params = [...vis.params, from, to];
+  const where = [`${col} IS NOT NULL`, `date(${col}) BETWEEN date(?) AND date(?)`];
+  const params = [from, to];
   const pid = toInt(q.project_id);
   if (pid) { where.push('t.project_id = ?'); params.push(pid); }
   if (q.subtasks === '0') where.push('t.parent_id IS NULL');
   if (q.status === 'active') where.push("t.status IN ('todo','doing','review')");
   if (q.status === 'done') where.push("t.status = 'done'");
+  return { td, basis, col, from, to, where, params, iso };
+}
+
+r.get('/wework/meta', async (c) => c.json({ can_view_reports: await canViewReports(c.get('user')), is_admin: isAdmin(c.get('user')) }));
+
+r.get('/wework/settings', requireAdmin, async (c) => c.json(await weworkSettings()));
+r.put('/wework/settings', requireAdmin, async (c) => {
+  const b = await jsonBody(c);
+  const next = { report_users: idList(b.report_users), report_groups: idList(b.report_groups), report_departments: idList(b.report_departments) };
+  await setSetting('wework_settings', JSON.stringify(next));
+  await audit(c.get('user').id, 'wework.settings',
+    `Cập nhật quyền xem báo cáo Wework (${next.report_users.length} người, ${next.report_groups.length} nhóm, ${next.report_departments.length} phòng ban)`);
+  return c.json(next);
+});
+
+r.get('/wework/reports/overview', async (c) => {
+  await requireReports(c);
+  const q = c.req.query();
+  const { td, basis, col, from, to, where, params } = reportScope(q);
 
   const [tasks, projects, people, goals, comments] = await Promise.all([
     all(`SELECT t.id, t.status, t.priority, t.due_date, t.start_date, t.completed_at, t.created_at, t.assignee_id, t.creator_id,
@@ -404,6 +455,57 @@ r.get('/wework/reports/overview', async (c) => {
   });
 });
 
+/** Điều kiện SQL của từng nhóm trạng thái (khớp taskBucket: so sánh theo 10 ký tự ngày). */
+const LATE_SQL = "(t.status = 'done' AND t.due_date IS NOT NULL AND t.completed_at IS NOT NULL AND substr(t.completed_at, 1, 10) > substr(t.due_date, 1, 10))";
+const OVERDUE_SQL = "(t.status IN ('todo','doing') AND t.due_date IS NOT NULL AND substr(t.due_date, 1, 10) < ?)";
+const bucketWhere = (b, td) => ({
+  on_time: [`(t.status = 'done' AND NOT ${LATE_SQL})`, []],
+  late: [LATE_SQL, []],
+  failed: ["t.status = 'failed'", []],
+  review: ["t.status = 'review'", []],
+  overdue: [OVERDUE_SQL, [td]],
+  doing: [`(t.status IN ('todo','doing') AND NOT ${OVERDUE_SQL})`, [td]],
+  open: [`(t.status IN ('todo','doing','review'))`, []],
+  done: ["t.status = 'done'", []],
+}[b]);
+
+/**
+ * Popup chi tiết của báo cáo: danh sách công việc đứng sau một con số / một phần biểu đồ.
+ * Dùng cùng phạm vi với báo cáo tổng hợp, cộng thêm bộ lọc chi tiết (nhóm trạng thái, người, dự án, ưu tiên, ngày, mục tiêu).
+ */
+r.get('/wework/reports/tasks', async (c) => {
+  await requireReports(c);
+  const user = c.get('user');
+  const q = c.req.query();
+  const scope = reportScope(q);
+  const { td, iso } = scope;
+  const goal = toInt(q.goal_id);
+  // mục tiêu: mọi công việc gắn với mục tiêu, không giới hạn theo khoảng ngày
+  const where = goal ? ['t.goal_id = ?'] : [...scope.where];
+  const params = goal ? [goal] : [...scope.params];
+  // nhiều nhóm (vd. "overdue,late" = làm muộn) được cộng gộp
+  const buckets = String(q.bucket || '').split(',').map((b) => bucketWhere(b, td)).filter(Boolean);
+  if (buckets.length) { where.push(`(${buckets.map((b) => b[0]).join(' OR ')})`); params.push(...buckets.flatMap((b) => b[1])); }
+  const eq = (colName, key) => { const v = toInt(q[key]); if (v) { where.push(`${colName} = ?`); params.push(v); } };
+  eq('t.assignee_id', 'assignee_id');
+  eq('t.creator_id', 'creator_id');
+  eq('t.project_id', 'drill_project');
+  if (q.unassigned === '1') where.push('t.assignee_id IS NULL');
+  if (PRIORITIES.includes(q.priority)) { where.push('t.priority = ?'); params.push(q.priority); }
+  if (q.no_due === '1') where.push('t.due_date IS NULL');
+  if (q.review_overdue === '1') { where.push("t.status = 'review' AND t.due_date IS NOT NULL AND substr(t.due_date, 1, 10) < ?"); params.push(td); }
+  if (q.with_comments === '1') where.push('EXISTS (SELECT 1 FROM task_comments cm2 WHERE cm2.task_id = t.id)');
+  if (!goal && iso(q.day_from)) { where.push(`date(${scope.col}) >= date(?)`); params.push(q.day_from); }
+  if (!goal && iso(q.day_to)) { where.push(`date(${scope.col}) <= date(?)`); params.push(q.day_to); }
+  if (q.q) { where.push('t.title LIKE ?'); params.push(`%${String(q.q).trim()}%`); }
+  const w = where.join(' AND ');
+  const { page, limit, offset } = paginate(q, 50);
+  const total = (await get(`SELECT COUNT(*) AS c FROM tasks t WHERE ${w}`, ...params)).c;
+  const items = (await selectTasks(user, `WHERE ${w} ORDER BY CASE WHEN t.due_date IS NULL THEN 1 ELSE 0 END, t.due_date DESC, t.id DESC LIMIT ? OFFSET ?`,
+    ...params, limit, offset)).map((t) => ({ ...t, bucket: taskBucket(t, td) }));
+  return c.json({ items, total, page, limit });
+});
+
 // ================================================================ task detail
 async function fullTask(id, user) {
   const [t] = await selectTasks(user, 'WHERE t.id = ?', id);
@@ -411,7 +513,7 @@ async function fullTask(id, user) {
   t.checklist = await all('SELECT * FROM task_checklist WHERE task_id = ? ORDER BY position, id', id);
   t.subtasks = await selectTasks(user, 'WHERE t.parent_id = ? ORDER BY t.position, t.id', id);
   t.attachments = await all(`SELECT a.id, a.original_name, a.mime, a.size, a.created_at, u.name AS user_name FROM task_attachments a
-    LEFT JOIN users u ON u.id = a.user_id WHERE a.task_id = ? ORDER BY a.id`, id);
+    LEFT JOIN users u ON u.id = a.user_id WHERE a.task_id = ? AND a.result_id IS NULL ORDER BY a.id`, id);
   t.parent = t.parent_id ? await get('SELECT id, title FROM tasks WHERE id = ?', t.parent_id) : null;
   t.can_edit = await canEditTask(user, t);
   return t;
@@ -727,6 +829,126 @@ r.delete('/tasks/:id/attachments/:aid', async (c) => {
   await run('DELETE FROM task_attachments WHERE id = ?', a.id);
   await removeFile(a.filename);
   return c.json({ ok: true });
+});
+
+/** Liên kết tạm (15 phút) để trình xem trực tuyến (Microsoft Office / Google) tải được tệp mà không cần phiên đăng nhập. */
+r.post('/tasks/:id/attachments/:aid/link', async (c) => {
+  const t = await viewableTask(c);
+  const a = await get('SELECT id, original_name FROM task_attachments WHERE id = ? AND task_id = ?', toInt(c.req.param('aid')), t.id);
+  if (!a) throw notFound('Tệp không tồn tại');
+  const token = await signFileToken(c, { ta: a.id });
+  const url = new URL(c.req.url);
+  const proto = c.req.header('x-forwarded-proto')?.split(',')[0] || url.protocol.replace(':', '');
+  const host = c.req.header('x-forwarded-host') || url.host;
+  return c.json({ url: `${proto}://${host}/api/public/files/${token}/${encodeURIComponent(a.original_name)}`, expires_in: 900 });
+});
+r.get('/public/files/:token/:name?', async (c) => {
+  const p = await verifyFileToken(c, c.req.param('token'));
+  if (!p?.ta) throw forbidden('Liên kết đã hết hạn hoặc không hợp lệ');
+  const a = await get('SELECT * FROM task_attachments WHERE id = ?', toInt(p.ta));
+  if (!a) throw notFound('Tệp không tồn tại');
+  return sendFile(c, a, true);
+});
+
+// ---------------- kết quả công việc (văn bản, liên kết, tệp: office, ảnh, video...)
+const RESULT_SELECT = `SELECT r.*, u.name AS user_name, u.color AS user_color FROM task_results r LEFT JOIN users u ON u.id = r.user_id`;
+
+function parseLinks(v) {
+  let list = v;
+  if (typeof v === 'string') {
+    try { list = JSON.parse(v); } catch { list = v.split(/\r?\n/); }
+  }
+  if (!Array.isArray(list)) return [];
+  const out = [];
+  for (const x of list) {
+    const url = String((typeof x === 'object' && x ? x.url : x) || '').trim();
+    if (!url) continue;
+    if (!/^https?:\/\/[^\s]+$/i.test(url) || url.length > 2000) throw badRequest(`Liên kết không hợp lệ: ${url.slice(0, 80)}`);
+    out.push({ url, title: String((typeof x === 'object' && x?.title) || '').trim().slice(0, 200) || null });
+  }
+  if (out.length > 20) throw badRequest('Tối đa 20 liên kết mỗi kết quả');
+  return out;
+}
+const blankHtml = (h) => !String(h || '').replace(/<[^>]*>|&nbsp;/g, '').trim() && !/<img|<video|<iframe/i.test(h || '');
+
+async function taskResults(taskId) {
+  const [rows, files] = await Promise.all([
+    all(`${RESULT_SELECT} WHERE r.task_id = ? ORDER BY r.id DESC`, taskId),
+    all(`SELECT id, result_id, original_name, mime, size, created_at FROM task_attachments WHERE task_id = ? AND result_id IS NOT NULL ORDER BY id`, taskId),
+  ]);
+  return rows.map((x) => {
+    let links = [];
+    try { links = JSON.parse(x.links || '[]'); } catch { links = []; }
+    return { ...x, links, files: files.filter((f) => f.result_id === x.id) };
+  });
+}
+
+async function editableResult(c) {
+  const user = c.get('user');
+  const t = await viewableTask(c);
+  const res = await get('SELECT * FROM task_results WHERE id = ? AND task_id = ?', toInt(c.req.param('rid')), t.id);
+  if (!res) throw notFound('Kết quả không tồn tại');
+  if (res.user_id !== user.id && !isAdmin(user) && (await projectRole(user, t.project_id)) !== 'manager') {
+    throw forbidden('Chỉ người cập nhật kết quả hoặc quản lý mới được sửa / xoá');
+  }
+  return { t, res };
+}
+
+r.get('/tasks/:id/results', async (c) => {
+  const t = await viewableTask(c);
+  return c.json(await taskResults(t.id));
+});
+
+r.post('/tasks/:id/results', async (c) => {
+  const user = c.get('user');
+  const t = await viewableTask(c);
+  if (!(await canEditTask(user, t))) throw forbidden('Chỉ người thực hiện, người giao việc hoặc quản lý dự án mới cập nhật được kết quả');
+  const { fields, files } = await formBody(c);
+  const content = blankHtml(fields.content) ? null : String(fields.content);
+  const links = parseLinks(fields.links);
+  if (!content && !links.length && !files.length) throw badRequest('Hãy nhập nội dung, liên kết hoặc tải lên tệp kết quả');
+  const { lastId } = await run('INSERT INTO task_results(task_id, user_id, content, links) VALUES (?,?,?,?)',
+    t.id, user.id, content, JSON.stringify(links));
+  const stored = await storeFiles(files);
+  await batch(stored.map((f) => [
+    'INSERT INTO task_attachments(task_id, result_id, filename, original_name, mime, size, user_id) VALUES (?,?,?,?,?,?,?)',
+    [t.id, lastId, f.filename, f.original_name, f.mime, f.size, user.id],
+  ]));
+  const parts = [content && 'nội dung', links.length && `${links.length} liên kết`, stored.length && `${stored.length} tệp`].filter(Boolean);
+  await logActivity('task', t.id, user.id, 'result', `Cập nhật kết quả công việc (${parts.join(', ')})`);
+  const watchers = (await all('SELECT user_id FROM task_followers WHERE task_id = ?', t.id)).map((x) => x.user_id);
+  await notify([t.creator_id, t.assignee_id, ...watchers], { actorId: user.id, app: APP, type: 'result',
+    title: `${user.name} đã cập nhật kết quả công việc "${t.title}"`, link: `/wework/task/${t.id}` });
+  await run("UPDATE tasks SET updated_at = datetime('now') WHERE id = ?", t.id);
+  return c.json(await taskResults(t.id), 201);
+});
+
+r.put('/tasks/:id/results/:rid', async (c) => {
+  const { t, res } = await editableResult(c);
+  const { fields, files } = await formBody(c);
+  const content = fields.content === undefined ? res.content : blankHtml(fields.content) ? null : String(fields.content);
+  const links = fields.links === undefined ? JSON.parse(res.links || '[]') : parseLinks(fields.links);
+  const stored = await storeFiles(files);
+  const keepFiles = (await get('SELECT COUNT(*) AS n FROM task_attachments WHERE result_id = ?', res.id)).n;
+  if (!content && !links.length && !keepFiles && !stored.length) throw badRequest('Kết quả không được để trống');
+  await batch([
+    ["UPDATE task_results SET content = ?, links = ?, updated_at = datetime('now') WHERE id = ?", [content, JSON.stringify(links), res.id]],
+    ...stored.map((f) => [
+      'INSERT INTO task_attachments(task_id, result_id, filename, original_name, mime, size, user_id) VALUES (?,?,?,?,?,?,?)',
+      [t.id, res.id, f.filename, f.original_name, f.mime, f.size, c.get('user').id],
+    ]),
+  ]);
+  await logActivity('task', t.id, c.get('user').id, 'result', 'Chỉnh sửa kết quả công việc');
+  return c.json(await taskResults(t.id));
+});
+
+r.delete('/tasks/:id/results/:rid', async (c) => {
+  const { t, res } = await editableResult(c);
+  const files = await all('SELECT filename FROM task_attachments WHERE result_id = ?', res.id);
+  await batch([['DELETE FROM task_attachments WHERE result_id = ?', [res.id]], ['DELETE FROM task_results WHERE id = ?', [res.id]]]);
+  for (const f of files) await removeFile(f.filename);
+  await logActivity('task', t.id, c.get('user').id, 'result', 'Xoá một kết quả công việc');
+  return c.json(await taskResults(t.id));
 });
 
 // ================================================================ projects

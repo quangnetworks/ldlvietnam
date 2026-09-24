@@ -50,6 +50,22 @@ export async function signToken(c, user) {
   return sign({ uid: user.id, exp: Math.floor(Date.now() / 1000) + TOKEN_TTL }, await secret(c.env), 'HS256');
 }
 
+/**
+ * Short-lived signed link to one file (used by online viewers such as Microsoft Office Online, which fetch the file
+ * without the user's session). Payload carries typ = 'file' so it can never be confused with a session token.
+ */
+export async function signFileToken(c, payload, ttl = 15 * 60) {
+  return sign({ ...payload, typ: 'file', exp: Math.floor(Date.now() / 1000) + ttl }, await secret(c.env), 'HS256');
+}
+export async function verifyFileToken(c, token) {
+  try {
+    const p = await verify(token, await secret(c.env), 'HS256');
+    return p?.typ === 'file' ? p : null;
+  } catch {
+    return null;
+  }
+}
+
 export const PUBLIC_USER_FIELDS =
   'u.id, u.username, u.name, u.email, u.phone, u.title, u.department_id, u.manager_id, u.role, u.color, u.active, u.birthday, u.address, u.bio, u.profile, u.last_login_at, u.created_at, u.totp_enabled, u.expires_at, u.avatar_version';
 

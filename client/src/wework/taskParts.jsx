@@ -1,4 +1,4 @@
-import { Star, Check, X, Repeat, MessageSquare, ListChecks, GitBranch, Play } from 'lucide-react';
+import { Star, Check, X, Repeat, MessageSquare, ListChecks, GitBranch, Play, Award } from 'lucide-react';
 import { api } from '../api.js';
 import { Avatar } from '../components/ui.jsx';
 import { TASK_STATUS, PRIORITY, RECURRING, fmtDate, stripHtml, cx } from '../utils.js';
@@ -67,6 +67,7 @@ export function TaskRow({ t, onOpen, onChanged, selectable, selected, onSelect, 
           {t.subtask_count > 0 && <span className="muted mini"><GitBranch size={12} /> {t.subtask_done}/{t.subtask_count}</span>}
           {t.checklist_count > 0 && <span className="muted mini"><ListChecks size={12} /> {t.checklist_done}/{t.checklist_count}</span>}
           {t.comment_count > 0 && <span className="muted mini"><MessageSquare size={12} /> {t.comment_count}</span>}
+          {t.result_count > 0 && <span className="muted mini" title="Kết quả đã cập nhật"><Award size={12} /> {t.result_count}</span>}
         </div>
       </div>
       <div className={cx('task-due', t.is_overdue && 'text-red')}>{fmtDate(t.due_date)}</div>

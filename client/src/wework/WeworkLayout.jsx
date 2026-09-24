@@ -72,8 +72,11 @@ export default function WeworkLayout() {
   const location = useLocation();
   const navigate = useNavigate();
 
+  const [meta, setMeta] = useState({ can_view_reports: user.role === 'admin' });
   const loadProjects = useCallback(async () => setProjects(await api.get('/projects', { sort: 'name' })), []);
   useEffect(() => { loadProjects(); }, [loadProjects]);
+  const loadMeta = useCallback(() => api.get('/wework/meta').then(setMeta).catch(() => {}), []);
+  useEffect(() => { loadMeta(); }, [loadMeta]);
   useEffect(() => setMobileNav(false), [location.key]);
   useEffect(() => {
     if (params.get('create') === '1') {
@@ -87,6 +90,7 @@ export default function WeworkLayout() {
   const bump = useCallback(() => setVersion((v) => v + 1), []);
   const ctx = {
     projects, loadProjects, version, bump,
+    canReports: !!meta.can_view_reports, loadMeta,
     openTask: setTaskId,
     openCreate: (defaults = {}) => setCreateDefaults(defaults),
     openProjectForm: (opts) => setProjectForm(opts),
@@ -130,7 +134,7 @@ export default function WeworkLayout() {
                   {link('/wework/projects', 'Dự án & phòng ban', FolderKanban)}
                   {link('/wework/departments', 'Departments', Building2)}
                   {link('/wework/members', 'Thành viên', Users)}
-                  {link('/wework/reports', 'Báo cáo', BarChart3)}
+                  {meta.can_view_reports && link('/wework/reports', 'Báo cáo', BarChart3)}
                   <Link to="/office" className="ww-link"><FileText size={16} /> Văn bản (Office)</Link>
                 </>
               )}

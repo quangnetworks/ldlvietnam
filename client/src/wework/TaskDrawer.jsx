@@ -10,6 +10,8 @@ import { Drawer, Spinner, Avatar, UserPicker, SafeHtml, RichEditor, FileChip, Ta
 import { TASK_STATUS, RECURRING, fmtDateTime, timeAgo, cx } from '../utils.js';
 import { useWework } from './WeworkLayout.jsx';
 import { StatusCircle, TaskTags } from './taskParts.jsx';
+import TaskResults from './TaskResults.jsx';
+import FileViewer from '../components/FileViewer.jsx';
 
 export function TaskDetail({ id, onClose, onChanged, standalone }) {
   const { users } = useApp();
@@ -25,6 +27,7 @@ export function TaskDetail({ id, onClose, onChanged, standalone }) {
   const [comment, setComment] = useState('');
   const [comments, reloadComments] = useFetch(() => api.get(`/tasks/${id}/comments`), [id]);
   const [activity, reloadActivity] = useFetch(() => api.get(`/tasks/${id}/activity`), [id]);
+  const [viewing, setViewing] = useState(null);
 
   useEffect(() => { if (t) { setTitle(t.title); setDesc(t.description || ''); } }, [t]);
   useEffect(() => {
@@ -171,6 +174,8 @@ export function TaskDetail({ id, onClose, onChanged, standalone }) {
           ) : t.description ? <SafeHtml html={t.description} /> : <p className="muted">Chưa có mô tả</p>}
         </section>
 
+        <TaskResults task={t} onChanged={() => { reload(); reloadActivity(); onChanged?.(); }} />
+
         <section className="td-section">
           <div className="td-section-head"><b>Danh sách kiểm tra</b>{t.checklist.length > 0 && <span className="muted">{checklistPct}%</span>}</div>
           {t.checklist.length > 0 && <Progress value={checklistPct} color="#37b24d" />}
@@ -211,15 +216,19 @@ export function TaskDetail({ id, onClose, onChanged, standalone }) {
             </label>
           </div>
           <div className="attach-list">
-            {t.attachments.map((a) => (
+            {t.attachments.map((a, i) => (
               <div key={a.id} className="attach-row">
-                <FileChip file={a} href={api.url(`/tasks/${id}/attachments/${a.id}`)} />
+                <FileChip file={a} onOpen={() => setViewing(i)} />
                 <small className="muted grow">{a.user_name} · {timeAgo(a.created_at)}</small>
                 <a className="icon-btn sm" href={api.url(`/tasks/${id}/attachments/${a.id}`)} aria-label="Tải về"><Download size={14} /></a>
                 <button className="icon-btn sm" onClick={async () => { await api.del(`/tasks/${id}/attachments/${a.id}`); reload(); }} aria-label="Xóa"><X size={14} /></button>
               </div>
             ))}
           </div>
+          {viewing != null && (
+            <FileViewer files={t.attachments} index={viewing} urlOf={(f) => api.url(`/tasks/${id}/attachments/${f.id}`)} onClose={() => setViewing(null)}
+              publicUrlOf={async (f) => (await api.post(`/tasks/${id}/attachments/${f.id}/link`)).url} />
+          )}
         </section>
 
         <section className="td-section">

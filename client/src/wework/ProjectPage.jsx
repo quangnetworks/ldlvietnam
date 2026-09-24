@@ -137,7 +137,7 @@ export default function ProjectPage() {
   const { id } = useParams();
   const navigate = useNavigate();
   const toast = useToast();
-  const { openTask, openCreate, version, bump, loadProjects } = useWework();
+  const { openTask, openCreate, version, bump, loadProjects, canReports } = useWework();
   const [params, setParams] = useSearchParams();
   const view = params.get('view') || 'list';
   const [statusFilter, setStatusFilter] = useState('');
@@ -224,7 +224,7 @@ export default function ProjectPage() {
 
         <div className="ww-toolbar">
           <div className="view-tabs">
-            {VIEWS.map((v) => (
+            {VIEWS.filter((v) => v.value !== 'report' || canReports).map((v) => (
               <button key={v.value} className={cx(view === v.value && 'active')} onClick={() => setParams(v.value === 'list' ? {} : { view: v.value })}>{v.label}</button>
             ))}
           </div>
@@ -296,7 +296,7 @@ export default function ProjectPage() {
             )}
           </div>
         )}
-        {view === 'report' && <ReportView projectId={project.id} />}
+        {view === 'report' && canReports && <ReportView projectId={project.id} />}
       </div>
       {editing && <ProjectFormModal project={project} onClose={() => setEditing(false)} onSaved={() => { setEditing(false); reloadProject(); loadProjects(); }} />}
     </div>

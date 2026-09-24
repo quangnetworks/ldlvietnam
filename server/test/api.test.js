@@ -171,7 +171,10 @@ test('reports and summary respond', async () => {
   const demo = await login('demo');
   const s = await demo.get('/wework/summary');
   assert.equal(typeof s.data.rate, 'number');
-  const rep = await demo.get('/wework/reports');
+  // báo cáo chỉ dành cho quản trị viên và người được cấp quyền
+  assert.equal((await demo.get('/wework/reports')).status, 403);
+  const admin = await login('admin');
+  const rep = await admin.get('/wework/reports');
   assert.ok(Array.isArray(rep.data.by_status));
 });
 

@@ -280,7 +280,85 @@ test('wework report overview: buckets add up and filters apply', async () => {
   assert.equal(e.important + e.both + e.none + e.urgent, s.total);
   const done = await admin.get('/wework/reports/overview?from=2020-01-01&status=done');
   assert.equal(done.data.summary.doing + done.data.summary.overdue + done.data.summary.review, 0);
+  // popup chi tiết: số công việc trong từng nhóm khớp với biểu đồ
+  for (const b of ['on_time', 'late', 'doing', 'review', 'overdue', 'failed']) {
+    const d = await admin.get(`/wework/reports/tasks?from=2020-01-01&bucket=${b}&limit=200`);
+    assert.equal(d.data.total, s[b], b);
+    assert.ok(d.data.items.every((t) => t.bucket === b));
+  }
+  const m = r.data.assigned[0];
+  assert.equal((await admin.get(`/wework/reports/tasks?from=2020-01-01&assignee_id=${m.id}`)).data.total, m.total);
+  assert.equal((await admin.get('/wework/reports/tasks?from=2020-01-01&priority=urgent')).data.total, e.urgent);
+  assert.equal((await admin.get('/wework/reports/tasks?from=2020-01-01&no_due=1')).data.total, r.data.not_on_time.no_due);
+  assert.equal((await admin.get('/wework/reports/tasks?from=2020-01-01&bucket=overdue,late')).data.total, s.overdue + s.late);
+});
+
+test('wework reports: only admins and granted people can view', async () => {
+  const admin = await login('admin');
   const demo = await login('demo');
+  assert.equal((await demo.get('/wework/meta')).data.can_view_reports, false);
+  assert.equal((await demo.get('/wework/reports/overview?from=2020-01-01')).status, 403);
+  assert.equal((await demo.get('/wework/reports/tasks?from=2020-01-01')).status, 403);
+  assert.equal((await demo.put('/wework/settings', { report_users: [demo.user.id] })).status, 403);
+  // cấp quyền theo cá nhân
+  await admin.put('/wework/settings', { report_users: [demo.user.id] });
+  assert.equal((await demo.get('/wework/meta')).data.can_view_reports, true);
+  const all = await admin.get('/wework/reports/overview?from=2020-01-01');
   const mine = await demo.get('/wework/reports/overview?from=2020-01-01');
-  assert.ok(mine.data.summary.total <= s.total);
+  assert.equal(mine.data.summary.total, all.data.summary.total);
+  // người xem báo cáo mở được công việc từ popup
+  const any = (await admin.get('/wework/reports/tasks?from=2020-01-01&limit=200')).data.items.at(-1);
+  assert.equal((await demo.get(`/tasks/${any.id}`)).status, 200);
+  // cấp theo phòng ban
+  await admin.put('/wework/settings', { report_departments: [demo.user.department_id] });
+  assert.equal((await demo.get('/wework/meta')).data.can_view_reports, true);
+  await admin.put('/wework/settings', {});
+  assert.equal((await demo.get('/wework/reports/overview')).status, 403);
+});
+
+test('wework task results: text, links and files; viewer link and byte ranges', async () => {
+  const demo = await login('demo');
+  const admin = await login('admin');
+  const { data: t } = await demo.post('/tasks', { title: 'Báo cáo thị trường Q3' });
+  assert.equal((await demo.post(`/tasks/${t.id}/results`, { content: '<p> </p>' })).status, 400);
+  assert.equal((await demo.post(`/tasks/${t.id}/results`, { links: 'javascript:alert(1)' })).status, 400);
+  const fd = new FormData();
+  fd.append('content', '<p>Đã hoàn thành khảo sát 120 điểm bán</p>');
+  fd.append('links', 'https://example.com/bao-cao\nhttps://youtu.be/abc');
+  fd.append('files', new Blob(['0123456789'], { type: 'video/mp4' }), 'clip.mp4');
+  fd.append('files', new Blob(['PK'], { type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' }), 'Báo cáo.docx');
+  const res = await demo.post(`/tasks/${t.id}/results`, fd);
+  assert.equal(res.status, 201);
+  const [first] = res.data;
+  assert.equal(first.links.length, 2);
+  assert.equal(first.files.length, 2);
+  // tệp kết quả không lẫn vào tệp đính kèm, có đếm số kết quả
+  const full = (await demo.get(`/tasks/${t.id}`)).data;
+  assert.equal(full.attachments.length, 0);
+  assert.equal(full.result_count, 1);
+  // người khác (không liên quan) không cập nhật được
+  const mkt = await login('minhtrang');
+  assert.equal((await mkt.post(`/tasks/${t.id}/results`, { content: 'x' })).status, 403);
+
+  // tua video: phản hồi 206 theo Range
+  const token = (await raw('/auth/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username: 'demo', password: '123456' }) })).data.token;
+  const clip = first.files.find((f) => f.original_name === 'clip.mp4');
+  const part = await app.fetch(new Request(`${base}/tasks/${t.id}/attachments/${clip.id}?inline=1`, { headers: { Authorization: `Bearer ${token}`, Range: 'bytes=2-5' } }));
+  assert.equal(part.status, 206);
+  assert.equal(await part.text(), '2345');
+  assert.equal(part.headers.get('content-range'), 'bytes 2-5/10');
+  assert.match(part.headers.get('content-disposition'), /^inline/);
+
+  // liên kết tạm cho trình xem Office trực tuyến: không cần đăng nhập, sai chữ ký bị chặn
+  const doc = first.files.find((f) => f.original_name.endsWith('.docx'));
+  const { data: link } = await demo.post(`/tasks/${t.id}/attachments/${doc.id}/link`);
+  const pub = await app.fetch(new Request(link.url.replace(/^https?:\/\/[^/]+/, 'http://test.local')));
+  assert.equal(pub.status, 200);
+  assert.equal(await pub.text(), 'PK');
+  const bad = await app.fetch(new Request(`http://test.local/api/public/files/${token}/x.docx`));
+  assert.equal(bad.status, 403);
+
+  // sửa / xoá: chỉ người cập nhật hoặc quản trị
+  assert.equal((await demo.put(`/tasks/${t.id}/results/${first.id}`, { content: '<p>Bổ sung</p>' })).data[0].content, '<p>Bổ sung</p>');
+  assert.equal((await admin.del(`/tasks/${t.id}/results/${first.id}`)).data.length, 0);
 });

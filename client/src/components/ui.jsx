@@ -297,7 +297,7 @@ export function Spinner() {
   return <div className="spinner" aria-label="Đang tải" />;
 }
 
-export function FileChip({ file, href, onRemove }) {
+export function FileChip({ file, href, onRemove, onOpen }) {
   const ic = fileIcon(file.original_name || file.name);
   const content = (
     <>
@@ -308,7 +308,8 @@ export function FileChip({ file, href, onRemove }) {
   );
   return (
     <span className="file-chip">
-      {href ? <a href={href} target="_blank" rel="noreferrer">{content}</a> : content}
+      {onOpen ? <button type="button" className="file-open" onClick={onOpen} title="Xem nội dung">{content}</button>
+        : href ? <a href={href} target="_blank" rel="noreferrer">{content}</a> : content}
       {onRemove && (
         <button type="button" className="chip-x" onClick={onRemove} aria-label="Bỏ tệp"><X size={12} /></button>
       )}
