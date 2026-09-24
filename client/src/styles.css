@@ -1854,3 +1854,41 @@ button.rpt-task:hover { background: var(--hover); }
 .td-banner.review { background: rgba(245, 159, 0, 0.1); border: 1px solid rgba(245, 159, 0, 0.35); color: #b35c00; }
 .td-banner.info { background: var(--tint-blue); border: 1px solid color-mix(in srgb, var(--blue-2) 30%, transparent); color: var(--blue-2); }
 .td-banner b { color: var(--text); }
+
+/* ================================================================ Tablet & desktop: chống ô bị co / lệch ở mọi độ rộng */
+/* Trường biểu mẫu nhóm đề xuất: tự xuống dòng thay vì ép ô tên còn vài chục px */
+.field-row-main { display: flex !important; flex-wrap: wrap; gap: 8px; align-items: center; }
+.field-row-main > .input:first-child { flex: 1 1 200px; min-width: 0; }
+.field-row-main > select.input { flex: 0 1 170px; min-width: 130px; }
+/* Ô số liệu báo cáo: đủ rộng để chữ không bị bẻ vụn */
+.rpt-sums, .rpt-sums.six { grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)) !important; }
+/* Bảng dữ liệu: giữ độ rộng tối thiểu và cuộn ngang trong khung thay vì ép chữ thành nhiều dòng */
+.table-wrap > .table:not(.compact) { min-width: 760px; }
+.table td .row.gap-sm > span:not(.avatar) { min-width: 150px; }
+.table .badge { white-space: nowrap; }
+/* Chi tiết công việc: màn vừa (tablet ngang / laptop nhỏ) → lịch sử xuống dưới để các ô nhập đủ rộng */
+@media (max-width: 1180px) {
+  .td-body { flex-direction: column; overflow-y: auto; }
+  .td-body > .td-scroll { overflow: visible; flex: none; }
+  .td-aside { width: auto; border-left: 0; border-top: 1px solid var(--line); overflow: visible; }
+}
+/* Thành viên (tablet): thẻ 2 cột — tên | liên hệ, quản lý bên dưới; tab cuộn ngang một hàng */
+@media (min-width: 801px) and (max-width: 1100px) {
+  .mem-tabs { flex-wrap: nowrap; overflow-x: auto; justify-content: flex-start; scrollbar-width: none; order: 3; flex: 1 1 100%; }
+  .mem-tabs button { white-space: nowrap; }
+  .mem-row { grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr) auto; grid-template-areas: 'name contact actions' 'manager contact actions'; gap: 8px 16px; }
+  .mem-name { grid-area: name; }
+  .mem-contact { grid-area: contact; }
+  .mem-manager { grid-area: manager; padding-left: 62px; }
+  .mem-manager:empty { display: none; }
+  .mem-actions { grid-area: actions; }
+}
+.table.nowrap-cells td { white-space: nowrap; }
+.table.nowrap-cells td small { white-space: nowrap; }
+/* Màn hình lớn (≥ 1600px): nội dung Wework dùng hết bề ngang, không để khoảng trống lệch bên phải */
+@media (min-width: 1600px) {
+  .ww-main { max-width: 1480px; }
+  .ww-main.wide { max-width: none; }
+}
+/* Trang chi tiết công việc (mở bằng liên kết): căn giữa, rộng hơn trên desktop */
+.ww-main.task-page { max-width: 1180px; margin: 0 auto; }
