@@ -7,6 +7,7 @@ import { createApp } from './app.js';
 import { setDriver } from './db.js';
 import { setStorage, createR2Storage } from './storage.js';
 import { createD1Driver } from './drivers/d1.js';
+import { setPushEnv } from './push.js';
 
 const app = createApp();
 let ready = false;
@@ -16,6 +17,7 @@ export default {
     if (!ready) {
       setDriver(createD1Driver(env.DB));
       if (env.FILES) setStorage(createR2Storage(env.FILES));
+      setPushEnv(env);
       ready = true;
     }
     const url = new URL(request.url);

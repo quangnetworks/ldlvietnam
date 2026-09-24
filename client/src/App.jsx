@@ -1,4 +1,5 @@
-import { Navigate, Route, Routes, useLocation } from 'react-router-dom';
+import { useEffect } from 'react';
+import { Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
 import { useApp } from './context.jsx';
 import { Spinner } from './components/ui.jsx';
 import Login from './pages/Login.jsx';
@@ -60,6 +61,18 @@ function RequireApp({ app, children }) {
 export default function App() {
   const { user, loading } = useApp();
   const location = useLocation();
+  const navigate = useNavigate();
+  // Bấm vào thông báo đẩy khi ứng dụng đang mở → chuyển tới nội dung
+  useEffect(() => {
+    if (!('serviceWorker' in navigator)) return undefined;
+    const h = (e) => {
+      if (e.data?.type !== 'open' || !e.data.url) return;
+      const u = new URL(e.data.url, window.location.origin);
+      if (u.origin === window.location.origin) navigate(u.pathname + u.search);
+    };
+    navigator.serviceWorker.addEventListener('message', h);
+    return () => navigator.serviceWorker.removeEventListener('message', h);
+  }, [navigate]);
   if (loading) return <div className="center-screen"><Spinner /></div>;
   if (!user) {
     if (location.pathname !== '/login') return <Navigate to="/login" replace state={{ from: location.pathname + location.search }} />;

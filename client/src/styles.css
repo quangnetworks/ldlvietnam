@@ -1743,3 +1743,16 @@ button.rpt-task:hover { background: var(--hover); }
 .contacts-foot { display: flex; align-items: center; gap: 10px; width: 100%; }
 .contacts-picked { display: flex; gap: 4px; flex-wrap: wrap; flex: 1; min-width: 0; max-height: 60px; overflow: auto; }
 .contacts-picked .chip { cursor: pointer; }
+
+/* ---------- Thông báo đẩy ---------- */
+.push-banner { display: flex; align-items: center; gap: 10px; padding: 12px 12px 12px 14px; margin-bottom: 14px; border-radius: 16px; background: var(--bg);
+  border: 1px solid color-mix(in srgb, var(--blue-2) 35%, var(--line)); box-shadow: 0 4px 18px rgba(0, 0, 0, 0.06); }
+.push-banner b { font-size: 14px; }
+.push-banner small { color: var(--text-2); margin-top: 2px; line-height: 1.4; }
+.push-banner-ico { width: 38px; height: 38px; flex: none; border-radius: 12px; display: grid; place-items: center; background: var(--tint-blue); color: var(--blue-2); }
+.push-card { display: flex; flex-direction: column; gap: 12px; padding: 14px 16px; margin: 4px 0 16px; border: 1px solid var(--line); border-radius: 16px; background: var(--bg-3); }
+.push-card.on .push-banner-ico { background: rgba(47, 158, 68, 0.14); color: #2f9e44; }
+.push-card-head { display: flex; gap: 12px; align-items: flex-start; }
+.push-card-head small { margin-top: 3px; line-height: 1.45; }
+.push-steps { margin: 0; padding-left: 22px; display: flex; flex-direction: column; gap: 6px; font-size: 14px; }
+.inline-ico { vertical-align: -2px; }

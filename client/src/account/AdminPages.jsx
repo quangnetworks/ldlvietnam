@@ -8,6 +8,7 @@ import { api } from '../api.js';
 import { useApp, useFetch, useToast } from '../context.jsx';
 import { Avatar, Modal, Field, UserPicker, Spinner, Dropdown, MenuItem, Empty, Tabs, Pagination, MultiSelect } from '../components/ui.jsx';
 import { ContactButtons } from '../components/Contact.jsx';
+import PushCard from '../components/PushCard.jsx';
 import { MODULE_APPS, AppIcon } from '../apps.jsx';
 import { fmtDate, fmtDateTime, cx } from '../utils.js';
 import { LoginHistory } from './ProfilePages.jsx';
@@ -561,6 +562,7 @@ export function NotificationsPage() {
         <h1>Thông báo</h1>
         <button className="btn btn-sm" onClick={async () => { await api.put('/notifications/read-all'); reload(); }}>Đánh dấu tất cả đã đọc</button>
       </div>
+      <PushCard />
       <div className="row gap wrap">
         <Tabs tabs={NOTIF_APPS.map(([value, label]) => ({ value, label }))} value={app} onChange={setApp} />
         <label className="check"><input type="checkbox" checked={unread} onChange={(e) => setUnread(e.target.checked)} /> Chỉ chưa đọc</label>

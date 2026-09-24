@@ -6,6 +6,9 @@ import App from './App.jsx';
 import './styles.css';
 import './mobile.css';
 import './theme.js';
+import { registerServiceWorker } from './push.js';
+
+registerServiceWorker();
 
 createRoot(document.getElementById('root')).render(
   <StrictMode>

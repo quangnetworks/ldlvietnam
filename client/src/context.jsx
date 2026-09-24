@@ -1,5 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { api, setUnauthorizedHandler } from './api.js';
+import { disablePush, setBadge } from './push.js';
 import { getThemePref, setThemePref, applyBrand } from './theme.js';
 
 const AppCtx = createContext(null);
@@ -56,6 +57,8 @@ export function AppProvider({ children }) {
     await refreshMe();
   };
   const logout = async () => {
+    await disablePush(); // máy dùng chung: không nhận thông báo của tài khoản vừa đăng xuất
+    setBadge(0);
     await api.post('/auth/logout');
     setUser(null);
   };

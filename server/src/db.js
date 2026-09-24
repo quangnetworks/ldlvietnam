@@ -34,10 +34,15 @@ export function logActivity(entityType, entityId, userId, action, detail = null)
   );
 }
 
-export function notify(userIds, { actorId = null, app, type, title, link = null }) {
+let notifyHook = null;
+/** Đăng ký xử lý thêm sau mỗi thông báo (vd. gửi thông báo đẩy tới điện thoại). */
+export const onNotify = (fn) => { notifyHook = fn; };
+
+export async function notify(userIds, { actorId = null, app, type, title, link = null }) {
   const ids = [...new Set((Array.isArray(userIds) ? userIds : [userIds]).filter(Boolean))].filter((id) => id !== actorId);
-  return batch(ids.map((uid) => [
+  await batch(ids.map((uid) => [
     'INSERT INTO notifications(user_id, actor_id, app, type, title, link) VALUES (?,?,?,?,?,?)',
     [uid, actorId, app, type, title, link],
   ]));
+  if (ids.length && notifyHook) notifyHook(ids, { actorId, app, type, title, link });
 }

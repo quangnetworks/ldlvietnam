@@ -6,6 +6,8 @@ import { badRequest, notFound, forbidden, toInt, idList, jsonBody, formBody, sto
 import { publicFileLink } from '../files.js';
 import { userDeptIds, deptIn, inDeptSql } from '../auth.js';
 
+import { pushToUsers } from '../push.js';
+
 const r = new Hono();
 
 async function channelAccess(user, id) {
@@ -201,6 +203,13 @@ r.post('/chat/channels/:id/messages', async (c) => {
     await notify(mentioned, { actorId: user.id, app: 'message', type: 'mention',
       title: `${user.name}${ch.kind === 'direct' ? ' nhắn tin' : ` nhắc đến bạn trong #${ch.name}`}: ${(content || stored?.original_name || '').slice(0, 80)}`,
       link: `/message/${ch.id}` });
+  }
+  // Nhóm chat riêng tư: đẩy tin mới tới điện thoại các thành viên (không tạo thông báo trong hệ thống)
+  if (ch.kind === 'private') {
+    const members = (await all('SELECT user_id FROM chat_members WHERE channel_id = ? AND user_id <> ?', ch.id, user.id))
+      .map((m) => m.user_id).filter((id) => !mentioned.includes(id));
+    pushToUsers(members, { app: 'message', title: `#${ch.name}`, body: `${user.name}: ${(content || `📎 ${stored?.original_name || 'Tệp đính kèm'}`).slice(0, 140)}`,
+      link: `/message/${ch.id}`, tag: `chat:/message/${ch.id}` });
   }
   return c.json(await get(`${MSG_SELECT} WHERE x.id = ?`, lastId), 201);
 });

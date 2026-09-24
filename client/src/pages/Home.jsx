@@ -10,6 +10,7 @@ import { BRANDS, applyBrand, getBrandIndex } from '../theme.js';
 import HomeChat from '../home/HomeChat.jsx';
 import HomeWeather from '../home/HomeWeather.jsx';
 import HomeImportant from '../home/HomeImportant.jsx';
+import PushCard from '../components/PushCard.jsx';
 import { Avatar, Drawer, Empty } from '../components/ui.jsx';
 import { ECOSYSTEM, CATEGORIES, canOpen, AppIcon } from '../apps.jsx';
 import { fmtDate, timeAgo, cx } from '../utils.js';
@@ -156,6 +157,7 @@ export default function Home() {
 
       <div className="home2-grid">
         <div className="home2-col left">
+          <PushCard compact />
           {(apps || []).includes('wework') && <HomeImportant data={agenda} />}
           <HomeAgenda data={agenda} reload={reloadAgenda} loading={agendaLoading} />
         </div>

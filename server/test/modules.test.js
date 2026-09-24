@@ -630,3 +630,67 @@ test('business owner: top admin tier, protected from other admins; only an owner
   const me = (await gd.get(`/users/${gd.user.id}`)).data;
   assert.equal((await gd.put(`/users/${gd.user.id}`, { ...me, role: 'admin' })).status, 400);
 });
+
+test('web push: subscribe a device, notifications are encrypted (RFC 8291) and VAPID-signed, gone devices are removed', async () => {
+  const { flushBackground, unb64url, b64url } = await import('../src/push.js');
+  const demo = await login('demo');
+  const gd = await login('giamdoc');
+  const key = (await demo.get('/push/key')).data.key;
+  assert.equal(unb64url(key).length, 65);
+  // "trình duyệt" giả lập: cặp khoá ECDH của subscription
+  const ua = await crypto.subtle.generateKey({ name: 'ECDH', namedCurve: 'P-256' }, true, ['deriveBits']);
+  const uaPublic = new Uint8Array(await crypto.subtle.exportKey('raw', ua.publicKey));
+  const authSecret = crypto.getRandomValues(new Uint8Array(16));
+  const endpoint = 'https://web.push.apple.com/QTest-device';
+  assert.equal((await demo.post('/push/subscribe', { endpoint: 'http://x', keys: {} })).status, 400);
+  assert.equal((await demo.post('/push/subscribe', { endpoint, keys: { p256dh: b64url(uaPublic), auth: b64url(authSecret) } })).status, 200);
+  assert.equal((await demo.post('/push/status', { endpoint })).data.subscribed, true);
+
+  const sent = [];
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async (url, opts) => { sent.push({ url, opts }); return new Response(null, { status: sent.length === 1 ? 201 : 410 }); };
+  try {
+    await gd.post('/tasks', { title: 'Việc có thông báo đẩy', assignee_id: demo.user.id });
+    await flushBackground();
+    assert.equal(sent.length, 1);
+    const { url, opts } = sent[0];
+    assert.equal(url, endpoint);
+    assert.equal(opts.headers['Content-Encoding'], 'aes128gcm');
+    // VAPID: JWT ES256 ký bằng khoá công khai đã công bố, aud = origin của dịch vụ đẩy
+    const [, jwt, k] = /^vapid t=([^,]+), k=(.+)$/.exec(opts.headers.Authorization);
+    assert.equal(k, key);
+    const [h, p, s] = jwt.split('.');
+    const pub = await crypto.subtle.importKey('raw', unb64url(key), { name: 'ECDSA', namedCurve: 'P-256' }, false, ['verify']);
+    assert.ok(await crypto.subtle.verify({ name: 'ECDSA', hash: 'SHA-256' }, pub, unb64url(s), new TextEncoder().encode(`${h}.${p}`)));
+    assert.equal(JSON.parse(new TextDecoder().decode(unb64url(p))).aud, 'https://web.push.apple.com');
+    // Giải mã như trình duyệt
+    const body = new Uint8Array(opts.body);
+    const salt = body.slice(0, 16);
+    const idlen = body[20];
+    const asPublic = body.slice(21, 21 + idlen);
+    const cipher = body.slice(21 + idlen);
+    const hk = async (saltB, ikm, info, bits) => new Uint8Array(await crypto.subtle.deriveBits({ name: 'HKDF', hash: 'SHA-256', salt: saltB, info },
+      await crypto.subtle.importKey('raw', ikm, 'HKDF', false, ['deriveBits']), bits));
+    const te = new TextEncoder();
+    const asKey = await crypto.subtle.importKey('raw', asPublic, { name: 'ECDH', namedCurve: 'P-256' }, false, []);
+    const ecdh = new Uint8Array(await crypto.subtle.deriveBits({ name: 'ECDH', public: asKey }, ua.privateKey, 256));
+    const info = new Uint8Array([...te.encode('WebPush: info\0'), ...uaPublic, ...asPublic]);
+    const ikm = await hk(authSecret, ecdh, info, 256);
+    const cek = await hk(salt, ikm, te.encode('Content-Encoding: aes128gcm\0'), 128);
+    const nonce = await hk(salt, ikm, te.encode('Content-Encoding: nonce\0'), 96);
+    const plain = new Uint8Array(await crypto.subtle.decrypt({ name: 'AES-GCM', iv: nonce },
+      await crypto.subtle.importKey('raw', cek, 'AES-GCM', false, ['decrypt']), cipher));
+    assert.equal(plain[plain.length - 1], 2);
+    const msg = JSON.parse(new TextDecoder().decode(plain.slice(0, -1)));
+    assert.equal(msg.title, 'LDL Wework');
+    assert.match(msg.body, /Việc có thông báo đẩy/);
+    assert.match(msg.url, /^\/wework\/task\/\d+$/);
+    assert.ok(msg.badge >= 1);
+    // Dịch vụ đẩy báo 410 (thiết bị đã huỷ) → tự xoá đăng ký
+    await gd.post('/tasks', { title: 'Việc thứ hai', assignee_id: demo.user.id });
+    await flushBackground();
+    assert.equal((await demo.post('/push/status', { endpoint })).data.subscribed, false);
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+});
