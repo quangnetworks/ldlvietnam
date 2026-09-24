@@ -285,7 +285,7 @@ textarea.input { height: auto; resize: vertical; }
 }
 .logo-mark { background: var(--blue-2); color: #fff; }
 
-/* ---------- office (Base Office) ---------- */
+/* ---------- office (LDL Office) ---------- */
 .office { display: flex; flex-direction: column; height: 100vh; }
 .topbar { height: 55px; background: var(--topbar); color: #fff; display: flex; align-items: center; gap: 10px; padding: 0 16px 0 18px; flex: none; }
 .brand { display: flex; align-items: center; gap: 12px; min-width: 0; }
@@ -399,7 +399,7 @@ textarea.input { height: auto; resize: vertical; }
 .user-list { display: flex; flex-direction: column; }
 .user-row { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--line); }
 
-/* ---------- wework (Base Wework) ---------- */
+/* ---------- wework (LDL Wework) ---------- */
 .wework { display: flex; height: 100vh; }
 .ww-side { width: 210px; flex: none; background: var(--ww-side); color: var(--ww-side-text); display: flex; flex-direction: column; }
 .ww-user { display: flex; align-items: center; gap: 2px; padding: 8px 6px 8px 8px; color: #fff; }

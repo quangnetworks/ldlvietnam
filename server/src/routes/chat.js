@@ -1,4 +1,4 @@
-/** Base Message: channels (public / private), direct messages, unread counters, attachments, @mentions. */
+/** LDL Message: channels (public / private), direct messages, unread counters, attachments, @mentions. */
 import { Hono } from 'hono';
 import { all, get, run, batch, notify } from '../db.js';
 import { badRequest, notFound, forbidden, toInt, idList, jsonBody, formBody, storeFiles, sendFile } from '../util.js';

@@ -196,7 +196,7 @@ export function CheckinSettings() {
   };
   return (
     <div className="page" style={{ maxWidth: 680 }}>
-      <h1>Cài đặt Base Checkin</h1>
+      <h1>Cài đặt LDL Checkin</h1>
       <div className="card mt">
         <div className="form-grid three">
           <Field label="Giờ bắt đầu ca"><input className="input" type="time" value={f.start} onChange={(e) => setF({ ...f, start: e.target.value })} /></Field>

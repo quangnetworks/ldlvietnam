@@ -54,7 +54,7 @@ rồi vào *Quản trị* tạo tài khoản cho nhân viên và khoá các tài
   `npx wrangler d1 execute DB --remote --command "DELETE FROM tasks; DELETE FROM documents; DELETE FROM projects;"` trong thư mục `server`.
 - **Gói trả phí Workers ($5/tháng)** được khuyến nghị khi dùng thật: gói miễn phí giới hạn 100.000 request/ngày,
   10 ms CPU và 50 truy vấn D1 cho mỗi request — đủ cho nhóm nhỏ nhưng có thể chạm giới hạn khi thao tác hàng loạt nhiều bản ghi.
-  Base Message cập nhật tin nhắn bằng polling (~6 giây/lần khi tab đang mở): 20 người mở chat suốt 8 giờ ≈ 100.000 request/ngày,
+  LDL Message cập nhật tin nhắn bằng polling (~6 giây/lần khi tab đang mở): 20 người mở chat suốt 8 giờ ≈ 100.000 request/ngày,
   nên nếu dùng chat nhiều hãy nâng lên gói trả phí.
 
 ## Chạy thử môi trường Cloudflare trên máy

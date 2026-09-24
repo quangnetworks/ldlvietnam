@@ -80,7 +80,7 @@ export function ProfileView() {
         </section>
         <section className="profile-sec">
           <h4>ỨNG DỤNG ĐƯỢC SỬ DỤNG</h4>
-          <div className="chips">{p.apps.map((a) => <span key={a} className="chip">Base {a[0].toUpperCase() + a.slice(1)}</span>)}</div>
+          <div className="chips">{p.apps.map((a) => <span key={a} className="chip">LDL {a[0].toUpperCase() + a.slice(1)}</span>)}</div>
         </section>
         {SECTIONS.map((s) => (
           <section key={s.key} className="profile-sec">

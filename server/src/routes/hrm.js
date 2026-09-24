@@ -1,4 +1,4 @@
-/** HRM+ modules: Base HRM (hồ sơ nhân sự), Base Checkin (chấm công), Base Timeoff (nghỉ phép). */
+/** HRM+ modules: LDL HRM (hồ sơ nhân sự), LDL Checkin (chấm công), LDL Timeoff (nghỉ phép). */
 import { Hono } from 'hono';
 import { all, get, run, getSetting, setSetting } from '../db.js';
 import { requireAdmin } from '../auth.js';
@@ -136,7 +136,7 @@ function leaveDays(from, to, countSaturday) {
   return n;
 }
 
-/** Leave requests (Base Request, group configured in Timeoff settings) as flat records. */
+/** Leave requests (LDL Request, group configured in Timeoff settings) as flat records. */
 async function leaveRecords(st, { userId = null, statuses = ['approved', 'pending'], from = null, to = null } = {}) {
   if (!st.group_id) return [];
   const where = ['q.group_id = ?', `q.status IN (${statuses.map(() => '?').join(',')})`];
@@ -217,7 +217,7 @@ r.put('/timeoff/settings', requireAdmin, async (c) => {
   const days = Number(b.annual_days);
   const next = { group_id: gid, annual_days: days >= 0 && days <= 365 ? days : 12, count_saturday: !!b.count_saturday };
   await setSetting('timeoff_settings', JSON.stringify(next));
-  await audit(c.get('user').id, 'timeoff.settings', 'Cập nhật cài đặt Base Timeoff');
+  await audit(c.get('user').id, 'timeoff.settings', 'Cập nhật cài đặt LDL Timeoff');
   return c.json(next);
 });
 
@@ -345,7 +345,7 @@ r.put('/checkin/settings', requireAdmin, async (c) => {
   const next = { start: time(b.start, '08:30'), end: time(b.end, '17:30'), grace: Math.min(120, Math.max(0, toInt(b.grace, 10))),
     ip_only: !!b.ip_only && rules.length > 0, ip_rules: rules, work_saturday: b.work_saturday !== false };
   await setSetting('checkin_settings', JSON.stringify(next));
-  await audit(c.get('user').id, 'checkin.settings', 'Cập nhật cài đặt Base Checkin');
+  await audit(c.get('user').id, 'checkin.settings', 'Cập nhật cài đặt LDL Checkin');
   return c.json(next);
 });
 

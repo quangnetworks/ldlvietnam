@@ -71,7 +71,7 @@ test('members list, groups, CSV import/export, audit log', async () => {
   assert.match(csv.data, /username,name,email/);
   const imp = await admin.post('/account/members/import', {
     password: 'abc123',
-    csv: 'username,name,email,department,manager_username\nnv.moi,"Nguyễn Văn Mới",moi@ldl.vn,Phòng Kho vận,truongkd\ndemo,Base Demo 12,,,',
+    csv: 'username,name,email,department,manager_username\nnv.moi,"Nguyễn Văn Mới",moi@ldl.vn,Phòng Kho vận,truongkd\ndemo,LDL Demo 12,,,',
   });
   assert.deepEqual([imp.data.created, imp.data.updated], [1, 1]);
   const moi = await login('nv.moi', 'abc123');

@@ -64,9 +64,9 @@ export default function AccountLayout() {
             <SideLink to="/account/departments" icon={Network}>Phòng ban</SideLink>
             <SideLink to="/account/audit" icon={ScrollText}>Lịch sử hệ thống</SideLink>
             <SideLink to="/account/bulk-password" icon={LockKeyhole}>Đổi mật khẩu hàng loạt</SideLink>
-            <SideLink to="/office/settings" icon={FileText}>Cài đặt Base Office</SideLink>
+            <SideLink to="/office/settings" icon={FileText}>Cài đặt LDL Office</SideLink>
             <SideLink to="/request/settings" icon={GitPullRequestArrow}>Quản lý nhóm đề xuất</SideLink>
-            <SideLink to="/request/settings/webhooks" icon={Webhook}>Webhook Base Request</SideLink>
+            <SideLink to="/request/settings/webhooks" icon={Webhook}>Webhook LDL Request</SideLink>
           </div>
         )}
       </aside>

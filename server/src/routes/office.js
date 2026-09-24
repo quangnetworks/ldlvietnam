@@ -226,7 +226,7 @@ r.put('/office/settings', requireAdmin, async (c) => {
     default_expire_days: days && days > 0 ? days : null,
   };
   await setSetting('office_settings', JSON.stringify(next));
-  await audit(c.get('user').id, 'office.settings', 'Cập nhật cài đặt Base Office');
+  await audit(c.get('user').id, 'office.settings', 'Cập nhật cài đặt LDL Office');
   return c.json(next);
 });
 

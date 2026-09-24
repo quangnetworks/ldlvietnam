@@ -4,14 +4,14 @@ import { forbidden } from './util.js';
 
 /** Modules implemented in this code base that can be granted per user. */
 export const MODULES = {
-  office: 'Base Office',
-  wework: 'Base Wework',
-  request: 'Base Request',
-  checkin: 'Base Checkin',
-  timeoff: 'Base Timeoff',
-  hrm: 'Base HRM',
-  drive: 'Base Drive',
-  message: 'Base Message',
+  office: 'LDL Office',
+  wework: 'LDL Wework',
+  request: 'LDL Request',
+  checkin: 'LDL Checkin',
+  timeoff: 'LDL Timeoff',
+  hrm: 'LDL HRM',
+  drive: 'LDL Drive',
+  message: 'LDL Message',
 };
 
 /** API path prefixes owned by each module (used to enforce app access). */

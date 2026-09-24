@@ -35,7 +35,7 @@ export function AppSwitcher({ dark }) {
   );
 }
 
-const APP_LABEL = { office: 'Base Office', wework: 'Base Wework', request: 'Base Request', message: 'Base Message', drive: 'Base Drive', hrm: 'Base HRM', checkin: 'Base Checkin', timeoff: 'Base Timeoff' };
+const APP_LABEL = { office: 'LDL Office', wework: 'LDL Wework', request: 'LDL Request', message: 'LDL Message', drive: 'LDL Drive', hrm: 'LDL HRM', checkin: 'LDL Checkin', timeoff: 'LDL Timeoff' };
 
 export function NotificationBell({ app, dark }) {
   const [data, setData] = useState({ items: [], unread: 0 });

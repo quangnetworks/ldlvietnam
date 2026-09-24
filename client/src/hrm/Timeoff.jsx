@@ -101,7 +101,7 @@ function TimeoffAdminSettings() {
   const list = Array.isArray(groups) ? groups : groups?.items || [];
   return (
     <div className="card">
-      <h3 className="card-title">Cài đặt Base Timeoff</h3>
+      <h3 className="card-title">Cài đặt LDL Timeoff</h3>
       <div className="form-grid three">
         <Field label="Nhóm đề xuất nghỉ phép">
           <select className="input" value={f.group_id || ''} onChange={(e) => setF({ ...f, group_id: Number(e.target.value) || null })}>

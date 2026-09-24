@@ -1,4 +1,4 @@
-/** Base Drive: personal & company document storage with folder tree and sharing. */
+/** LDL Drive: personal & company document storage with folder tree and sharing. */
 import { Hono } from 'hono';
 import { all, get, run, batch } from '../db.js';
 import { badRequest, notFound, forbidden, toInt, jsonBody, formBody, storeFiles, removeFile, sendFile } from '../util.js';

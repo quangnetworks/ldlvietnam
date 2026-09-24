@@ -338,7 +338,7 @@ export function RequestGuide() {
   ];
   return (
     <div className="rq-page">
-      <div className="rq-head"><h1>Hướng dẫn sử dụng Base Request</h1></div>
+      <div className="rq-head"><h1>Hướng dẫn sử dụng LDL Request</h1></div>
       <div className="guide-grid">{steps.map(([t, d], i) => <div key={t} className="card"><h3>{i + 1}. {t}</h3><p className="muted">{d}</p></div>)}</div>
     </div>
   );

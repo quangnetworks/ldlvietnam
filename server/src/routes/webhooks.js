@@ -1,4 +1,4 @@
-/** Outgoing webhooks for Base Request: notify external systems (ERP, Zalo OA, Slack…) about request events. */
+/** Outgoing webhooks for LDL Request: notify external systems (ERP, Zalo OA, Slack…) about request events. */
 import { Hono } from 'hono';
 import { all, get, run } from '../db.js';
 import { requireAdmin } from '../auth.js';

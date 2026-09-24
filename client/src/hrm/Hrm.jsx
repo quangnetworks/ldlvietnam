@@ -169,7 +169,7 @@ export function HrmSettings() {
   if (!ids) return <div className="page"><Spinner /></div>;
   return (
     <div className="page" style={{ maxWidth: 640 }}>
-      <h1>Cài đặt Base HRM</h1>
+      <h1>Cài đặt LDL HRM</h1>
       <div className="card mt">
         <Field label="Quản lý nhân sự" hint="Được xem / sửa toàn bộ hồ sơ nhân sự, bảng công và quỹ phép của công ty (ngoài quản trị viên)">
           <UserPicker users={users} multiple value={ids} onChange={setIds} placeholder="Chọn người" />

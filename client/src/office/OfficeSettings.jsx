@@ -21,7 +21,7 @@ function GeneralSettings() {
   const save = async () => {
     try {
       setF(await api.put('/office/settings', f));
-      toast('Đã lưu cài đặt Base Office');
+      toast('Đã lưu cài đặt LDL Office');
     } catch (e) { toast(e.message, 'error'); }
   };
   return (
@@ -74,7 +74,7 @@ export default function OfficeSettings() {
   if (tab === 'general') {
     return (
       <div className="page">
-        <div className="page-head"><h1>Cài đặt Base Office</h1></div>
+        <div className="page-head"><h1>Cài đặt LDL Office</h1></div>
         <Tabs tabs={[{ value: 'general', label: 'Chung' }, ...Object.entries(KINDS).map(([value, k]) => ({ value, label: k.label }))]} value={tab} onChange={setTab} className="page-tabs" />
         <GeneralSettings />
       </div>
@@ -104,7 +104,7 @@ export default function OfficeSettings() {
   return (
     <div className="page">
       <div className="page-head">
-        <h1>Cài đặt Base Office</h1>
+        <h1>Cài đặt LDL Office</h1>
         <button className="btn btn-primary" onClick={() => setEdit({ name: '', prefix: '', parent_id: '' })}><Plus size={15} /> Thêm {KINDS[tab].noun}</button>
       </div>
       <Tabs tabs={[{ value: 'general', label: 'Chung' }, ...Object.entries(KINDS).map(([value, k]) => ({ value, label: k.label }))]} value={tab} onChange={setTab} className="page-tabs" />

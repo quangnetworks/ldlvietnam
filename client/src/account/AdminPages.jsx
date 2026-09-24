@@ -530,7 +530,7 @@ export function AuditPage() {
   );
 }
 
-const NOTIF_APPS = [['', 'Tất cả'], ['office', 'Base Office'], ['wework', 'Base Wework'], ['request', 'Base Request']];
+const NOTIF_APPS = [['', 'Tất cả'], ['office', 'LDL Office'], ['wework', 'LDL Wework'], ['request', 'LDL Request']];
 
 export function NotificationsPage() {
   const [app, setApp] = useState('');

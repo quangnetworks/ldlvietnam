@@ -47,7 +47,7 @@ export async function buildSeed() {
   addUser('kd', 'truongkd', 'Lê Trường Giang', 'Trưởng phòng Kinh doanh', 'kd', 'member', 'gd');
   addUser('mkt', 'minhtrang', 'Nguyễn Minh Trang', 'Trưởng phòng Marketing', 'mkt', 'member', 'gd');
   addUser('kt', 'thuhuyen', 'Nguyễn Thu Huyền', 'Kế toán trưởng', 'kt', 'member', 'gd');
-  addUser('nv1', 'demo', 'Base Demo 12', 'Nhân viên kinh doanh', 'kd', 'member', 'kd');
+  addUser('nv1', 'demo', 'LDL Demo 12', 'Nhân viên kinh doanh', 'kd', 'member', 'kd');
   addUser('nv2', 'phuonglinh', 'Nguyễn Phương Linh', 'Nhân viên kinh doanh', 'kd', 'member', 'kd');
   addUser('nv3', 'duylinh', 'Trần Duy Linh', 'Chuyên viên Marketing', 'mkt', 'member', 'mkt');
   addUser('nv4', 'hoangcong', 'Hoàng Công Hoan', 'Chuyên viên nhân sự', 'hcns', 'member', 'hr');
@@ -303,11 +303,11 @@ export async function buildSeed() {
   add("INSERT OR IGNORE INTO chat_channels(id, name, description, kind, created_by, last_message_at) VALUES (1, 'chung', 'Kênh trao đổi chung toàn công ty', 'public', ?, ?)", users.admin, datetimeOffset(0));
   add("INSERT INTO chat_channels(id, name, description, kind, created_by, last_message_at) VALUES (2, 'kinh-doanh', 'Phòng Kinh doanh', 'private', ?, ?)", users.kd, datetimeOffset(0));
   for (const k of ['kd', 'nv1', 'nv2', 'gd']) add('INSERT INTO chat_members(channel_id, user_id) VALUES (2, ?)', users[k]);
-  add('INSERT INTO chat_messages(channel_id, user_id, content, created_at) VALUES (1, ?, ?, ?)', users.hr, 'Chào mọi người, Chính sách nhân sự 2026 đã được ban hành trên Base Office, mọi người xem giúp nhé!', datetimeOffset(-1));
+  add('INSERT INTO chat_messages(channel_id, user_id, content, created_at) VALUES (1, ?, ?, ?)', users.hr, 'Chào mọi người, Chính sách nhân sự 2026 đã được ban hành trên LDL Office, mọi người xem giúp nhé!', datetimeOffset(-1));
   add('INSERT INTO chat_messages(channel_id, user_id, content, created_at) VALUES (1, ?, ?, ?)', users.gd, 'Cảm ơn chị Chi Lan. Các trưởng phòng phổ biến lại cho nhân viên trong tuần này.', datetimeOffset(-1));
   add('INSERT INTO chat_messages(channel_id, user_id, content, created_at) VALUES (2, ?, ?, ?)', users.kd, '@demo em gửi báo giá cho NPP Hà Nam trước thứ 6 nhé.', datetimeOffset(0));
 
-  // ---------- Tài khoản khách (đối tác NPP) chỉ dùng Base Request
+  // ---------- Tài khoản khách (đối tác NPP) chỉ dùng LDL Request
   add(`INSERT INTO users(id, username, password_hash, name, email, title, role, color, expires_at) VALUES (11, 'npp.hanam', ?, 'NPP Hà Nam (khách)', 'npp.hanam@partner.vn', 'Nhà phân phối', 'guest', '#868e96', ?)`,
     hash, dateOffset(90));
   add("INSERT OR IGNORE INTO app_access(app_key, user_id) VALUES ('request', 11)");
