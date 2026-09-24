@@ -21,7 +21,7 @@ const datetimeOffset = (days) => {
 export async function buildSeed() {
   const S = [];
   const add = (sql, ...params) => S.push([sql, params]);
-  add("INSERT OR REPLACE INTO settings(key, value) VALUES ('company_name', ?)", 'CÔNG TY CỔ PHẦN LDL VIỆT NAM');
+  add("INSERT OR REPLACE INTO settings(key, value) VALUES ('company_name', ?)", 'Công ty LDL Việt Nam');
 
   // ---------- Phòng ban
   const dep = {};

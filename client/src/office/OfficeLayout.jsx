@@ -75,7 +75,7 @@ export default function OfficeLayout() {
       <header className="topbar">
         <button className="icon-btn on-dark mobile-only" onClick={() => setMobileNav(!mobileNav)} aria-label="Menu"><Menu size={20} /></button>
         <Link to="/office" className="brand">
-          <span className="brand-mark">L</span>
+          <img className="brand-logo" src="/logo-192.png" alt="LDL" />
           <span className="brand-name">{company}</span>
         </Link>
         <div className="grow" />

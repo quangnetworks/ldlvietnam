@@ -103,7 +103,7 @@ export default function AdminPage() {
   return (
     <div className="office">
       <header className="topbar">
-        <Link to="/" className="brand"><span className="brand-mark">L</span><span className="brand-name">{company}</span></Link>
+        <Link to="/" className="brand"><img className="brand-logo" src="/logo-192.png" alt="LDL" /><span className="brand-name">{company}</span></Link>
         <div className="grow" />
         <NotificationBell app="admin" dark />
         <AppSwitcher dark />

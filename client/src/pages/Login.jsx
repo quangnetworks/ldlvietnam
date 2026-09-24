@@ -25,9 +25,9 @@ export default function Login() {
     <div className="login-page">
       <form className="login-card" onSubmit={submit}>
         <div className="login-logo">
-          <span className="logo-mark">L</span>
+          <img className="login-logo-img" src="/logo-192.png" alt="LDL Vietnam Distribution Center" />
           <div>
-            <b>LDL Workspace</b>
+            <b>Công ty LDL Việt Nam</b>
             <small>Văn bản · Công việc · Dự án</small>
           </div>
         </div>
@@ -44,7 +44,6 @@ export default function Login() {
         <button className="btn btn-primary btn-block" disabled={busy || !username || !password}>
           {busy ? 'Đang đăng nhập...' : 'Đăng nhập'}
         </button>
-        <p className="muted small center">Tài khoản mẫu: <b>admin</b> / <b>123456</b> hoặc <b>demo</b> / <b>123456</b></p>
       </form>
     </div>
   );
