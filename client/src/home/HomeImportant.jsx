@@ -34,10 +34,12 @@ export default function HomeImportant({ data }) {
             const d = dueText(i.due, data.today);
             return (
               <Link key={i.key} to={i.link} className={cx('imp-item', i.priority, i.bucket === 'overdue' && 'late')}>
-                <span className={cx('imp-flag', i.priority)}>{i.priority === 'urgent' ? <><Flame size={12} /> Khẩn cấp</> : <><Star size={12} /> Quan trọng</>}</span>
                 <span className="grow imp-body">
-                  <b className="ellipsis block">{i.title}</b>
-                  <small className="muted ellipsis block">{ROLE[i.role]} · {STATUS[i.status]}{i.project_name ? ` · ${i.project_name}` : ''}</small>
+                  <b className="imp-title" title={i.title}>{i.title}</b>
+                  <small className="imp-sub">
+                    <span className={cx('imp-flag', i.priority)}>{i.priority === 'urgent' ? <><Flame size={11} /> Khẩn cấp</> : <><Star size={11} /> Quan trọng</>}</span>
+                    <span className="muted ellipsis">{ROLE[i.role]} · {STATUS[i.status]}{i.project_name ? ` · ${i.project_name}` : ''}</span>
+                  </small>
                 </span>
                 <span className="imp-right">
                   <span className={cx('agenda-due', d.cls)}>{d.text}</span>

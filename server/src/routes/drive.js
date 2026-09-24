@@ -1,5 +1,6 @@
 /** LDL Drive: personal & company document storage with folder tree and sharing. */
 import { Hono } from 'hono';
+import { deptIn } from '../auth.js';
 import { all, get, run, batch } from '../db.js';
 import { badRequest, notFound, forbidden, toInt, jsonBody, formBody, storeFiles, removeFile, sendFile } from '../util.js';
 
@@ -26,8 +27,8 @@ async function accessOf(user, itemId) {
   if (items.some((x) => x.owner_id === user.id)) return { perm: 'edit', items };
   const ids = items.map((x) => x.id);
   const shares = await all(`SELECT permission FROM drive_shares WHERE item_id IN (${ids.map(() => '?').join(',')})
-    AND (user_id = ? OR (department_id IS NOT NULL AND department_id = ?)
-      OR group_id IN (SELECT group_id FROM user_group_members WHERE user_id = ?))`, ...ids, user.id, user.department_id ?? -1, user.id);
+    AND (user_id = ? OR (department_id IS NOT NULL AND ${deptIn('department_id', user).sql})
+      OR group_id IN (SELECT group_id FROM user_group_members WHERE user_id = ?))`, ...ids, user.id, ...deptIn('department_id', user).params, user.id);
   if (shares.some((s) => s.permission === 'edit')) return { perm: 'edit', items };
   return { perm: shares.length ? 'view' : null, items };
 }
@@ -69,8 +70,8 @@ r.get('/drive/items', async (c) => {
     perm = 'edit'; // mọi nhân viên được tạo / tải lên tài liệu công ty; sửa / xoá theo quyền từng mục
   } else if (space === 'shared') {
     rows = await all(`${ITEM_SELECT} WHERE i.deleted_at IS NULL AND IFNULL(i.owner_id, 0) <> ? AND i.id IN (
-        SELECT item_id FROM drive_shares WHERE user_id = ? OR (department_id IS NOT NULL AND department_id = ?)
-          OR group_id IN (SELECT group_id FROM user_group_members WHERE user_id = ?)) ${ORDER}`, user.id, user.id, user.department_id ?? -1, user.id);
+        SELECT item_id FROM drive_shares WHERE user_id = ? OR (department_id IS NOT NULL AND ${deptIn('department_id', user).sql})
+          OR group_id IN (SELECT group_id FROM user_group_members WHERE user_id = ?)) ${ORDER}`, user.id, user.id, ...deptIn('department_id', user).params, user.id);
   } else if (space === 'recent') {
     rows = await all(`${ITEM_SELECT} WHERE i.kind = 'file' AND i.deleted_at IS NULL AND (i.owner_id = ? ${user.role === 'guest' ? '' : "OR i.space = 'company'"})
       ORDER BY i.updated_at DESC LIMIT 50`, user.id);

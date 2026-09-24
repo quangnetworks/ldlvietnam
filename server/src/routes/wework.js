@@ -1,6 +1,6 @@
 import { Hono } from 'hono';
 import { all, get, run, batch, logActivity, notify, getSetting, setSetting } from '../db.js';
-import { requireAdmin } from '../auth.js';
+import { requireAdmin, userDeptIds, inDeptSql } from '../auth.js';
 import { publicFileLink } from '../files.js';
 import { audit } from '../platform.js';
 import {
@@ -53,7 +53,7 @@ export async function canViewReports(user, st) {
   const s = st || (await weworkSettings());
   if (s.report_users.includes(user.id)) return true;
   if (user.role === 'guest') return false;
-  if (user.department_id && s.report_departments.includes(user.department_id)) return true;
+  if (userDeptIds(user).some((d) => s.report_departments.includes(d))) return true;
   if (s.report_groups.length) {
     return !!(await get(`SELECT 1 FROM user_group_members WHERE user_id = ? AND group_id IN (${s.report_groups.map(() => '?').join(',')})`,
       user.id, ...s.report_groups));
@@ -74,6 +74,51 @@ async function canViewTask(user, id) {
 
 async function canEditTask(user, t) {
   return isAdmin(user) || t.creator_id === user.id || t.assignee_id === user.id || (await projectRole(user, t.project_id)) === 'manager';
+}
+
+/** Người tạo, quản lý dự án, quản trị viên: toàn quyền với công việc. Người chỉ được giao việc bị giới hạn (xem OWNER_FIELDS). */
+async function isTaskOwner(user, t) {
+  return isAdmin(user) || t.creator_id === user.id || (await projectRole(user, t.project_id)) === 'manager';
+}
+/** Người được giao việc không được đổi: thời gian bắt đầu / kết thúc, mô tả, dự án, công việc cha, lặp lại. */
+const OWNER_FIELDS = { start_date: 'thời gian bắt đầu', due_date: 'thời hạn', description: 'mô tả', project_id: 'dự án',
+  parent_id: 'công việc cha', recurring: 'lặp lại' };
+async function checkOwnerFields(user, t, data) {
+  if (await isTaskOwner(user, t)) return;
+  const blocked = Object.keys(OWNER_FIELDS).filter((k) => data[k] !== undefined && String(data[k] ?? '') !== String(t[k] ?? ''));
+  if (blocked.length) {
+    throw forbidden(`Người được giao việc không được thay đổi ${blocked.map((k) => OWNER_FIELDS[k]).join(', ')} — liên hệ người giao việc`);
+  }
+}
+
+/**
+ * Quyền giao việc: quản trị viên giao cho mọi người; ai cũng tự giao cho mình;
+ * quản lý trực tiếp giao cho nhân viên mình quản lý (kể cả cấp dưới gián tiếp); trưởng phòng giao cho nhân sự trong phòng ban;
+ * quản lý dự án giao cho thành viên dự án.
+ */
+async function assignableScope(user, projectId) {
+  if (isAdmin(user)) return { all: true, ids: [] };
+  const ids = new Set([user.id]);
+  const reports = await all(`WITH RECURSIVE sub(id, depth) AS (SELECT id, 1 FROM users WHERE manager_id = ?
+      UNION ALL SELECT u.id, sub.depth + 1 FROM users u JOIN sub ON u.manager_id = sub.id WHERE sub.depth < 10)
+    SELECT DISTINCT id FROM sub`, user.id);
+  for (const r0 of reports) ids.add(r0.id);
+  const heads = await all('SELECT id FROM departments WHERE head_id = ?', user.id);
+  for (const d of heads) {
+    for (const u of await all(`SELECT u.id FROM users u WHERE ${inDeptSql('u', '?')} AND u.active = 1`, d.id, d.id)) ids.add(u.id);
+  }
+  if (projectId && (await projectRole(user, projectId)) === 'manager') {
+    for (const m of await all(`SELECT user_id AS id FROM project_members WHERE project_id = ?
+      UNION SELECT owner_id FROM projects WHERE id = ? AND owner_id IS NOT NULL`, projectId, projectId)) ids.add(m.id);
+  }
+  return { all: false, ids: [...ids] };
+}
+async function checkAssign(user, assigneeId, projectId) {
+  if (!assigneeId || assigneeId === user.id || isAdmin(user)) return;
+  const scope = await assignableScope(user, projectId);
+  if (!scope.ids.includes(assigneeId)) {
+    throw forbidden('Bạn chỉ được giao việc cho bản thân, nhân viên do mình quản lý (hoặc thành viên dự án mình quản lý)');
+  }
 }
 
 async function canDeleteTask(user, t) {
@@ -98,7 +143,8 @@ async function viewableTask(c) {
 const TASK_SELECT = `
   SELECT t.*, p.name AS project_name, p.color AS project_color, p.kind AS project_kind,
     a.name AS assignee_name, a.color AS assignee_color, a.username AS assignee_username,
-    c.name AS creator_name, c.username AS creator_username, l.name AS list_name,
+    c.name AS creator_name, c.username AS creator_username, c.color AS creator_color, l.name AS list_name,
+    (SELECT pt.title FROM tasks pt WHERE pt.id = t.parent_id) AS parent_title,
     (SELECT COUNT(*) FROM tasks s WHERE s.parent_id = t.id) AS subtask_count,
     (SELECT COUNT(*) FROM tasks s WHERE s.parent_id = t.id AND s.status = 'done') AS subtask_done,
     (SELECT COUNT(*) FROM task_checklist k WHERE k.task_id = t.id) AS checklist_count,
@@ -329,6 +375,9 @@ function reportScope(q) {
   return { td, basis, col, from, to, where, params, iso };
 }
 
+/** Danh sách người mà tài khoản hiện tại được giao việc (theo dự án nếu có). */
+r.get('/wework/assignable', async (c) => c.json(await assignableScope(c.get('user'), toInt(c.req.query('project_id')))));
+
 r.get('/wework/meta', async (c) => c.json({ can_view_reports: await canViewReports(c.get('user')), is_admin: isAdmin(c.get('user')) }));
 
 r.get('/wework/settings', requireAdmin, async (c) => c.json(await weworkSettings()));
@@ -517,6 +566,9 @@ async function fullTask(id, user) {
     LEFT JOIN users u ON u.id = a.user_id WHERE a.task_id = ? AND a.result_id IS NULL ORDER BY a.id`, id);
   t.parent = t.parent_id ? await get('SELECT id, title FROM tasks WHERE id = ?', t.parent_id) : null;
   t.can_edit = await canEditTask(user, t);
+  // người chỉ được giao việc: không đổi thời gian, mô tả, dự án, lặp lại, không xoá
+  t.can_manage = await isTaskOwner(user, t);
+  t.can_delete = await canDeleteTask(user, t);
   return t;
 }
 
@@ -564,8 +616,9 @@ async function checkProjectAccess(user, projectId) {
   if (!(await projectRole(user, projectId))) throw forbidden('Bạn không phải thành viên dự án này');
 }
 
-export async function createTask(user, data, followers = []) {
+export async function createTask(user, data, followers = [], { creatorId = null, skipAssignCheck = false } = {}) {
   await checkProjectAccess(user, data.project_id);
+  if (!skipAssignCheck) await checkAssign(user, data.assignee_id ?? user.id, data.project_id);
   if (data.parent_id) {
     const parent = await get('SELECT * FROM tasks WHERE id = ?', data.parent_id);
     if (!parent) throw badRequest('Công việc cha không tồn tại');
@@ -583,7 +636,7 @@ export async function createTask(user, data, followers = []) {
       start_date, due_date, recurring, position, goal_id, completed_at)
      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
     data.project_id ?? null, data.list_id ?? null, data.parent_id ?? null, data.title, data.description ?? null,
-    user.id, assignee, data.status ?? 'todo', data.priority ?? 'normal',
+    creatorId ?? user.id, assignee, data.status ?? 'todo', data.priority ?? 'normal',
     data.start_date ?? null, data.due_date ?? null, data.recurring ?? null, data.position ?? pos, data.goal_id ?? null,
     data.status === 'done' ? new Date().toISOString() : null
   );
@@ -614,6 +667,10 @@ function shiftDate(value, recurring) {
 
 async function applyTaskUpdate(user, t, data) {
   if (!Object.keys(data).length) return;
+  await checkOwnerFields(user, t, data);
+  if (data.assignee_id !== undefined && data.assignee_id !== t.assignee_id) {
+    await checkAssign(user, data.assignee_id, data.project_id !== undefined ? data.project_id : t.project_id);
+  }
   if (data.project_id !== undefined && data.project_id !== t.project_id) {
     await checkProjectAccess(user, data.project_id);
     if (data.list_id === undefined) data.list_id = null;
@@ -648,7 +705,7 @@ async function applyTaskUpdate(user, t, data) {
         description: next.description, assignee_id: next.assignee_id, priority: next.priority,
         start_date: shiftDate(next.start_date, recurring), due_date: shiftDate(next.due_date, recurring),
         recurring, goal_id: next.goal_id,
-      }, watchers);
+      }, watchers, { creatorId: t.creator_id, skipAssignCheck: true }); // kỳ tiếp theo giữ người giao việc ban đầu
       await run('UPDATE tasks SET recurring = NULL WHERE id = ?', t.id);
       await logActivity('task', t.id, user.id, 'recurring', `Tạo kỳ lặp tiếp theo #${nid}`);
     }
@@ -714,7 +771,9 @@ r.post('/tasks/bulk', async (c) => {
       for (const f of files) await removeFile(f.filename);
     } else if (b.action === 'star') await run('INSERT OR IGNORE INTO task_stars(task_id, user_id) VALUES (?,?)', id, user.id);
     else if (b.action === 'follow') await run('INSERT OR IGNORE INTO task_followers(task_id, user_id) VALUES (?,?)', id, user.id);
-    else if (b.action === 'update' && (await canEditTask(user, t))) await applyTaskUpdate(user, t, { ...data });
+    else if (b.action === 'update' && (await canEditTask(user, t))) {
+      try { await applyTaskUpdate(user, t, { ...data }); } catch (e) { if (e.status === 403) continue; throw e; }
+    }
     else continue;
     affected++;
   }

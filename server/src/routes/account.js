@@ -1,6 +1,6 @@
 import { Hono } from 'hono';
 import { all, get, run, batch, getSetting, setSetting } from '../db.js';
-import { requireAdmin, hashPassword, verifyPassword, loadUser, PUBLIC_USER_FIELDS } from '../auth.js';
+import { requireAdmin, hashPassword, verifyPassword, loadUser, PUBLIC_USER_FIELDS, deptIn, userDeptIds, inDeptSql } from '../auth.js';
 import { randomBase32, otpauthUrl, verifyTotp, securitySettings, validIpRule, clientIp, ipMatches } from '../security.js';
 import { badRequest, notFound, forbidden, toInt, idList, jsonBody, paginate, formBody, storeFiles, removeFile, sendFile } from '../util.js';
 import { MODULES, userApps, grantApps, audit } from '../platform.js';
@@ -43,7 +43,7 @@ r.get('/account/members', async (c) => {
     params.push(like, like, like, like);
   }
   const dep = toInt(q.department_id);
-  if (dep) { where.push('u.department_id = ?'); params.push(dep); }
+  if (dep) { where.push(inDeptSql('u', '?')); params.push(dep, dep); }
   const grp = toInt(q.group_id);
   if (grp) { where.push('EXISTS (SELECT 1 FROM user_group_members gm WHERE gm.user_id = u.id AND gm.group_id = ?)'); params.push(grp); }
   const items = await all(
@@ -303,8 +303,9 @@ r.get('/home/summary', async (c) => {
   const apps = await userApps(user);
   const out = { apps, announcements: [], counters: {} };
   if (apps.includes('office')) {
+    const dep = deptIn('dr.department_id', user);
     const vis = user.role === 'admin' ? ['1=1', []] : [`(${user.role === 'guest' ? '0' : 'd.is_public'} = 1 OR EXISTS (SELECT 1 FROM document_recipients dr WHERE dr.document_id = d.id
-      AND (dr.user_id = ? OR dr.department_id = ?)))`, [user.id, user.department_id ?? -1]];
+      AND (dr.user_id = ? OR ${dep.sql})))`, [user.id, ...dep.params]];
     out.announcements = await all(`SELECT d.id, d.title, d.code, d.issued_at, u.name AS issuer_name FROM documents d
       LEFT JOIN users u ON u.id = d.issuer_id WHERE d.status = 'issued' AND d.deleted_at IS NULL AND ${vis[0]}
       AND NOT (d.superseded_by IS NOT NULL AND IFNULL(d.superseded_at, '') <= date('now'))
@@ -448,8 +449,11 @@ r.get('/home/chat', async (c) => {
   const user = c.get('user');
   if (user.role === 'guest' || !(await userApps(user)).includes('message')) return c.json({ channels: [] });
   const company = await get("SELECT id, name, description, kind FROM chat_channels WHERE kind = 'public' AND name = 'chung' ORDER BY id LIMIT 1");
-  const dep = await departmentChannel(user.department_id);
-  const channels = [company && { ...company, label: 'Toàn công ty' }, dep && { id: dep.id, name: dep.name, description: dep.description, kind: dep.kind, label: 'Phòng ban' }].filter(Boolean);
+  // một tài khoản có thể thuộc nhiều phòng ban → mỗi phòng ban một kênh
+  const deps = [];
+  for (const d of userDeptIds(user)) deps.push(await departmentChannel(d));
+  const channels = [company && { ...company, label: 'Toàn công ty' },
+    ...deps.filter(Boolean).map((dep) => ({ id: dep.id, name: dep.name, description: dep.description, kind: dep.kind, label: 'Phòng ban' }))].filter(Boolean);
   for (const ch of channels) {
     ch.unread = (await get(`SELECT COUNT(*) AS n FROM chat_messages x WHERE x.channel_id = ? AND x.deleted_at IS NULL AND IFNULL(x.user_id, 0) <> ?
       AND x.id > IFNULL((SELECT last_read_id FROM chat_members WHERE channel_id = ? AND user_id = ?), 0)`, ch.id, user.id, ch.id, user.id)).n;

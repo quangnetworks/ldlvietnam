@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react';
 import { Star, Check, X, Repeat, MessageSquare, ListChecks, GitBranch, Play, Award } from 'lucide-react';
 import { api } from '../api.js';
 import { Avatar } from '../components/ui.jsx';
@@ -84,4 +85,17 @@ export function TaskRow({ t, onOpen, onChanged, selectable, selected, onSelect, 
 export function StatusPill({ status }) {
   const s = TASK_STATUS[status];
   return <span className="status-pill" style={{ background: `${s.color}1a`, color: s.color }}>{s.label}</span>;
+}
+
+/** Người mà tài khoản hiện tại được giao việc (quản trị viên: mọi người; quản lý: nhân viên mình; quản lý dự án: thành viên dự án). */
+export function useAssignable(users, projectId, keep = []) {
+  const [scope, setScope] = useState(null);
+  useEffect(() => {
+    let alive = true;
+    api.get('/wework/assignable', { project_id: projectId || undefined }).then((s) => alive && setScope(s)).catch(() => alive && setScope(null));
+    return () => { alive = false; };
+  }, [projectId]);
+  if (!scope || scope.all) return users;
+  const ok = new Set([...scope.ids, ...keep.filter(Boolean)]);
+  return users.filter((u) => ok.has(u.id));
 }

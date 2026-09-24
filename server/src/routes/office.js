@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import { all, get, run, batch, logActivity, notify, getSetting, setSetting } from '../db.js';
 import { audit } from '../platform.js';
-import { requireAdmin } from '../auth.js';
+import { requireAdmin, deptIn, userDeptIds, inDeptSql } from '../auth.js';
 import {
   badRequest, notFound, forbidden, toInt, idList, paginate, today, jsonBody, formBody, storeFiles, removeFile, sendFile,
 } from '../util.js';
@@ -16,13 +16,14 @@ const APP = 'office';
 // ---------------------------------------------------------------- visibility
 function visibilitySql(user) {
   if (user.role === 'admin') return { sql: '1=1', params: [] };
+  const dep = deptIn('dr.department_id', user); // mọi phòng ban (chính + kiêm nhiệm)
   return {
     sql: `(d.creator_id = ? OR d.issuer_id = ?
           OR EXISTS (SELECT 1 FROM document_approvers da WHERE da.document_id = d.id AND da.user_id = ?)
           OR (d.status IN ('issued','archived') AND (${user.role === 'guest' ? '0' : 'd.is_public'} = 1
               OR EXISTS (SELECT 1 FROM document_recipients dr WHERE dr.document_id = d.id
-                         AND (dr.user_id = ? OR (dr.department_id IS NOT NULL AND dr.department_id = ?))))))`,
-    params: [user.id, user.id, user.id, user.id, user.department_id ?? -1],
+                         AND (dr.user_id = ? OR (dr.department_id IS NOT NULL AND ${dep.sql}))))))`,
+    params: [user.id, user.id, user.id, user.id, ...dep.params],
   };
 }
 
@@ -216,7 +217,7 @@ export async function officeSettings() {
 async function canCreateDoc(user, st) {
   if (user.role === 'admin' || st.create_mode !== 'restricted') return true;
   if (st.creator_users.includes(user.id) || st.clerks.includes(user.id)) return true;
-  if (user.department_id && st.creator_departments.includes(user.department_id)) return true;
+  if (userDeptIds(user).some((d) => st.creator_departments.includes(d))) return true;
   if (st.creator_groups.length) {
     const hit = await get(`SELECT 1 FROM user_group_members WHERE user_id = ? AND group_id IN (${st.creator_groups.map(() => '?').join(',')})`,
       user.id, ...st.creator_groups);
@@ -535,7 +536,7 @@ async function recipientUserIds(id) {
   const d = await get('SELECT is_public FROM documents WHERE id = ?', id);
   if (d.is_public) return (await all('SELECT id FROM users WHERE active = 1')).map((x) => x.id);
   return (await all(`SELECT DISTINCT u.id FROM users u JOIN document_recipients dr ON dr.document_id = ?
-    AND (dr.user_id = u.id OR dr.department_id = u.department_id) WHERE u.active = 1`, id)).map((x) => x.id);
+    AND (dr.user_id = u.id OR ${inDeptSql('u', 'dr.department_id')}) WHERE u.active = 1`, id)).map((x) => x.id);
 }
 
 /** Move a document forward: send to the next approval step, or publish when no approver remains. */

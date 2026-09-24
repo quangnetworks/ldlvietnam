@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { MapPin, RefreshCw, Droplets, Wind, LocateFixed } from 'lucide-react';
 import { cx } from '../utils.js';
 
@@ -97,6 +97,16 @@ export default function HomeWeather() {
   const [data, setData] = useState(readCache);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(false);
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
+  useEffect(() => {
+    if (!open) return undefined;
+    const h = (e) => ref.current && !ref.current.contains(e.target) && setOpen(false);
+    const k = (e) => e.key === 'Escape' && setOpen(false);
+    document.addEventListener('mousedown', h);
+    document.addEventListener('keydown', k);
+    return () => { document.removeEventListener('mousedown', h); document.removeEventListener('keydown', k); };
+  }, [open]);
   const refresh = useCallback(async (force) => {
     if (!force && readCache()) return;
     setLoading(true); setError(false);
@@ -110,17 +120,27 @@ export default function HomeWeather() {
 
   if (!data) {
     return (
-      <div className="weather glass-dark">
-        <span className="weather-empty">{error ? 'Không tải được thời tiết' : 'Đang lấy thời tiết…'}</span>
-        {error && <button className="icon-btn sm on-dark" onClick={() => refresh(true)} aria-label="Thử lại"><RefreshCw size={14} /></button>}
-      </div>
+      <button type="button" className="weather-mini" onClick={() => refresh(true)} title={error ? 'Bấm để thử lại' : undefined}>
+        <span aria-hidden>🌤️</span><span className="weather-mini-text">{error ? 'Chưa có thời tiết' : 'Đang lấy thời tiết…'}</span>
+        {error && <RefreshCw size={12} />}
+      </button>
     );
   }
   const c = data.current;
   const now = describe(c.weather_code, c.is_day);
   const tip = advice(data);
+  // Dạng tóm tắt nhỏ trên Home; bấm để xem chi tiết & dự báo
   return (
-    <div className={cx('weather glass-dark', loading && 'refetching')}>
+    <div className="weather-wrap" ref={ref}>
+      <button type="button" className={cx('weather-mini', tip && 'has-tip')} onClick={() => setOpen(!open)} aria-expanded={open}
+        title={`${now.text} · ${data.place}${tip ? ` — ${tip}` : ''}`}>
+        <span className="weather-mini-icon" aria-hidden>{now.icon}</span>
+        <b>{Math.round(c.temperature_2m)}°</b>
+        <span className="weather-mini-text">{data.place}</span>
+        {tip && <span className="weather-mini-dot" aria-label="Có lời nhắc thời tiết" />}
+      </button>
+      {open && (
+    <div className={cx('weather glass-pop', loading && 'refetching')}>
       <div className="weather-main">
         <span className="weather-icon" aria-hidden>{now.icon}</span>
         <div>
@@ -151,6 +171,8 @@ export default function HomeWeather() {
         </div>
       )}
       {tip && <div className="weather-tip">{tip}</div>}
+    </div>
+      )}
     </div>
   );
 }

@@ -9,6 +9,7 @@ import DocDetail from './office/DocDetail.jsx';
 import OfficeSettings from './office/OfficeSettings.jsx';
 import WeworkLayout from './wework/WeworkLayout.jsx';
 import TasksHome from './wework/TasksHome.jsx';
+import MyTasksPage from './wework/MyTasksPage.jsx';
 import ProjectsPage from './wework/ProjectsPage.jsx';
 import ProjectPage from './wework/ProjectPage.jsx';
 import MembersPage from './wework/MembersPage.jsx';
@@ -76,7 +77,7 @@ export default function App() {
       </Route>
       <Route path="/wework" element={<RequireApp app="wework"><WeworkLayout /></RequireApp>}>
         <Route index element={<TasksHome />} />
-        <Route path="my" element={<TasksHome mode="my" />} />
+        <Route path="my" element={<MyTasksPage />} />
         <Route path="task/:id" element={<TaskPage />} />
         <Route path="projects" element={<ProjectsPage kind="project" />} />
         <Route path="departments" element={<ProjectsPage kind="department" />} />

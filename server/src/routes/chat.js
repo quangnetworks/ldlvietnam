@@ -4,6 +4,7 @@ import { all, get, run, batch, notify } from '../db.js';
 import { audit } from '../platform.js';
 import { badRequest, notFound, forbidden, toInt, idList, jsonBody, formBody, storeFiles, sendFile, removeFile } from '../util.js';
 import { publicFileLink } from '../files.js';
+import { userDeptIds, deptIn, inDeptSql } from '../auth.js';
 
 const r = new Hono();
 
@@ -13,7 +14,7 @@ async function channelAccess(user, id) {
   const member = await get('SELECT * FROM chat_members WHERE channel_id = ? AND user_id = ?', id, user.id);
   if (ch.kind === 'department') {
     // Kênh phòng ban: mọi nhân sự đang thuộc phòng ban (quản trị viên xem được mọi phòng ban)
-    if (user.role === 'guest' || (user.department_id !== ch.department_id && user.role !== 'admin')) throw forbidden('Kênh này dành cho thành viên phòng ban');
+    if (user.role === 'guest' || (!userDeptIds(user).includes(ch.department_id) && user.role !== 'admin')) throw forbidden('Kênh này dành cho thành viên phòng ban');
   } else if (ch.kind === 'public' ? user.role === 'guest' && !member : !member) throw forbidden('Bạn không phải thành viên của kênh này');
   // kênh riêng tư: thành viên được thêm sau chỉ thấy tin nhắn từ mốc được cấp (history_from_id)
   const floor = ch.kind === 'private' ? member?.history_from_id || 0 : 0;
@@ -44,13 +45,13 @@ export async function departmentChannel(departmentId) {
 
 const visibleWhere = (user) => (user.role === 'guest'
   ? { sql: "c.kind <> 'department' AND EXISTS (SELECT 1 FROM chat_members m2 WHERE m2.channel_id = c.id AND m2.user_id = ?)", params: [user.id] }
-  : { sql: `(c.kind = 'public' OR (c.kind = 'department' AND c.department_id = ?)
+  : { sql: `(c.kind = 'public' OR (c.kind = 'department' AND ${deptIn('c.department_id', user).sql})
       OR (c.kind <> 'department' AND EXISTS (SELECT 1 FROM chat_members m2 WHERE m2.channel_id = c.id AND m2.user_id = ?)))`,
-  params: [user.department_id ?? -1, user.id] });
+  params: [...deptIn('c.department_id', user).params, user.id] });
 
 r.get('/chat/channels', async (c) => {
   const user = c.get('user');
-  if (user.role !== 'guest') await departmentChannel(user.department_id);
+  if (user.role !== 'guest') for (const d of userDeptIds(user)) await departmentChannel(d);
   const v = visibleWhere(user);
   const rows = await all(`SELECT c.*, IFNULL(m.last_read_id, 0) AS last_read_id,
       (SELECT COUNT(*) FROM chat_messages x WHERE x.channel_id = c.id AND x.id > IFNULL(m.last_read_id, 0) AND IFNULL(x.user_id, 0) <> ? AND x.deleted_at IS NULL) AS unread,
@@ -103,7 +104,7 @@ r.post('/chat/direct', async (c) => {
 r.get('/chat/channels/:id', async (c) => {
   const { ch } = await channelAccess(c.get('user'), toInt(c.req.param('id')));
   const members = ch.kind === 'department'
-    ? await all("SELECT id, name, color, username, title FROM users WHERE department_id = ? AND active = 1 AND role <> 'guest' ORDER BY name", ch.department_id)
+    ? await all(`SELECT u.id, u.name, u.color, u.username, u.title FROM users u WHERE ${inDeptSql('u', '?')} AND u.active = 1 AND u.role <> 'guest' ORDER BY u.name`, ch.department_id, ch.department_id)
     : await all(`SELECT u.id, u.name, u.color, u.username, u.title, m.history_from_id FROM chat_members m JOIN users u ON u.id = m.user_id
     WHERE m.channel_id = ? ORDER BY u.name`, ch.id);
   return c.json({ ...ch, members });

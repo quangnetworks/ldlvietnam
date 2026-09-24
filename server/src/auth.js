@@ -67,14 +67,36 @@ export async function verifyFileToken(c, token) {
 }
 
 export const PUBLIC_USER_FIELDS =
-  'u.id, u.username, u.name, u.email, u.phone, u.title, u.department_id, u.manager_id, u.role, u.color, u.active, u.birthday, u.address, u.bio, u.profile, u.last_login_at, u.created_at, u.totp_enabled, u.expires_at, u.avatar_version';
+  'u.id, u.username, u.name, u.email, u.phone, u.title, u.department_id, u.manager_id, u.role, u.color, u.active, u.birthday, u.address, u.bio, u.profile, u.last_login_at, u.created_at, u.totp_enabled, u.expires_at, u.avatar_version, '
+  + '(SELECT GROUP_CONCAT(ud.department_id) FROM user_departments ud WHERE ud.user_id = u.id) AS extra_departments';
 
-export function loadUser(id) {
-  return get(
+/** "3,5" (GROUP_CONCAT) → [3, 5] */
+export const parseIds = (v) => String(v || '').split(',').map(Number).filter(Boolean);
+
+/** Mọi phòng ban của tài khoản: phòng ban chính + phòng ban kiêm nhiệm. */
+export const userDeptIds = (u) => [...new Set([u?.department_id, ...(u?.extra_department_ids || parseIds(u?.extra_departments))].filter(Boolean))];
+
+/** Điều kiện SQL "cột thuộc một trong các phòng ban của tài khoản". */
+export function deptIn(col, user) {
+  const ids = userDeptIds(user);
+  return ids.length ? { sql: `${col} IN (${ids.map(() => '?').join(',')})`, params: ids } : { sql: '0', params: [] };
+}
+
+/** Điều kiện SQL "tài khoản (cột uCol) thuộc phòng ban depExpr" — tính cả phòng ban kiêm nhiệm. */
+export const inDeptSql = (uCol, depExpr) => `(${uCol}.department_id = ${depExpr}
+  OR EXISTS (SELECT 1 FROM user_departments udx WHERE udx.user_id = ${uCol}.id AND udx.department_id = ${depExpr}))`;
+
+export async function loadUser(id) {
+  const u = await get(
     `SELECT ${PUBLIC_USER_FIELDS}, d.name AS department_name
      FROM users u LEFT JOIN departments d ON d.id = u.department_id WHERE u.id = ?`,
     id
   );
+  if (u) {
+    u.extra_department_ids = parseIds(u.extra_departments).filter((x) => x !== u.department_id);
+    u.department_ids = userDeptIds(u);
+  }
+  return u;
 }
 
 export const isExpired = (u) => !!u.expires_at && u.expires_at < new Date().toISOString().slice(0, 10);

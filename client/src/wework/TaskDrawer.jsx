@@ -9,7 +9,7 @@ import { useApp, useFetch, useToast } from '../context.jsx';
 import { Drawer, Spinner, Avatar, UserPicker, SafeHtml, RichEditor, FileChip, Tabs, Progress, Empty } from '../components/ui.jsx';
 import { TASK_STATUS, RECURRING, fmtDateTime, timeAgo, cx } from '../utils.js';
 import { useWework } from './WeworkLayout.jsx';
-import { StatusCircle, TaskTags } from './taskParts.jsx';
+import { StatusCircle, TaskTags, useAssignable } from './taskParts.jsx';
 import TaskResults from './TaskResults.jsx';
 import FileViewer from '../components/FileViewer.jsx';
 
@@ -28,6 +28,7 @@ export function TaskDetail({ id, onClose, onChanged, standalone }) {
   const [comments, reloadComments] = useFetch(() => api.get(`/tasks/${id}/comments`), [id]);
   const [activity, reloadActivity] = useFetch(() => api.get(`/tasks/${id}/activity`), [id]);
   const [viewing, setViewing] = useState(null);
+  const assignable = useAssignable(users, t?.project_id, [t?.assignee_id]);
 
   useEffect(() => { if (t) { setTitle(t.title); setDesc(t.description || ''); } }, [t]);
   useEffect(() => {
@@ -39,6 +40,9 @@ export function TaskDetail({ id, onClose, onChanged, standalone }) {
   if (loading && !t) return <div className="drawer-pad"><Spinner /></div>;
   if (!t) return null;
   const ro = !t.can_edit;
+  // người chỉ được giao việc: không đổi thời gian, mô tả, dự án, lặp lại; không xoá
+  const locked = ro || !t.can_manage;
+  const lockHint = !ro && !t.can_manage ? 'Chỉ người giao việc / quản lý dự án được thay đổi' : undefined;
 
   const update = async (patch, msg) => {
     try {
@@ -104,7 +108,7 @@ export function TaskDetail({ id, onClose, onChanged, standalone }) {
         <button className="icon-btn" title="Sao chép liên kết" onClick={() => { navigator.clipboard?.writeText(`${window.location.origin}/wework/task/${id}`); toast('Đã sao chép liên kết'); }}>
           <Link2 size={18} />
         </button>
-        <button className="icon-btn" title="Xóa công việc" onClick={del}><Trash2 size={18} /></button>
+        {t.can_delete && <button className="icon-btn" title="Xóa công việc" onClick={del}><Trash2 size={18} /></button>}
         {!standalone && <button className="icon-btn" onClick={onClose} aria-label="Đóng"><X size={20} /></button>}
       </div>
 
@@ -119,16 +123,16 @@ export function TaskDetail({ id, onClose, onChanged, standalone }) {
 
         <div className="td-fields">
           <div className="td-field"><span><User size={14} /> Người thực hiện</span>
-            {ro ? <b>{t.assignee_name}</b> : <UserPicker users={users} value={t.assignee_id} onChange={(v) => update({ assignee_id: v })} placeholder="Chưa giao" />}
+            {ro ? <b>{t.assignee_name}</b> : <UserPicker users={assignable} value={t.assignee_id} onChange={(v) => update({ assignee_id: v })} placeholder="Chưa giao" />}
           </div>
           <div className="td-field"><span><Eye size={14} /> Người theo dõi</span>
             <UserPicker users={users} multiple value={t.followers.map((f) => f.id)} onChange={(v) => update({ followers: v })} placeholder="Thêm người theo dõi" />
           </div>
           <div className="td-field"><span><Calendar size={14} /> Ngày bắt đầu</span>
-            <input type="date" className="input" disabled={ro} value={t.start_date?.slice(0, 10) || ''} onChange={(e) => update({ start_date: e.target.value })} />
+            <input type="date" className="input" disabled={locked} title={lockHint} value={t.start_date?.slice(0, 10) || ''} onChange={(e) => update({ start_date: e.target.value })} />
           </div>
           <div className="td-field"><span><Calendar size={14} /> Thời hạn</span>
-            <input type="date" className={cx('input', t.is_overdue && 'text-red')} disabled={ro} value={t.due_date?.slice(0, 10) || ''} onChange={(e) => update({ due_date: e.target.value })} />
+            <input type="date" className={cx('input', t.is_overdue && 'text-red')} disabled={locked} title={lockHint} value={t.due_date?.slice(0, 10) || ''} onChange={(e) => update({ due_date: e.target.value })} />
           </div>
           <div className="td-field"><span><Flag size={14} /> Ưu tiên</span>
             <select className="input" disabled={ro} value={t.priority} onChange={(e) => update({ priority: e.target.value })}>
@@ -136,13 +140,13 @@ export function TaskDetail({ id, onClose, onChanged, standalone }) {
             </select>
           </div>
           <div className="td-field"><span><Repeat size={14} /> Lặp lại</span>
-            <select className="input" disabled={ro} value={t.recurring || ''} onChange={(e) => update({ recurring: e.target.value || null })}>
+            <select className="input" disabled={locked} title={lockHint} value={t.recurring || ''} onChange={(e) => update({ recurring: e.target.value || null })}>
               <option value="">Không lặp lại</option>
               {Object.entries(RECURRING).map(([k, l]) => <option key={k} value={k}>{l}</option>)}
             </select>
           </div>
           <div className="td-field"><span><FolderKanban size={14} /> Dự án</span>
-            <select className="input" disabled={ro || !!t.parent_id} value={t.project_id || ''} onChange={(e) => update({ project_id: e.target.value || null })}>
+            <select className="input" disabled={locked || !!t.parent_id} title={lockHint} value={t.project_id || ''} onChange={(e) => update({ project_id: e.target.value || null })}>
               <option value="">— Công việc cá nhân —</option>
               {projects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
               {t.project_id && !projects.some((p) => p.id === t.project_id) && <option value={t.project_id}>{t.project_name}</option>}
@@ -155,13 +159,14 @@ export function TaskDetail({ id, onClose, onChanged, standalone }) {
             </select>
           </div>
         </div>
+        {lockHint && <div className="td-lock small">🔒 Bạn là người được giao việc: cập nhật trạng thái, kết quả, checklist, tệp và thảo luận; thời gian, mô tả, dự án và lặp lại do người giao việc quản lý.</div>}
         <div className="small muted">Tạo bởi <b>{t.creator_name}</b> · {fmtDateTime(t.created_at)} · cập nhật {timeAgo(t.updated_at)}
           {t.project_id && <> · <Link to={`/wework/project/${t.project_id}`} onClick={onClose}>{t.project_name}</Link></>}
         </div>
 
         <section className="td-section">
           <div className="td-section-head"><b>Mô tả</b>
-            {!ro && !editDesc && <button className="link-btn" onClick={() => setEditDesc(true)}>Chỉnh sửa</button>}
+            {!locked && !editDesc && <button className="link-btn" onClick={() => setEditDesc(true)}>Chỉnh sửa</button>}
           </div>
           {editDesc ? (
             <>

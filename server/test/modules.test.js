@@ -449,3 +449,57 @@ test('home agenda lists important tasks to keep an eye on', async () => {
   assert.equal(item.role, 'assignee');
   assert.ok(a.important.every((i) => ['urgent', 'important'].includes(i.priority)));
 });
+
+test('wework permissions: who may assign to whom, what an assignee may change', async () => {
+  const admin = await login('admin');
+  const kd = await login('truongkd');     // trưởng phòng Kinh doanh, quản lý trực tiếp của demo
+  const demo = await login('demo');
+  const mkt = await login('duylinh');     // phòng Marketing, không do truongkd quản lý
+  // nhân viên không giao được cho người ngoài phạm vi quản lý
+  assert.equal((await demo.post('/tasks', { title: 'Giao ngang', assignee_id: mkt.user.id })).status, 403);
+  assert.equal((await demo.post('/tasks', { title: 'Tự giao' })).status, 201);
+  // trưởng phòng / quản lý trực tiếp giao cho nhân viên của mình, không giao sang phòng khác
+  const scope = (await kd.get('/wework/assignable')).data;
+  assert.ok(scope.ids.includes(demo.user.id) && !scope.ids.includes(mkt.user.id));
+  assert.equal((await kd.post('/tasks', { title: 'Sang phòng khác', assignee_id: mkt.user.id })).status, 403);
+  const { data: t } = await kd.post('/tasks', { title: 'Khảo sát đại lý', assignee_id: demo.user.id, due_date: '2026-10-10' });
+  // quản trị viên giao cho mọi người
+  assert.equal((await admin.get('/wework/assignable')).data.all, true);
+  assert.equal((await admin.post('/tasks', { title: 'Việc của Marketing', assignee_id: mkt.user.id })).status, 201);
+  // người được giao: cập nhật trạng thái được, không đổi thời gian / mô tả / dự án / lặp lại, không xoá
+  const seen = (await demo.get(`/tasks/${t.id}`)).data;
+  assert.equal(seen.can_edit, true);
+  assert.equal(seen.can_manage, false);
+  assert.equal(seen.can_delete, false);
+  assert.equal((await demo.put(`/tasks/${t.id}`, { status: 'doing' })).status, 200);
+  for (const patch of [{ due_date: '2026-12-31' }, { start_date: '2026-10-01' }, { description: 'x' }, { recurring: 'weekly' }]) {
+    assert.equal((await demo.put(`/tasks/${t.id}`, patch)).status, 403, JSON.stringify(patch));
+  }
+  assert.equal((await demo.del(`/tasks/${t.id}`)).status, 403);
+  assert.equal((await kd.put(`/tasks/${t.id}`, { due_date: '2026-12-31' })).status, 200);
+});
+
+test('a member can belong to several departments', async () => {
+  const admin = await login('admin');
+  const demo = await login('demo');
+  const deps = (await admin.get('/departments')).data;
+  const mktDep = deps.find((d) => d.name === 'Phòng Marketing');
+  const before = mktDep.member_count;
+  await admin.put(`/users/${demo.user.id}`, { ...(await admin.get(`/users/${demo.user.id}`)).data, extra_department_ids: [mktDep.id] });
+  const me = (await demo.get(`/users/${demo.user.id}`)).data;
+  assert.deepEqual(me.extra_department_ids, [mktDep.id]);
+  assert.equal((await admin.get('/departments')).data.find((d) => d.id === mktDep.id).member_count, before + 1);
+  // thấy kênh chat của phòng ban kiêm nhiệm
+  const chans = (await demo.get('/home/chat')).data.channels;
+  assert.ok(chans.some((c) => c.name === 'Phòng Marketing'));
+  // nhận văn bản gửi cho phòng ban kiêm nhiệm
+  const fd = new FormData();
+  fd.append('title', 'Thông báo riêng phòng Marketing');
+  fd.append('recipient_departments', String(mktDep.id));
+  const { data: doc } = await admin.post('/documents', fd);
+  assert.equal((await demo.get(`/documents/${doc.id}`)).status, 200);
+  // trưởng phòng Marketing giao việc được cho người kiêm nhiệm
+  const mkt = await login('minhtrang');
+  assert.ok((await mkt.get('/wework/assignable')).data.ids.includes(demo.user.id));
+  await admin.put(`/users/${demo.user.id}`, { ...me, extra_department_ids: [] });
+});

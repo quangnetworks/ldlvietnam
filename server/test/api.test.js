@@ -147,7 +147,10 @@ test('tasks: create, permissions, recurring completion spawns next occurrence', 
   assert.equal(next.due_date, '2026-01-12');
   assert.equal(next.start_date, '2026-01-08');
 
-  const bad = await demo.put(`/tasks/${next.id}`, { start_date: '2026-02-01' });
+  // kỳ tiếp theo vẫn do người giao việc ban đầu tạo; người được giao không được đổi thời gian
+  assert.equal(next.creator_id, kd.user.id);
+  assert.equal((await demo.put(`/tasks/${next.id}`, { start_date: '2026-02-01' })).status, 403);
+  const bad = await kd.put(`/tasks/${next.id}`, { start_date: '2026-02-01' });
   assert.equal(bad.status, 400);
 });
 

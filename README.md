@@ -5,7 +5,7 @@ Webapp nội bộ gồm 2 phân hệ, giao diện và chức năng mô phỏng *
 ## Chức năng
 
 ### Trang chủ (Home) — `/`
-- Phần đầu trang: lời chào, đồng hồ, **thời tiết tại vị trí hiện tại** (định vị của thiết bị → ước lượng theo mạng → mặc định Hà Nội; dự báo 4 ngày, lời nhắc mưa / nắng nóng), ô đếm nhanh việc **quá hạn / hôm nay / sắp tới / tin chưa đọc**, sinh nhật; đổi hình nền.
+- Phần đầu trang: lời chào, đồng hồ, **thời tiết tại vị trí hiện tại** dạng tóm tắt nhỏ, bấm để xem chi tiết (định vị của thiết bị → ước lượng theo mạng → mặc định Hà Nội; dự báo 4 ngày, lời nhắc mưa / nắng nóng), ô đếm nhanh việc **quá hạn / hôm nay / sắp tới / tin chưa đọc**, sinh nhật; đổi hình nền.
 - **Quan trọng cần lưu ý**: công việc khẩn cấp / quan trọng chưa xong mà bạn thực hiện, đã giao hoặc đang theo dõi — quá hạn lên đầu.
 - **Việc cần làm**: gom công việc Wework, đề xuất & văn bản chờ duyệt, đề xuất bị trả lại, công việc chờ đánh giá, nhắc chấm công, lịch nghỉ sắp tới — chia tab Quá hạn / Hôm nay / Sắp tới / Cần xử lý.
 - **Chat nhóm**: kênh toàn công ty và kênh phòng ban (tự tạo cho mỗi phòng ban, thành viên theo phòng ban của tài khoản).
@@ -22,7 +22,7 @@ Webapp nội bộ gồm 2 phân hệ, giao diện và chức năng mô phỏng *
 ### Tài khoản (Account) — `/account` — nền tảng cho mọi phân hệ
 - Hồ sơ cá nhân: thông tin liên hệ, quản lý trực tiếp, người báo cáo trực tiếp, nhóm, học vấn, kinh nghiệm, giải thưởng; đổi mật khẩu, **ảnh đại diện** (tự cắt vuông, hiển thị trên toàn hệ thống; quản trị viên đổi được cho từng thành viên), màu hiển thị, lịch sử đăng nhập.
 - Thành viên: tìm kiếm, tab Tất cả / Quản trị hệ thống / Vô hiệu hoá / Lịch sử đăng nhập; tạo, sửa, vô hiệu hoá, đặt lại mật khẩu; **nhập / xuất Excel (CSV)**.
-- Nhóm người dùng, phòng ban; **Quản lý ứng dụng**: bật/tắt từng ứng dụng và phân quyền sử dụng theo tài khoản (được kiểm tra ở cả API).
+- Nhóm người dùng, phòng ban (có **trưởng phòng**); một tài khoản có thể thuộc **nhiều phòng ban** (phòng ban chính + kiêm nhiệm: nhận văn bản, kênh chat, tài liệu của mọi phòng ban) và nhiều dự án; **Quản lý ứng dụng**: bật/tắt từng ứng dụng và phân quyền sử dụng theo tài khoản (được kiểm tra ở cả API).
 - Chỉnh sửa công ty, lịch sử hệ thống (audit), đổi mật khẩu hàng loạt.
 
 ### Đề xuất (Request) — `/request`
@@ -46,6 +46,8 @@ Webapp nội bộ gồm 2 phân hệ, giao diện và chức năng mô phỏng *
 - Đánh dấu yêu thích, theo dõi, cất giữ, tạm xóa / khôi phục / xóa vĩnh viễn, thao tác hàng loạt, **xuất CSV**, **quét văn bản** (tải bản scan → tạo văn bản đến nháp).
 
 ### Công việc & dự án (Wework) — `/wework`
+- **Công việc của tôi** (dạng bảng theo Base Wework): tab *Giao cho tôi / Tôi giao đi / Đang theo dõi*; nhóm theo *Thời hạn* (Trước đây, Hôm nay, Ngày mai, 7 ngày tới, Trong tương lai, Không thời hạn), trạng thái, dự án hoặc mức ưu tiên; lọc trạng thái / dự án, sắp xếp, tìm kiếm; cột trạng thái, thời gian bắt đầu, thời hạn, hoàn thành, dự án, công việc cha, nhãn, kết quả, tạo bởi, giao cho (*Tuỳ chỉnh cột*); tích để hoàn thành, tạo nhanh công việc trong từng nhóm.
+- **Phân quyền giao việc**: quản trị viên giao cho mọi người; quản lý trực tiếp giao cho nhân viên mình quản lý (cả cấp dưới gián tiếp); trưởng phòng giao cho nhân sự trong phòng ban; quản lý dự án giao cho thành viên dự án; ai cũng tự giao cho mình. Người được giao việc cập nhật trạng thái, kết quả, checklist, tệp, thảo luận nhưng **không được xoá công việc, đổi thời gian bắt đầu / thời hạn, sửa mô tả, đổi dự án, đổi lặp lại**.
 - Trang Công việc: nhóm theo tuần, lọc *Giao & được giao / CV được giao / CV giao đi*, công việc con, trạng thái (Cần làm, Đang làm, Chờ đánh giá, Hoàn thành, Thất bại, Quá hạn, Hoàn thành muộn, Khẩn cấp, Quan trọng), dự án, sắp xếp.
 - Tab: Nhân viên của tôi, **Bộ lọc tùy chỉnh** (lưu bộ lọc), Đang theo dõi, **Lịch biểu**, **CV lặp lại**.
 - Panel phải: tỷ lệ hoàn thành, Mới được giao, Mới giao đi, Cảnh báo ưu tiên, **Mục tiêu**, bộ lọc tùy chỉnh, nhân viên của tôi.

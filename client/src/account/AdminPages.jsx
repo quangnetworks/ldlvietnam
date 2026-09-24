@@ -6,7 +6,7 @@ import {
 } from 'lucide-react';
 import { api } from '../api.js';
 import { useApp, useFetch, useToast } from '../context.jsx';
-import { Avatar, Modal, Field, UserPicker, Spinner, Dropdown, MenuItem, Empty, Tabs, Pagination } from '../components/ui.jsx';
+import { Avatar, Modal, Field, UserPicker, Spinner, Dropdown, MenuItem, Empty, Tabs, Pagination, MultiSelect } from '../components/ui.jsx';
 import { MODULE_APPS, AppIcon } from '../apps.jsx';
 import { fmtDate, fmtDateTime, cx } from '../utils.js';
 import { LoginHistory } from './ProfilePages.jsx';
@@ -18,9 +18,10 @@ const appByKey = Object.fromEntries(MODULE_APPS.map((a) => [a.module, a]));
 function UserModal({ user: editing, guest = false, onClose, onSaved }) {
   const { users, departments } = useApp();
   const toast = useToast();
-  const [f, setF] = useState(editing ? { ...editing, password: '', department_id: editing.department_id || '' } : {
+  const extraOf = (u) => String(u.extra_departments || '').split(',').map(Number).filter((x) => x && x !== u.department_id);
+  const [f, setF] = useState(editing ? { ...editing, password: '', department_id: editing.department_id || '', extra_department_ids: extraOf(editing) } : {
     username: '', password: '', name: '', email: '', phone: '', title: '', department_id: '', manager_id: null, role: guest ? 'guest' : 'member',
-    birthday: '', apps: guest ? [] : MODULE_APPS.map((a) => a.module), expires_at: '',
+    birthday: '', apps: guest ? [] : MODULE_APPS.map((a) => a.module), expires_at: '', extra_department_ids: [],
   });
   const [err, setErr] = useState('');
   const set = (k) => (e) => setF({ ...f, [k]: e?.target ? e.target.value : e });
@@ -60,6 +61,10 @@ function UserModal({ user: editing, guest = false, onClose, onSaved }) {
             <option value="">— Không chọn —</option>
             {departments.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
           </select>
+        </Field>
+        <Field label="Phòng ban kiêm nhiệm" hint="Một tài khoản có thể thuộc nhiều phòng ban: nhận văn bản, kênh chat, tài liệu của các phòng ban này">
+          <MultiSelect options={departments.filter((d) => String(d.id) !== String(f.department_id)).map((d) => ({ value: d.id, label: d.name }))}
+            value={f.extra_department_ids || []} onChange={set('extra_department_ids')} placeholder="Không có" />
         </Field>
         <Field label="Quản lý trực tiếp"><UserPicker users={users} exclude={editing ? [editing.id] : []} value={f.manager_id} onChange={set('manager_id')} placeholder="Không có" /></Field>
         <Field label="Vai trò">
@@ -359,7 +364,7 @@ export function GroupsPage() {
 }
 
 export function DepartmentsPage() {
-  const { departments, loadDirectory } = useApp();
+  const { departments, loadDirectory, users } = useApp();
   const toast = useToast();
   const [edit, setEdit] = useState(null);
   const save = async () => {
@@ -375,13 +380,13 @@ export function DepartmentsPage() {
       <div className="page-head"><h1>Phòng ban</h1><button className="btn btn-success" onClick={() => setEdit({ name: '', code: '', parent_id: '' })}><Plus size={15} /> Thêm phòng ban</button></div>
       <div className="table-wrap">
         <table className="table">
-          <thead><tr><th>Phòng ban</th><th>Mã</th><th>Trực thuộc</th><th>Số nhân sự</th><th /></tr></thead>
+          <thead><tr><th>Phòng ban</th><th>Mã</th><th>Trưởng phòng</th><th>Trực thuộc</th><th>Số nhân sự</th><th /></tr></thead>
           <tbody>
             {departments.map((d) => (
               <tr key={d.id}>
-                <td>{d.name}</td><td>{d.code}</td><td>{departments.find((x) => x.id === d.parent_id)?.name}</td><td>{d.member_count}</td>
+                <td>{d.name}</td><td>{d.code}</td><td>{d.head_name || <span className="muted">—</span>}</td><td>{departments.find((x) => x.id === d.parent_id)?.name}</td><td>{d.member_count}</td>
                 <td className="nowrap">
-                  <button className="icon-btn sm" onClick={() => setEdit({ ...d, parent_id: d.parent_id || '' })} aria-label="Sửa"><Pencil size={15} /></button>
+                  <button className="icon-btn sm" onClick={() => setEdit({ ...d, parent_id: d.parent_id || '', head_id: d.head_id || null })} aria-label="Sửa"><Pencil size={15} /></button>
                   <button className="icon-btn sm" aria-label="Xoá" onClick={async () => { if (window.confirm(`Xoá phòng ban ${d.name}?`)) { await api.del(`/departments/${d.id}`); loadDirectory(); } }}><Trash2 size={15} /></button>
                 </td>
               </tr>
@@ -395,6 +400,9 @@ export function DepartmentsPage() {
           <div className="form-grid one">
             <Field label="Tên phòng ban" required><input className="input" autoFocus value={edit.name} onChange={(e) => setEdit({ ...edit, name: e.target.value })} /></Field>
             <Field label="Mã"><input className="input" value={edit.code || ''} onChange={(e) => setEdit({ ...edit, code: e.target.value })} /></Field>
+            <Field label="Trưởng phòng" hint="Trưởng phòng được giao việc cho mọi nhân sự của phòng ban (kể cả người kiêm nhiệm)">
+              <UserPicker users={users} value={edit.head_id} onChange={(v) => setEdit({ ...edit, head_id: v })} placeholder="Chưa chọn" />
+            </Field>
             <Field label="Trực thuộc">
               <select className="input" value={edit.parent_id || ''} onChange={(e) => setEdit({ ...edit, parent_id: e.target.value })}>
                 <option value="">— Cấp gốc —</option>

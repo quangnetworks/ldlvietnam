@@ -1,10 +1,10 @@
 import { Hono } from 'hono';
 import { setCookie, deleteCookie } from 'hono/cookie';
-import { all, get, run, getSetting, setSetting } from '../db.js';
+import { all, get, run, batch, getSetting, setSetting } from '../db.js';
 import {
-  COOKIE, TOKEN_TTL, signToken, loadUser, requireAdmin, PUBLIC_USER_FIELDS, hashPassword, verifyPassword,
+  COOKIE, TOKEN_TTL, signToken, loadUser, requireAdmin, PUBLIC_USER_FIELDS, hashPassword, verifyPassword, inDeptSql,
 } from '../auth.js';
-import { badRequest, notFound, toInt, jsonBody } from '../util.js';
+import { badRequest, notFound, toInt, idList, jsonBody } from '../util.js';
 import { userApps, grantApps, audit, recordLogin, MODULES } from '../platform.js';
 import { verifyTotp, ipAllowed } from '../security.js';
 import { isExpired } from '../auth.js';
@@ -127,6 +127,15 @@ r.get('/users/:id', async (c) => {
   return c.json(u);
 });
 
+/** Phòng ban kiêm nhiệm (ngoài phòng ban chính). */
+async function saveExtraDepartments(userId, primaryId, ids) {
+  const list = idList(ids).filter((d) => d !== primaryId);
+  await batch([
+    ['DELETE FROM user_departments WHERE user_id = ?', [userId]],
+    ...list.map((d) => ['INSERT OR IGNORE INTO user_departments(user_id, department_id) SELECT ?, id FROM departments WHERE id = ?', [userId, d]]),
+  ]);
+}
+
 function validateUserBody(b, creating) {
   if (creating) {
     if (!b.username?.trim()) throw badRequest('Tên đăng nhập là bắt buộc');
@@ -153,6 +162,7 @@ r.post('/users', requireAdmin, async (c) => {
     b.role === 'guest' ? b.expires_at || null : null, lastId);
   // Tài khoản khách: chỉ nhận ứng dụng được chọn rõ ràng
   await grantApps(lastId, Array.isArray(b.apps) ? b.apps : b.role === 'guest' ? [] : null);
+  if (b.extra_department_ids !== undefined) await saveExtraDepartments(lastId, toInt(b.department_id), b.extra_department_ids);
   await audit(c.get('user').id, 'user.create', `Tạo tài khoản @${b.username.trim()}`);
   return c.json(await loadUser(lastId), 201);
 });
@@ -176,6 +186,10 @@ r.put('/users/:id', requireAdmin, async (c) => {
       b.birthday ?? null, b.address ?? null, id);
   }
   if (Array.isArray(b.apps)) await grantApps(id, b.apps.filter((k) => MODULES[k]));
+  if (b.extra_department_ids !== undefined) {
+    const primary = b.department_id !== undefined ? toInt(b.department_id) : (await get('SELECT department_id FROM users WHERE id = ?', id)).department_id;
+    await saveExtraDepartments(id, primary, b.extra_department_ids);
+  }
   if (b.expires_at !== undefined || b.role !== undefined) {
     await run("UPDATE users SET expires_at = CASE WHEN role = 'guest' THEN ? ELSE NULL END WHERE id = ?", b.expires_at || null, id);
   }
@@ -203,21 +217,21 @@ r.delete('/users/:id', requireAdmin, async (c) => {
 
 // ---------- Departments ----------
 r.get('/departments', async (c) => c.json(await all(
-  `SELECT d.*, (SELECT COUNT(*) FROM users u WHERE u.department_id = d.id AND u.active = 1) AS member_count
-   FROM departments d ORDER BY d.name COLLATE NOCASE`
+  `SELECT d.*, h.name AS head_name, (SELECT COUNT(*) FROM users u WHERE ${inDeptSql('u', 'd.id')} AND u.active = 1) AS member_count
+   FROM departments d LEFT JOIN users h ON h.id = d.head_id ORDER BY d.name COLLATE NOCASE`
 )));
 r.post('/departments', requireAdmin, async (c) => {
-  const { name, code, parent_id } = await jsonBody(c);
+  const { name, code, parent_id, head_id } = await jsonBody(c);
   if (!name?.trim()) throw badRequest('Tên phòng ban là bắt buộc');
-  const { lastId } = await run('INSERT INTO departments(name, code, parent_id) VALUES (?,?,?)', name.trim(), code || null, toInt(parent_id));
+  const { lastId } = await run('INSERT INTO departments(name, code, parent_id, head_id) VALUES (?,?,?,?)', name.trim(), code || null, toInt(parent_id), toInt(head_id));
   return c.json(await get('SELECT * FROM departments WHERE id = ?', lastId), 201);
 });
 r.put('/departments/:id', requireAdmin, async (c) => {
   const id = toInt(c.req.param('id'));
-  const { name, code, parent_id } = await jsonBody(c);
+  const { name, code, parent_id, head_id } = await jsonBody(c);
   if (toInt(parent_id) === id) throw badRequest('Phòng ban cha không hợp lệ');
-  await run('UPDATE departments SET name = COALESCE(?, name), code = ?, parent_id = ? WHERE id = ?',
-    name?.trim() || null, code || null, toInt(parent_id), id);
+  await run('UPDATE departments SET name = COALESCE(?, name), code = ?, parent_id = ?, head_id = ? WHERE id = ?',
+    name?.trim() || null, code || null, toInt(parent_id), toInt(head_id), id);
   return c.json(await get('SELECT * FROM departments WHERE id = ?', id));
 });
 r.delete('/departments/:id', requireAdmin, async (c) => {

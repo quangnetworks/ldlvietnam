@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { api } from '../api.js';
 import { useApp, useToast } from '../context.jsx';
 import { Modal, Field, UserPicker, RichEditor } from '../components/ui.jsx';
+import { useAssignable } from './taskParts.jsx';
 import { useWework } from './WeworkLayout.jsx';
 import { RECURRING } from '../utils.js';
 
@@ -41,7 +42,8 @@ export default function TaskCreateModal({ defaults, onClose, onCreated }) {
       setBusy(false);
     }
   };
-  const assignable = members ? users.filter((u) => members.includes(u.id)) : users;
+  const allowed = useAssignable(users, form.project_id);
+  const assignable = members ? allowed.filter((u) => members.includes(u.id) || u.id === user.id) : allowed;
 
   return (
     <Modal title={defaults.parent_id ? 'Tạo công việc con' : 'Tạo công việc mới'} onClose={onClose} width={720}
@@ -67,7 +69,9 @@ export default function TaskCreateModal({ defaults, onClose, onCreated }) {
             </Field>
           </>
         )}
-        <Field label="Người thực hiện"><UserPicker users={assignable} value={form.assignee_id} onChange={set('assignee_id')} /></Field>
+        <Field label="Người thực hiện" hint={assignable.length < users.length ? 'Chỉ hiện những người bạn được giao việc (nhân viên do bạn quản lý / thành viên dự án bạn quản lý)' : undefined}>
+          <UserPicker users={assignable} value={form.assignee_id} onChange={set('assignee_id')} />
+        </Field>
         <Field label="Người theo dõi"><UserPicker users={users} multiple value={form.followers} onChange={set('followers')} placeholder="Thêm người theo dõi" /></Field>
         <Field label="Ngày bắt đầu"><input type="date" className="input" value={form.start_date} onChange={set('start_date')} /></Field>
         <Field label="Thời hạn"><input type="date" className="input" value={form.due_date} onChange={set('due_date')} /></Field>
