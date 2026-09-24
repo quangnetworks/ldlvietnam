@@ -8,6 +8,7 @@ import { ContactsButton } from '../components/Contact.jsx';
 import HomeAgenda from '../home/HomeAgenda.jsx';
 import { BRANDS, applyBrand, getBrandIndex } from '../theme.js';
 import HomeChat from '../home/HomeChat.jsx';
+import HomeLucky from '../home/HomeLucky.jsx';
 import HomeWeather from '../home/HomeWeather.jsx';
 import HomeImportant from '../home/HomeImportant.jsx';
 import PushCard from '../components/PushCard.jsx';
@@ -145,6 +146,7 @@ export default function Home() {
           <div className="home2-right">
             <div className="home2-clock">{pad(now.getHours())}:{pad(now.getMinutes())}<small>:{pad(now.getSeconds())}</small></div>
             <HomeWeather />
+            <HomeLucky />
           </div>
         </div>
         <div className="home2-stats">

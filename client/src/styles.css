@@ -1892,3 +1892,27 @@ button.rpt-task:hover { background: var(--hover); }
 }
 /* Trang chi tiết công việc (mở bằng liên kết): căn giữa, rộng hơn trên desktop */
 .ww-main.task-page { max-width: 1180px; margin: 0 auto; }
+
+/* Con số may mắn (Thần số học) dưới thời tiết trên Home */
+.lucky-mini { text-decoration: none; }
+.lucky-mini .lucky-num { display: inline-grid; place-items: center; min-width: 22px; height: 22px; padding: 0 6px; border-radius: 999px; font-size: 13px;
+  background: linear-gradient(135deg, #ffd43b, #f59f00); color: #3b2800; }
+.lucky-pop { padding: 14px 16px; color: #fff; width: 300px; }
+.lucky-head { display: flex; align-items: center; gap: 12px; }
+.lucky-head small { display: block; opacity: 0.75; font-size: 12px; }
+.lucky-head b { font-size: 16px; }
+.lucky-big { display: grid; place-items: center; width: 52px; height: 52px; flex: none; border-radius: 16px; font-size: 26px; font-weight: 700;
+  background: linear-gradient(135deg, #ffd43b, #f59f00); color: #3b2800; box-shadow: 0 6px 18px rgba(245, 159, 0, 0.35); }
+.lucky-tip { margin: 10px 0; font-size: 13px; line-height: 1.5; opacity: 0.95; }
+.lucky-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+.lucky-grid > div { display: flex; flex-direction: column; align-items: center; gap: 1px; padding: 7px 4px; border-radius: 10px; background: rgba(255, 255, 255, 0.08); text-align: center; min-width: 0; }
+.lucky-grid small { font-size: 11px; opacity: 0.75; }
+.lucky-grid b { font-size: 16px; }
+.lucky-grid b.lucky-color { font-size: 13px; line-height: 22px; }
+.lucky-grid span { font-size: 11px; opacity: 0.85; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lucky-note { display: block; margin-top: 10px; font-size: 11px; opacity: 0.6; }
+@media (max-width: 700px) {
+  .home2-right { width: 100%; align-items: center; }
+  .home2-right .weather-mini { max-width: calc(100vw - 48px); }
+  .home2-right .weather.glass-pop { right: 50%; transform: translateX(50%); }
+}
