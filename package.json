@@ -1,0 +1,16 @@
+{
+  "name": "ldl-workspace",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Webapp quản lý Văn bản (Office) và Công việc & Dự án (Wework) cho LDL Việt Nam",
+  "scripts": {
+    "install:all": "npm --prefix server install && npm --prefix client install",
+    "build": "npm --prefix client run build",
+    "start": "npm --prefix server start",
+    "dev:server": "npm --prefix server run dev",
+    "dev:client": "npm --prefix client run dev",
+    "seed": "npm --prefix server run seed",
+    "test": "npm --prefix server test"
+  },
+  "engines": { "node": ">=22.5" }
+}
