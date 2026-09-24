@@ -4,6 +4,7 @@ import { requireAdmin, hashPassword, verifyPassword, loadUser, PUBLIC_USER_FIELD
 import { randomBase32, otpauthUrl, verifyTotp, securitySettings, validIpRule, clientIp, ipMatches } from '../security.js';
 import { badRequest, notFound, forbidden, toInt, idList, jsonBody, paginate, formBody, storeFiles, removeFile, sendFile } from '../util.js';
 import { MODULES, userApps, grantApps, audit } from '../platform.js';
+import { departmentChannel } from './chat.js';
 
 const r = new Hono();
 
@@ -323,6 +324,114 @@ r.get('/home/summary', async (c) => {
   out.birthdays = await all(`SELECT id, name, color, birthday FROM users WHERE active = 1 AND birthday IS NOT NULL
     AND substr(birthday, 6, 5) = strftime('%m-%d', 'now')`);
   return c.json(out);
+});
+
+/**
+ * Việc cần làm trên Home: gom từ Wework, Request, Office, Checkin, Timeoff và xếp vào
+ * quá hạn / hôm nay / sắp tới (7 ngày) / cần xử lý. Ngày tính theo giờ Việt Nam.
+ */
+r.get('/home/agenda', async (c) => {
+  const user = c.get('user');
+  const apps = await userApps(user);
+  const VN = 7 * 3600e3;
+  const nowVn = new Date(Date.now() + VN);
+  const today = nowVn.toISOString().slice(0, 10);
+  const in7 = new Date(Date.now() + VN + 7 * 864e5).toISOString().slice(0, 10);
+  const vnDay = (utc) => (utc ? new Date(new Date(`${utc.replace(' ', 'T')}Z`).getTime() + VN).toISOString().slice(0, 10) : null);
+  const bucketOf = (due) => (!due ? 'todo' : due < today ? 'overdue' : due === today ? 'today' : due <= in7 ? 'upcoming' : 'todo');
+  const items = [];
+
+  if (apps.includes('wework')) {
+    const tasks = await all(`SELECT t.id, t.title, t.status, t.priority, date(t.due_date) AS due, p.name AS project_name FROM tasks t
+      LEFT JOIN projects p ON p.id = t.project_id
+      WHERE t.assignee_id = ? AND t.status IN ('todo', 'doing') ORDER BY t.due_date IS NULL, t.due_date LIMIT 40`, user.id);
+    for (const t of tasks) {
+      items.push({ key: `task-${t.id}`, type: 'task', title: t.title, sub: t.project_name || 'Công việc cá nhân', link: `/wework/task/${t.id}`,
+        due: t.due, bucket: bucketOf(t.due), priority: t.priority, status: t.status });
+    }
+    const review = await all(`SELECT t.id, t.title, u.name AS assignee_name FROM tasks t LEFT JOIN users u ON u.id = t.assignee_id
+      WHERE t.creator_id = ? AND t.assignee_id <> t.creator_id AND t.status = 'review' ORDER BY t.updated_at DESC LIMIT 10`, user.id);
+    for (const t of review) {
+      items.push({ key: `review-${t.id}`, type: 'review', title: t.title, sub: `${t.assignee_name || ''} đã hoàn thành — chờ bạn đánh giá`,
+        link: `/wework/task/${t.id}`, due: null, bucket: 'today' });
+    }
+  }
+  if (apps.includes('request')) {
+    const reqs = await all(`SELECT q.id, q.title, q.deadline_at, u.name AS creator_name, g.name AS group_name FROM request_approvers ra
+      JOIN requests q ON q.id = ra.request_id LEFT JOIN users u ON u.id = q.creator_id LEFT JOIN request_groups g ON g.id = q.group_id
+      WHERE ra.user_id = ? AND ra.status = 'pending' AND q.status = 'pending'
+      AND (q.flow = 'any' OR ra.step = (SELECT MIN(step) FROM request_approvers x WHERE x.request_id = q.id AND x.status = 'pending'))
+      ORDER BY q.deadline_at IS NULL, q.deadline_at LIMIT 20`, user.id);
+    for (const q of reqs) {
+      const due = vnDay(q.deadline_at);
+      items.push({ key: `req-${q.id}`, type: 'request', title: q.title, sub: `${q.creator_name} · ${q.group_name || 'Đề xuất'} — chờ bạn duyệt`,
+        link: `/request/${q.id}`, due, bucket: due ? bucketOf(due) : 'today' });
+    }
+    const returned = await all(`SELECT q.id, q.title, g.name AS group_name FROM requests q LEFT JOIN request_groups g ON g.id = q.group_id
+      WHERE q.creator_id = ? AND q.status = 'returned' ORDER BY q.updated_at DESC LIMIT 10`, user.id);
+    for (const q of returned) {
+      items.push({ key: `ret-${q.id}`, type: 'returned', title: q.title, sub: `${q.group_name || 'Đề xuất'} — bị trả lại, cần chỉnh sửa và gửi lại`,
+        link: `/request/${q.id}`, due: null, bucket: 'today' });
+    }
+  }
+  if (apps.includes('office')) {
+    const docs = await all(`SELECT d.id, d.title, u.name AS creator_name FROM document_approvers da JOIN documents d ON d.id = da.document_id
+      LEFT JOIN users u ON u.id = d.creator_id
+      WHERE da.user_id = ? AND da.status = 'pending' AND d.status = 'pending' AND d.deleted_at IS NULL
+      AND da.step = (SELECT MIN(step) FROM document_approvers x WHERE x.document_id = d.id AND x.status = 'pending') LIMIT 20`, user.id);
+    for (const d of docs) {
+      items.push({ key: `doc-${d.id}`, type: 'document', title: d.title, sub: `${d.creator_name || ''} — văn bản chờ bạn duyệt`,
+        link: `/office/doc/${d.id}`, due: null, bucket: 'today' });
+    }
+  }
+  if (apps.includes('checkin') && user.role !== 'guest') {
+    let st = { start: '08:30', end: '17:30', work_saturday: true };
+    try { st = { ...st, ...JSON.parse((await getSetting('checkin_settings')) || '{}') }; } catch { /* mặc định */ }
+    const dow = nowVn.getUTCDay();
+    const minutes = nowVn.getUTCHours() * 60 + nowVn.getUTCMinutes();
+    const hm = (v) => Number(v.slice(0, 2)) * 60 + Number(v.slice(3, 5));
+    if (dow !== 0 && (dow !== 6 || st.work_saturday)) {
+      const rec = await get('SELECT check_in_at, check_out_at FROM checkins WHERE user_id = ? AND date = ?', user.id, today);
+      if (!rec?.check_in_at && minutes >= hm(st.start) - 60 && minutes < hm(st.end)) {
+        items.push({ key: 'checkin-in', type: 'checkin', title: 'Bạn chưa chấm công vào hôm nay', sub: `Ca làm việc ${st.start} – ${st.end}`, link: '/checkin', due: today, bucket: 'today' });
+      } else if (rec?.check_in_at && !rec.check_out_at && minutes >= hm(st.end)) {
+        items.push({ key: 'checkin-out', type: 'checkin', title: 'Đừng quên chấm công ra', sub: `Hết ca lúc ${st.end}`, link: '/checkin', due: today, bucket: 'today' });
+      }
+    }
+  }
+  if (apps.includes('timeoff')) {
+    let gid = null;
+    try { gid = JSON.parse((await getSetting('timeoff_settings')) || '{}').group_id || null; } catch { /* mặc định */ }
+    if (!gid) gid = (await get("SELECT id FROM request_groups WHERE name = 'Đề xuất nghỉ phép'"))?.id;
+    if (gid) {
+      const leaves = await all(`SELECT q.id, json_extract(q.data, '$.from') AS f, json_extract(q.data, '$.to') AS t, json_extract(q.data, '$.kind') AS kind
+        FROM requests q WHERE q.group_id = ? AND q.creator_id = ? AND q.status = 'approved'
+        AND json_extract(q.data, '$.from') BETWEEN ? AND ?`, gid, user.id, today, new Date(Date.now() + VN + 14 * 864e5).toISOString().slice(0, 10));
+      for (const l of leaves) {
+        items.push({ key: `leave-${l.id}`, type: 'leave', title: `Lịch nghỉ: ${l.kind || 'Nghỉ phép'}`, sub: l.t && l.t !== l.f ? `${l.f} → ${l.t}` : l.f,
+          link: `/request/${l.id}`, due: l.f, bucket: l.f === today ? 'today' : 'upcoming' });
+      }
+    }
+  }
+  const order = { overdue: 0, today: 1, upcoming: 2, todo: 3 };
+  items.sort((a, b) => order[a.bucket] - order[b.bucket] || String(a.due || '9999').localeCompare(String(b.due || '9999')));
+  const counts = { overdue: 0, today: 0, upcoming: 0, todo: 0 };
+  for (const i of items) counts[i.bucket]++;
+  return c.json({ today, counts, items });
+});
+
+/** Kênh chat nhóm trên Home: kênh toàn công ty + kênh phòng ban của người dùng. */
+r.get('/home/chat', async (c) => {
+  const user = c.get('user');
+  if (user.role === 'guest' || !(await userApps(user)).includes('message')) return c.json({ channels: [] });
+  const company = await get("SELECT id, name, description, kind FROM chat_channels WHERE kind = 'public' AND name = 'chung' ORDER BY id LIMIT 1");
+  const dep = await departmentChannel(user.department_id);
+  const channels = [company && { ...company, label: 'Toàn công ty' }, dep && { id: dep.id, name: dep.name, description: dep.description, kind: dep.kind, label: 'Phòng ban' }].filter(Boolean);
+  for (const ch of channels) {
+    ch.unread = (await get(`SELECT COUNT(*) AS n FROM chat_messages x WHERE x.channel_id = ? AND x.deleted_at IS NULL AND IFNULL(x.user_id, 0) <> ?
+      AND x.id > IFNULL((SELECT last_read_id FROM chat_members WHERE channel_id = ? AND user_id = ?), 0)`, ch.id, user.id, ch.id, user.id)).n;
+  }
+  return c.json({ channels });
 });
 
 // ================================================================ security (2FA, IP)

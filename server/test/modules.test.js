@@ -228,3 +228,38 @@ test('avatar: upload own / by admin, type check, serve, delete', async () => {
   // tải lại ảnh sau khi xoá dùng phiên bản mới (không trùng cache cũ)
   assert.equal((await demo.post(`/account/users/${me}/avatar`, form(png, 'image/png'))).data.avatar_version, 3);
 });
+
+test('home agenda groups work items into overdue / today / upcoming', async () => {
+  const demo = await login('demo');
+  const r = await demo.get('/home/agenda');
+  assert.equal(r.status, 200);
+  assert.ok(Array.isArray(r.data.items));
+  for (const i of r.data.items) assert.ok(['overdue', 'today', 'upcoming', 'todo'].includes(i.bucket));
+  const total = Object.values(r.data.counts).reduce((a, b) => a + b, 0);
+  assert.equal(total, r.data.items.length);
+  // công việc quá hạn được xếp vào nhóm "overdue"
+  const created = await demo.post('/tasks', { title: 'Việc quá hạn kiểm thử', assignee_id: demo.user.id, due_date: '2020-01-01' });
+  assert.equal(created.status, 201);
+  const again = await demo.get('/home/agenda');
+  assert.equal(again.data.items.find((i) => i.key === `task-${created.data.id}`).bucket, 'overdue');
+});
+
+test('department chat channel: members of the department only, shown on home', async () => {
+  const demo = await login('demo'); // Phòng Kinh doanh
+  const mkt = await login('duylinh'); // Phòng Marketing
+  const home = (await demo.get('/home/chat')).data.channels;
+  assert.deepEqual(home.map((c) => c.label), ['Toàn công ty', 'Phòng ban']);
+  const dep = home[1];
+  assert.equal(dep.kind, 'department');
+  assert.equal((await demo.get(`/chat/channels/${dep.id}/messages`)).status, 200);
+  assert.equal((await demo.post(`/chat/channels/${dep.id}/messages`, { content: 'Chào cả phòng' })).status, 201);
+  assert.equal((await mkt.get(`/chat/channels/${dep.id}/messages`)).status, 403);
+  assert.ok(!(await mkt.get('/chat/channels')).data.some((c) => c.id === dep.id));
+  // kênh phòng ban Marketing được tạo tự động
+  const mktHome = (await mkt.get('/home/chat')).data.channels;
+  assert.equal(mktHome[1].name, 'Phòng Marketing');
+  assert.equal((await demo.put(`/chat/channels/${dep.id}`, { name: 'x' })).status, 400);
+  const info = (await demo.get(`/chat/channels/${dep.id}`)).data;
+  assert.ok(info.members.some((m) => m.id === demo.user.id));
+  assert.ok(!info.members.some((m) => m.id === mkt.user.id));
+});

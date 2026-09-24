@@ -1,5 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { api, setUnauthorizedHandler } from './api.js';
+import { getThemePref, setThemePref } from './theme.js';
 
 const AppCtx = createContext(null);
 const ToastCtx = createContext(() => {});
@@ -32,6 +33,8 @@ export function AppProvider({ children }) {
       setCompany(r.company);
       setApps(r.apps || []);
       await loadDirectory();
+      // Giao diện sáng/tối đã chọn trên thiết bị khác
+      api.get('/me/prefs').then((p) => { if (p.theme && p.theme !== getThemePref()) setThemePref(p.theme); }).catch(() => {});
     } catch {
       setUser(null);
     } finally {

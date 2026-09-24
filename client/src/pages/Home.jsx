@@ -1,9 +1,11 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Search, StickyNote, Palette, Users, Lock, X, Plus, Trash2, Cake } from 'lucide-react';
+import { Search, StickyNote, Palette, Users, Lock, X, Plus, Trash2, Cake, Megaphone, AlertTriangle, CalendarClock, MessageCircle, CalendarCheck2 } from 'lucide-react';
 import { api } from '../api.js';
 import { useApp, useFetch, useToast } from '../context.jsx';
-import { NotificationBell, UserMenu } from '../components/shell.jsx';
+import { NotificationBell, UserMenu, ThemeToggle } from '../components/shell.jsx';
+import HomeAgenda from '../home/HomeAgenda.jsx';
+import HomeChat from '../home/HomeChat.jsx';
 import { Avatar, Drawer, Empty } from '../components/ui.jsx';
 import { ECOSYSTEM, CATEGORIES, canOpen, AppIcon } from '../apps.jsx';
 import { fmtDate, timeAgo, cx } from '../utils.js';
@@ -78,6 +80,7 @@ export default function Home() {
   const [bgOpen, setBgOpen] = useState(false);
   const [prefs, reloadPrefs] = useFetch(() => api.get('/me/prefs'), []);
   const [summary] = useFetch(() => api.get('/home/summary'), []);
+  const [agenda, reloadAgenda, agendaLoading] = useFetch(() => api.get('/home/agenda'), []);
   const [chat] = useFetch(() => ((apps || []).includes('message') ? api.get('/chat/unread') : Promise.resolve(null)), [apps]);
   const bg = BACKGROUNDS[Number(prefs?.home_bg_index) || 0] || BACKGROUNDS[0];
 
@@ -91,92 +94,101 @@ export default function Home() {
     else if (!a.path) toast(`${a.name} sắp ra mắt trong hệ sinh thái LDL`, 'info');
     else toast(`Bạn chưa được cấp quyền sử dụng ${a.name}. Liên hệ quản trị viên.`, 'error');
   };
-  const c = summary?.counters || {};
-  const chips = [
-    c.requests_to_approve > 0 && { label: `${c.requests_to_approve} đề xuất chờ bạn duyệt`, to: '/request?tab=my_turn' },
-    c.documents_to_approve > 0 && { label: `${c.documents_to_approve} văn bản chờ bạn duyệt`, to: '/office?box=pending_me' },
-    c.tasks_active > 0 && { label: `${c.tasks_active} công việc đang thực hiện`, to: '/wework/my' },
-    chat?.unread > 0 && { label: `${chat.unread} tin nhắn chưa đọc`, to: '/message' },
-    c.tasks_overdue > 0 && { label: `${c.tasks_overdue} công việc quá hạn`, to: '/wework/my?status=overdue', danger: true },
+  const ac = agenda?.counts || {};
+  const stats = [
+    { label: 'Quá hạn', value: ac.overdue, icon: AlertTriangle, cls: 'danger' },
+    { label: 'Hôm nay', value: ac.today, icon: CalendarCheck2, cls: 'warn' },
+    { label: 'Sắp tới', value: ac.upcoming, icon: CalendarClock, cls: '' },
+    (apps || []).includes('message') && { label: 'Tin chưa đọc', value: chat?.unread, icon: MessageCircle, cls: '', to: '/message' },
   ].filter(Boolean);
   const pad = (n) => String(n).padStart(2, '0');
-  const session = now.getHours() < 12 ? 'Sáng' : now.getHours() < 18 ? 'Chiều' : 'Tối';
 
   return (
-    <div className="home" style={{ background: bg }}>
-      <header className="home-top">
-        <Link to="/" className="brand"><img className="brand-logo" src="/logo-192.png" alt="LDL" /><span className="brand-name">{company}</span></Link>
-        <div className="grow" />
-        <Link to="/account/members" className="icon-btn on-dark" title="Thành viên"><Users size={18} /></Link>
-        <button className="icon-btn on-dark" title="Ghi chú" onClick={() => setNotesOpen(true)}><StickyNote size={18} /></button>
-        <button className="icon-btn on-dark" title="Cấu hình hình nền" onClick={() => setBgOpen((o) => !o)}><Palette size={18} /></button>
-        <NotificationBell app="home" dark />
-        <UserMenu dark />
-      </header>
-      {bgOpen && (
-        <div className="bg-picker">
-          <b>Chọn màu nền</b>
-          <div className="row gap">
-            {BACKGROUNDS.map((b, i) => (
-              <button key={i} className={cx('bg-swatch', bg === b && 'active')} style={{ background: b }} aria-label={`Nền ${i + 1}`}
-                onClick={async () => { await api.put('/me/prefs', { home_bg_index: i }); reloadPrefs(); }} />
-            ))}
-          </div>
+    <div className="home2">
+      <header className="home2-hero" style={{ background: bg }}>
+        <div className="home2-top">
+          <Link to="/" className="brand"><img className="brand-logo" src="/logo-192.png" alt="LDL" /><span className="brand-name">{company}</span></Link>
+          <div className="grow" />
+          <Link to="/account/members" className="icon-btn on-dark" title="Thành viên"><Users size={18} /></Link>
+          <button className="icon-btn on-dark" title="Ghi chú" onClick={() => setNotesOpen(true)}><StickyNote size={18} /></button>
+          <button className="icon-btn on-dark" title="Đổi hình nền" onClick={() => setBgOpen((o) => !o)}><Palette size={18} /></button>
+          <ThemeToggle dark />
+          <NotificationBell app="home" dark />
+          <UserMenu dark />
         </div>
-      )}
-
-      <div className="home-body">
-        <nav className="home-cats">
-          {CATEGORIES.map((ct) => (
-            <button key={ct.key} className={cx(cat === ct.key && 'active')} onClick={() => setCat(ct.key)}>{ct.label.toUpperCase()}</button>
-          ))}
-        </nav>
-        <div className="home-main">
-          <div className="home-search">
-            <Search size={16} />
-            <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Tìm kiếm ứng dụng" />
-          </div>
-          <div className="home-apps">
-            {list.map((a) => {
-              const ok = canOpen(a, apps);
-              return (
-                <button key={a.key} className={cx('home-app', !ok && 'disabled')} onClick={() => open(a)} title={a.desc}>
-                  <span className="home-app-icon"><AppIcon app={a} size={64} />{a.path && !ok && <span className="lock"><Lock size={12} /></span>}</span>
-                  <b>{a.name}</b>
-                  <small>{a.path ? a.desc : 'Sắp ra mắt'}</small>
-                </button>
-              );
-            })}
-          </div>
-        </div>
-      </div>
-
-      <footer className="home-foot">
-        <div className="home-clock">
-          <div className="clock">{pad(now.getHours())}:{pad(now.getMinutes())}<small>:{pad(now.getSeconds())}</small></div>
-          <div className="clock-date">{session.toUpperCase()} {DAYS[now.getDay()].toUpperCase()}, {fmtDate(now)}</div>
-        </div>
-        <div className="home-news">
-          <h2>{greeting(now.getHours())}, {user.name}</h2>
-          {chips.length > 0 && (
-            <div className="home-chips">
-              {chips.map((ch) => <Link key={ch.label} to={ch.to} className={cx('home-chip', ch.danger && 'danger')}>{ch.label}</Link>)}
+        {bgOpen && (
+          <div className="bg-picker">
+            <b>Chọn hình nền</b>
+            <div className="row gap">
+              {BACKGROUNDS.map((b, i) => (
+                <button key={i} className={cx('bg-swatch', bg === b && 'active')} style={{ background: b }} aria-label={`Nền ${i + 1}`}
+                  onClick={async () => { await api.put('/me/prefs', { home_bg_index: i }); reloadPrefs(); }} />
+              ))}
             </div>
-          )}
-          {summary?.birthdays?.length > 0 && (
-            <div className="home-bday"><Cake size={15} /> Sinh nhật hôm nay: {summary.birthdays.map((b) => b.name).join(', ')} 🎉</div>
-          )}
-          <div className="home-news-title">THÔNG BÁO TOÀN CÔNG TY</div>
-          {summary?.announcements?.map((a) => (
-            <Link key={a.id} to={`/office/doc/${a.id}`} className="home-news-item">
-              <Avatar name={a.issuer_name || 'LDL'} size={20} />
-              <span className="grow ellipsis">{a.title}</span>
-              <small>{a.issuer_name}, {fmtDate(a.issued_at)}</small>
-            </Link>
-          ))}
-          {summary && !summary.announcements.length && <div className="muted small">Chưa có thông báo mới</div>}
+          </div>
+        )}
+        <div className="home2-hero-body">
+          <div className="home2-greet">
+            <div className="home2-date">{DAYS[now.getDay()]}, {fmtDate(now)}</div>
+            <h1>{greeting(now.getHours())}, {user.name} 👋</h1>
+            {summary?.birthdays?.length > 0 && (
+              <div className="home2-bday"><Cake size={15} /> Sinh nhật hôm nay: {summary.birthdays.map((b) => b.name).join(', ')} 🎉</div>
+            )}
+          </div>
+          <div className="home2-clock">{pad(now.getHours())}:{pad(now.getMinutes())}<small>:{pad(now.getSeconds())}</small></div>
         </div>
-      </footer>
+        <div className="home2-stats">
+          {stats.map((st) => {
+            const inner = <><st.icon size={18} /><b>{st.value ?? '–'}</b><span>{st.label}</span></>;
+            return st.to
+              ? <Link key={st.label} to={st.to} className={cx('home2-stat', st.value > 0 && st.cls)}>{inner}</Link>
+              : <div key={st.label} className={cx('home2-stat', st.value > 0 && st.cls)}>{inner}</div>;
+          })}
+        </div>
+      </header>
+
+      <div className="home2-grid">
+        <div className="home2-col left"><HomeAgenda data={agenda} reload={reloadAgenda} loading={agendaLoading} /></div>
+
+        <div className="home2-col mid">
+          <section className="hcard">
+            <div className="hcard-head wrap">
+              <h3>Ứng dụng</h3>
+              <div className="home2-search"><Search size={15} /><input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Tìm ứng dụng" /></div>
+            </div>
+            <nav className="home2-cats">
+              {CATEGORIES.map((ct) => (
+                <button key={ct.key} className={cx(cat === ct.key && 'active')} onClick={() => setCat(ct.key)}>{ct.label}</button>
+              ))}
+            </nav>
+            <div className="home2-apps">
+              {list.map((a) => {
+                const ok = canOpen(a, apps);
+                return (
+                  <button key={a.key} className={cx('home2-app', !ok && 'disabled')} onClick={() => open(a)} title={a.desc}>
+                    <span className="home2-app-icon"><AppIcon app={a} size={46} />{a.path && !ok && <span className="lock"><Lock size={11} /></span>}</span>
+                    <b className="ellipsis">{a.name.replace(/^LDL /, '')}</b>
+                    <small className="ellipsis">{a.path ? a.desc : 'Sắp ra mắt'}</small>
+                  </button>
+                );
+              })}
+            </div>
+          </section>
+
+          <section className="hcard">
+            <div className="hcard-head"><h3><Megaphone size={16} /> Thông báo toàn công ty</h3>{(apps || []).includes('office') && <Link to="/office" className="link small">Xem tất cả</Link>}</div>
+            {summary?.announcements?.map((a) => (
+              <Link key={a.id} to={`/office/doc/${a.id}`} className="home2-news">
+                <Avatar name={a.issuer_name || 'LDL'} size={30} />
+                <span className="grow"><span className="ellipsis block">{a.title}</span><small className="muted">{a.issuer_name} · {fmtDate(a.issued_at)}{a.code ? ` · ${a.code}` : ''}</small></span>
+              </Link>
+            ))}
+            {summary && !summary.announcements.length && <div className="agenda-empty"><Megaphone size={24} /><span>Chưa có thông báo mới</span></div>}
+          </section>
+        </div>
+
+        <div className="home2-col right"><HomeChat /></div>
+      </div>
       {notesOpen && <NotesDrawer onClose={() => setNotesOpen(false)} />}
     </div>
   );

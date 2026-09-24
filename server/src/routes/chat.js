@@ -9,16 +9,34 @@ async function channelAccess(user, id) {
   const ch = await get('SELECT * FROM chat_channels WHERE id = ?', id);
   if (!ch) throw notFound('Kênh không tồn tại');
   const member = await get('SELECT * FROM chat_members WHERE channel_id = ? AND user_id = ?', id, user.id);
-  if (ch.kind === 'public' ? user.role === 'guest' && !member : !member) throw forbidden('Bạn không phải thành viên của kênh này');
+  if (ch.kind === 'department') {
+    // Kênh phòng ban: mọi nhân sự đang thuộc phòng ban (quản trị viên xem được mọi phòng ban)
+    if (user.role === 'guest' || (user.department_id !== ch.department_id && user.role !== 'admin')) throw forbidden('Kênh này dành cho thành viên phòng ban');
+  } else if (ch.kind === 'public' ? user.role === 'guest' && !member : !member) throw forbidden('Bạn không phải thành viên của kênh này');
   return { ch, member };
 }
 
+/** Kênh chat của một phòng ban (tạo nếu chưa có — vd. phòng ban mới thêm). */
+export async function departmentChannel(departmentId) {
+  if (!departmentId) return null;
+  const found = await get("SELECT * FROM chat_channels WHERE kind = 'department' AND department_id = ?", departmentId);
+  if (found) return found;
+  const dep = await get('SELECT name FROM departments WHERE id = ?', departmentId);
+  if (!dep) return null;
+  const { lastId } = await run("INSERT INTO chat_channels(name, description, kind, department_id) VALUES (?, ?, 'department', ?)",
+    dep.name, `Kênh trao đổi nội bộ ${dep.name}`, departmentId);
+  return get('SELECT * FROM chat_channels WHERE id = ?', lastId);
+}
+
 const visibleWhere = (user) => (user.role === 'guest'
-  ? { sql: 'EXISTS (SELECT 1 FROM chat_members m2 WHERE m2.channel_id = c.id AND m2.user_id = ?)', params: [user.id] }
-  : { sql: "(c.kind = 'public' OR EXISTS (SELECT 1 FROM chat_members m2 WHERE m2.channel_id = c.id AND m2.user_id = ?))", params: [user.id] });
+  ? { sql: "c.kind <> 'department' AND EXISTS (SELECT 1 FROM chat_members m2 WHERE m2.channel_id = c.id AND m2.user_id = ?)", params: [user.id] }
+  : { sql: `(c.kind = 'public' OR (c.kind = 'department' AND c.department_id = ?)
+      OR (c.kind <> 'department' AND EXISTS (SELECT 1 FROM chat_members m2 WHERE m2.channel_id = c.id AND m2.user_id = ?)))`,
+  params: [user.department_id ?? -1, user.id] });
 
 r.get('/chat/channels', async (c) => {
   const user = c.get('user');
+  if (user.role !== 'guest') await departmentChannel(user.department_id);
   const v = visibleWhere(user);
   const rows = await all(`SELECT c.*, IFNULL(m.last_read_id, 0) AS last_read_id,
       (SELECT COUNT(*) FROM chat_messages x WHERE x.channel_id = c.id AND x.id > IFNULL(m.last_read_id, 0) AND IFNULL(x.user_id, 0) <> ? AND x.deleted_at IS NULL) AS unread,
@@ -70,7 +88,9 @@ r.post('/chat/direct', async (c) => {
 
 r.get('/chat/channels/:id', async (c) => {
   const { ch } = await channelAccess(c.get('user'), toInt(c.req.param('id')));
-  const members = await all(`SELECT u.id, u.name, u.color, u.username, u.title FROM chat_members m JOIN users u ON u.id = m.user_id
+  const members = ch.kind === 'department'
+    ? await all("SELECT id, name, color, username, title FROM users WHERE department_id = ? AND active = 1 AND role <> 'guest' ORDER BY name", ch.department_id)
+    : await all(`SELECT u.id, u.name, u.color, u.username, u.title FROM chat_members m JOIN users u ON u.id = m.user_id
     WHERE m.channel_id = ? ORDER BY u.name`, ch.id);
   return c.json({ ...ch, members });
 });
@@ -78,7 +98,7 @@ r.get('/chat/channels/:id', async (c) => {
 r.put('/chat/channels/:id', async (c) => {
   const user = c.get('user');
   const { ch } = await channelAccess(user, toInt(c.req.param('id')));
-  if (ch.kind === 'direct') throw badRequest('Không sửa được cuộc trò chuyện 1-1');
+  if (ch.kind === 'direct' || ch.kind === 'department') throw badRequest('Không sửa được kênh này (kênh phòng ban cập nhật theo phòng ban)');
   if (ch.created_by !== user.id && user.role !== 'admin') throw forbidden('Chỉ người tạo kênh hoặc quản trị viên được sửa');
   const b = await jsonBody(c);
   if (b.name !== undefined) {
@@ -99,7 +119,7 @@ r.put('/chat/channels/:id', async (c) => {
 r.delete('/chat/channels/:id', async (c) => {
   const user = c.get('user');
   const { ch } = await channelAccess(user, toInt(c.req.param('id')));
-  if (ch.kind === 'direct' || (ch.created_by !== user.id && user.role !== 'admin')) throw forbidden();
+  if (ch.kind === 'direct' || ch.kind === 'department' || (ch.created_by !== user.id && user.role !== 'admin')) throw forbidden();
   await run('DELETE FROM chat_channels WHERE id = ?', ch.id);
   return c.json({ ok: true });
 });

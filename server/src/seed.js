@@ -307,6 +307,11 @@ export async function buildSeed() {
   add('INSERT INTO chat_messages(channel_id, user_id, content, created_at) VALUES (1, ?, ?, ?)', users.gd, 'Cảm ơn chị Chi Lan. Các trưởng phòng phổ biến lại cho nhân viên trong tuần này.', datetimeOffset(-1));
   add('INSERT INTO chat_messages(channel_id, user_id, content, created_at) VALUES (2, ?, ?, ?)', users.kd, '@demo em gửi báo giá cho NPP Hà Nam trước thứ 6 nhé.', datetimeOffset(0));
 
+  // Kênh phòng ban (các phòng ban còn lại được tạo tự động khi thành viên mở chat)
+  add("INSERT INTO chat_channels(id, name, description, kind, department_id, last_message_at) VALUES (3, 'Phòng Kinh doanh', 'Kênh trao đổi nội bộ Phòng Kinh doanh', 'department', ?, ?)", dep.kd, datetimeOffset(0));
+  add('INSERT INTO chat_messages(channel_id, user_id, content, created_at) VALUES (3, ?, ?, ?)', users.kd, 'Cả phòng cập nhật doanh số tuần vào LDL Wework trước 17h thứ 6 nhé.', datetimeOffset(-1));
+  add('INSERT INTO chat_messages(channel_id, user_id, content, created_at) VALUES (3, ?, ?, ?)', users.nv2, 'Dạ vâng anh, em đang tổng hợp số của khu vực miền Bắc.', datetimeOffset(0));
+
   // ---------- Tài khoản khách (đối tác NPP) chỉ dùng LDL Request
   add(`INSERT INTO users(id, username, password_hash, name, email, title, role, color, expires_at) VALUES (11, 'npp.hanam', ?, 'NPP Hà Nam (khách)', 'npp.hanam@partner.vn', 'Nhà phân phối', 'guest', '#868e96', ?)`,
     hash, dateOffset(90));

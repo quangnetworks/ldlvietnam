@@ -1,12 +1,57 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Bell, Grid3x3, FileText, CheckSquare, Settings, LogOut, User, KeyRound, CheckCheck, GitPullRequestArrow } from 'lucide-react';
+import { Bell, Grid3x3, FileText, CheckSquare, Settings, LogOut, User, KeyRound, CheckCheck, GitPullRequestArrow, Sun, Moon, Monitor } from 'lucide-react';
 import { api } from '../api.js';
 import { useApp } from '../context.jsx';
 import { Avatar, Dropdown, MenuItem } from './ui.jsx';
 import { timeAgo, cx } from '../utils.js';
 import { ProfileModal } from '../admin/Profile.jsx';
 import { ECOSYSTEM, canOpen, AppIcon } from '../apps.jsx';
+import { getThemePref, setThemePref, onThemeChange, resolvedTheme } from '../theme.js';
+
+const THEMES = [
+  { key: 'light', label: 'Sáng', icon: Sun },
+  { key: 'dark', label: 'Tối', icon: Moon },
+  { key: 'system', label: 'Hệ thống', icon: Monitor },
+];
+
+/** Hook: giao diện đang chọn + đang áp dụng. */
+export function useTheme() {
+  const [pref, setPref] = useState(getThemePref());
+  const [theme, setTheme] = useState(resolvedTheme());
+  useEffect(() => onThemeChange((t) => { setTheme(t); setPref(getThemePref()); }), []);
+  const change = useCallback((p) => {
+    setThemePref(p);
+    api.put('/me/prefs', { theme: p }).catch(() => {});
+  }, []);
+  return { pref, theme, change };
+}
+
+/** Chọn giao diện Sáng / Tối / Theo hệ thống. */
+export function ThemeSwitch() {
+  const { pref, change } = useTheme();
+  return (
+    <div className="theme-switch" role="radiogroup" aria-label="Giao diện">
+      {THEMES.map((t) => (
+        <button key={t.key} type="button" role="radio" aria-checked={pref === t.key} className={cx(pref === t.key && 'active')}
+          onClick={(e) => { e.stopPropagation(); change(t.key); }}>
+          <t.icon size={14} /> {t.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+/** Nút chuyển nhanh sáng ↔ tối. */
+export function ThemeToggle({ dark }) {
+  const { theme, change } = useTheme();
+  return (
+    <button className={cx('icon-btn', dark && 'on-dark')} title={theme === 'dark' ? 'Chuyển sang giao diện sáng' : 'Chuyển sang giao diện tối'}
+      aria-label="Đổi giao diện sáng tối" onClick={() => change(theme === 'dark' ? 'light' : 'dark')}>
+      {theme === 'dark' ? <Sun size={18} /> : <Moon size={18} />}
+    </button>
+  );
+}
 
 export function AppSwitcher({ dark }) {
   const { apps } = useApp();
@@ -107,7 +152,7 @@ export function UserMenu({ dark, showName = true }) {
     <>
       <Dropdown
         align="right"
-        width={240}
+        width={260}
         trigger={(open, toggle) => (
           <button className={cx('user-btn', dark && 'on-dark')} onClick={toggle}>
             <Avatar name={user.name} color={user.color} size={30} />
@@ -122,6 +167,7 @@ export function UserMenu({ dark, showName = true }) {
             <small className="muted block">@{user.username} · {user.title || user.department_name}</small>
           </div>
         </div>
+        <div className="menu-section"><small className="muted">Giao diện</small><ThemeSwitch /></div>
         <MenuItem icon={User} onClick={() => navigate('/account')}>Tài khoản</MenuItem>
         <MenuItem icon={KeyRound} onClick={() => setProfile('password')}>Đổi mật khẩu</MenuItem>
         {user.role === 'admin' && <MenuItem icon={Settings} onClick={() => navigate('/account/members')}>Quản trị hệ thống</MenuItem>}

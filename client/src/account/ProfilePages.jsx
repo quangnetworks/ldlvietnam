@@ -6,6 +6,7 @@ import { useApp, useFetch, useToast } from '../context.jsx';
 import { Avatar, Spinner, Field, Pagination } from '../components/ui.jsx';
 import { fmtDate, fmtDateTime } from '../utils.js';
 import AvatarEditor from '../components/AvatarEditor.jsx';
+import { MODULE_APPS } from '../apps.jsx';
 
 const SECTIONS = [
   { key: 'education', label: 'Học vấn', icon: GraduationCap, title: 'Bằng cấp / chuyên ngành', place: 'Trường' },
@@ -80,7 +81,7 @@ export function ProfileView() {
         </section>
         <section className="profile-sec">
           <h4>ỨNG DỤNG ĐƯỢC SỬ DỤNG</h4>
-          <div className="chips">{p.apps.map((a) => <span key={a} className="chip">LDL {a[0].toUpperCase() + a.slice(1)}</span>)}</div>
+          <div className="chips">{p.apps.map((a) => <span key={a} className="chip">{MODULE_APPS.find((m) => m.module === a)?.name || a}</span>)}</div>
         </section>
         {SECTIONS.map((s) => (
           <section key={s.key} className="profile-sec">

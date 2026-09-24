@@ -9,11 +9,11 @@ import { parseDate, fmtDate, fileSize, cx } from '../utils.js';
 
 const POLL_MS = 6000;
 
-function hhmm(v) {
+export function hhmm(v) {
   const d = parseDate(v);
   return d ? `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}` : '';
 }
-function dayLabel(v) {
+export function dayLabel(v) {
   const d = parseDate(v);
   const today = new Date();
   const y = new Date(Date.now() - 864e5);
@@ -23,7 +23,7 @@ function dayLabel(v) {
 }
 
 /** Render text with @mentions and links highlighted (no HTML injection). */
-function RichText({ text }) {
+export function RichText({ text }) {
   const parts = String(text || '').split(/(@[\w.]+|https?:\/\/[^\s]+)/g);
   return parts.map((p, i) => {
     if (p.startsWith('@')) return <span key={i} className="mention">{p}</span>;
@@ -186,7 +186,7 @@ function Conversation({ channelId, onActivity }) {
     <div className="chat-main">
       <div className="chat-head">
         <Link to="/message" className="icon-btn mobile-only" aria-label="Quay lại"><ArrowLeft size={18} /></Link>
-        {peer ? <Avatar name={peer.name} color={peer.color} size={30} /> : channel.kind === 'private' ? <Lock size={18} /> : <Hash size={18} />}
+        {peer ? <Avatar name={peer.name} color={peer.color} size={30} /> : channel.kind === 'department' ? <Users size={18} /> : channel.kind === 'private' ? <Lock size={18} /> : <Hash size={18} />}
         <div className="grow"><b>{title}</b>{channel.description && <small className="muted block ellipsis">{channel.description}</small>}{peer && <small className="muted block">@{peer.username}</small>}</div>
         {!peer && <button className="btn btn-sm" onClick={() => setShowMembers(true)}><Users size={14} /> {channel.members.length}</button>}
       </div>
@@ -302,7 +302,7 @@ export default function MessagePage() {
               </div>
               {list.map((ch) => (
                 <Link key={ch.id} to={`/message/${ch.id}`} className={cx('chat-channel', String(ch.id) === channelId && 'active', ch.unread > 0 && 'unread')}>
-                  {ch.kind === 'direct' ? <Avatar name={ch.display_name} color={ch.peer?.color} size={20} /> : ch.kind === 'private' ? <Lock size={14} /> : <Hash size={14} />}
+                  {ch.kind === 'direct' ? <Avatar name={ch.display_name} color={ch.peer?.color} size={20} /> : ch.kind === 'department' ? <Users size={14} /> : ch.kind === 'private' ? <Lock size={14} /> : <Hash size={14} />}
                   <span className="grow ellipsis">{ch.display_name}</span>
                   {ch.unread > 0 && <span className="count">{ch.unread > 99 ? '99+' : ch.unread}</span>}
                 </Link>

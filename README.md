@@ -5,9 +5,13 @@ Webapp nội bộ gồm 2 phân hệ, giao diện và chức năng mô phỏng *
 ## Chức năng
 
 ### Trang chủ (Home) — `/`
-- Màn hình khởi động toàn hệ sinh thái: lưới ứng dụng theo nhóm Work+ / HRM+ / Info+ / Finance+ / Platform, tìm kiếm ứng dụng.
-- Ứng dụng chưa được cấp quyền hiển thị khoá; ứng dụng chưa phát triển có nhãn "Sắp ra mắt".
-- Đồng hồ, lời chào, việc cần làm (đề xuất / văn bản chờ duyệt, công việc quá hạn), sinh nhật, thông báo toàn công ty, ghi chú cá nhân, đổi hình nền.
+- Phần đầu trang: lời chào, đồng hồ, ô đếm nhanh việc **quá hạn / hôm nay / sắp tới / tin chưa đọc**, sinh nhật; đổi hình nền.
+- **Việc cần làm**: gom công việc Wework, đề xuất & văn bản chờ duyệt, đề xuất bị trả lại, công việc chờ đánh giá, nhắc chấm công, lịch nghỉ sắp tới — chia tab Quá hạn / Hôm nay / Sắp tới / Cần xử lý.
+- **Chat nhóm**: kênh toàn công ty và kênh phòng ban (tự tạo cho mỗi phòng ban, thành viên theo phòng ban của tài khoản).
+- Lưới ứng dụng theo nhóm Work+ / HRM+ / Info+ / Finance+ / Platform, tìm kiếm ứng dụng; thông báo toàn công ty; ghi chú cá nhân.
+
+### Giao diện sáng / tối
+- Mọi phân hệ hỗ trợ giao diện **Sáng**, **Tối** hoặc **Theo hệ thống** — chọn trong menu tài khoản (góc phải trên) hoặc nút mặt trời / mặt trăng ở Home. Lựa chọn được nhớ trên trình duyệt và đồng bộ theo tài khoản.
 
 ### Tài khoản (Account) — `/account` — nền tảng cho mọi phân hệ
 - Hồ sơ cá nhân: thông tin liên hệ, quản lý trực tiếp, người báo cáo trực tiếp, nhóm, học vấn, kinh nghiệm, giải thưởng; đổi mật khẩu, **ảnh đại diện** (tự cắt vuông, hiển thị trên toàn hệ thống; quản trị viên đổi được cho từng thành viên), màu hiển thị, lịch sử đăng nhập.
