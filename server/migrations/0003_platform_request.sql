@@ -156,25 +156,34 @@ CREATE TABLE IF NOT EXISTS request_attachments (
 INSERT OR IGNORE INTO apps(key, enabled) VALUES ('office', 1), ('wework', 1), ('request', 1);
 INSERT OR IGNORE INTO app_access(app_key, user_id) SELECT a.key, u.id FROM apps a CROSS JOIN users u;
 
--- Nhóm đề xuất mẫu (chỉ tạo khi chưa có nhóm nào)
+-- Nhóm đề xuất mẫu (mỗi nhóm một lệnh; D1 giới hạn số vế UNION trong một SELECT)
 INSERT INTO request_groups(name, description, category, fields, flow, sla_hours)
-SELECT * FROM (
-  SELECT 'Đề xuất nghỉ phép', 'Xin nghỉ phép năm, nghỉ việc riêng', 'Hành chính - Nhân sự',
-    '[{"key":"from","label":"Nghỉ từ ngày","type":"date","required":true},{"key":"to","label":"Đến ngày","type":"date","required":true},{"key":"kind","label":"Loại nghỉ","type":"select","options":["Nghỉ phép năm","Nghỉ không lương","Nghỉ ốm","Việc riêng có lương"],"required":true},{"key":"reason","label":"Lý do","type":"textarea","required":true}]',
-    'sequential', 24
-  UNION ALL SELECT 'Đề xuất đi công tác', 'Đăng ký lịch và chi phí công tác', 'Hành chính - Nhân sự',
-    '[{"key":"place","label":"Nơi công tác","type":"text","required":true},{"key":"from","label":"Từ ngày","type":"date","required":true},{"key":"to","label":"Đến ngày","type":"date","required":true},{"key":"budget","label":"Dự trù chi phí (VNĐ)","type":"money"}]',
-    'sequential', 24
-  UNION ALL SELECT 'Đề nghị tạm ứng', 'Tạm ứng tiền phục vụ công việc', 'Tài chính - Kế toán',
-    '[{"key":"amount","label":"Số tiền (VNĐ)","type":"money","required":true},{"key":"purpose","label":"Mục đích","type":"textarea","required":true},{"key":"refund_date","label":"Ngày hoàn ứng dự kiến","type":"date"}]',
-    'sequential', 48
-  UNION ALL SELECT 'Đề nghị thanh toán', 'Thanh toán chi phí đã phát sinh, kèm chứng từ', 'Tài chính - Kế toán',
-    '[{"key":"amount","label":"Số tiền (VNĐ)","type":"money","required":true},{"key":"payee","label":"Người / đơn vị thụ hưởng","type":"text","required":true},{"key":"method","label":"Hình thức","type":"select","options":["Chuyển khoản","Tiền mặt"]},{"key":"note","label":"Diễn giải","type":"textarea"}]',
-    'sequential', 48
-  UNION ALL SELECT 'Đề xuất mua hàng', 'Mua sắm vật tư, thiết bị, văn phòng phẩm', 'Mua hàng',
-    '[{"key":"items","label":"Danh sách hàng hoá","type":"textarea","required":true},{"key":"amount","label":"Tổng giá trị dự kiến (VNĐ)","type":"money","required":true},{"key":"supplier","label":"Nhà cung cấp đề xuất","type":"text"},{"key":"needed","label":"Ngày cần hàng","type":"date"}]',
-    'any', 24
-  UNION ALL SELECT 'Đề xuất cấp văn phòng phẩm', 'Cấp phát văn phòng phẩm hằng tháng', 'Hành chính - Nhân sự',
-    '[{"key":"items","label":"Vật phẩm cần cấp","type":"textarea","required":true}]',
-    'any', NULL
-) WHERE NOT EXISTS (SELECT 1 FROM request_groups);
+SELECT 'Đề xuất nghỉ phép', 'Xin nghỉ phép năm, nghỉ việc riêng', 'Hành chính - Nhân sự',
+  '[{"key":"from","label":"Nghỉ từ ngày","type":"date","required":true},{"key":"to","label":"Đến ngày","type":"date","required":true},{"key":"kind","label":"Loại nghỉ","type":"select","options":["Nghỉ phép năm","Nghỉ không lương","Nghỉ ốm","Việc riêng có lương"],"required":true},{"key":"reason","label":"Lý do","type":"textarea","required":true}]',
+  'sequential', 24
+WHERE NOT EXISTS (SELECT 1 FROM request_groups WHERE name = 'Đề xuất nghỉ phép');
+INSERT INTO request_groups(name, description, category, fields, flow, sla_hours)
+SELECT 'Đề xuất đi công tác', 'Đăng ký lịch và chi phí công tác', 'Hành chính - Nhân sự',
+  '[{"key":"place","label":"Nơi công tác","type":"text","required":true},{"key":"from","label":"Từ ngày","type":"date","required":true},{"key":"to","label":"Đến ngày","type":"date","required":true},{"key":"budget","label":"Dự trù chi phí (VNĐ)","type":"money"}]',
+  'sequential', 24
+WHERE NOT EXISTS (SELECT 1 FROM request_groups WHERE name = 'Đề xuất đi công tác');
+INSERT INTO request_groups(name, description, category, fields, flow, sla_hours)
+SELECT 'Đề nghị tạm ứng', 'Tạm ứng tiền phục vụ công việc', 'Tài chính - Kế toán',
+  '[{"key":"amount","label":"Số tiền (VNĐ)","type":"money","required":true},{"key":"purpose","label":"Mục đích","type":"textarea","required":true},{"key":"refund_date","label":"Ngày hoàn ứng dự kiến","type":"date"}]',
+  'sequential', 48
+WHERE NOT EXISTS (SELECT 1 FROM request_groups WHERE name = 'Đề nghị tạm ứng');
+INSERT INTO request_groups(name, description, category, fields, flow, sla_hours)
+SELECT 'Đề nghị thanh toán', 'Thanh toán chi phí đã phát sinh, kèm chứng từ', 'Tài chính - Kế toán',
+  '[{"key":"amount","label":"Số tiền (VNĐ)","type":"money","required":true},{"key":"payee","label":"Người / đơn vị thụ hưởng","type":"text","required":true},{"key":"method","label":"Hình thức","type":"select","options":["Chuyển khoản","Tiền mặt"]},{"key":"note","label":"Diễn giải","type":"textarea"}]',
+  'sequential', 48
+WHERE NOT EXISTS (SELECT 1 FROM request_groups WHERE name = 'Đề nghị thanh toán');
+INSERT INTO request_groups(name, description, category, fields, flow, sla_hours)
+SELECT 'Đề xuất mua hàng', 'Mua sắm vật tư, thiết bị, văn phòng phẩm', 'Mua hàng',
+  '[{"key":"items","label":"Danh sách hàng hoá","type":"textarea","required":true},{"key":"amount","label":"Tổng giá trị dự kiến (VNĐ)","type":"money","required":true},{"key":"supplier","label":"Nhà cung cấp đề xuất","type":"text"},{"key":"needed","label":"Ngày cần hàng","type":"date"}]',
+  'any', 24
+WHERE NOT EXISTS (SELECT 1 FROM request_groups WHERE name = 'Đề xuất mua hàng');
+INSERT INTO request_groups(name, description, category, fields, flow, sla_hours)
+SELECT 'Đề xuất cấp văn phòng phẩm', 'Cấp phát văn phòng phẩm hằng tháng', 'Hành chính - Nhân sự',
+  '[{"key":"items","label":"Vật phẩm cần cấp","type":"textarea","required":true}]',
+  'any', NULL
+WHERE NOT EXISTS (SELECT 1 FROM request_groups WHERE name = 'Đề xuất cấp văn phòng phẩm');
