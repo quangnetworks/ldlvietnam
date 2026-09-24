@@ -5,7 +5,7 @@ Webapp nội bộ gồm 2 phân hệ, giao diện và chức năng mô phỏng *
 ## Chức năng
 
 ### Trang chủ (Home) — `/`
-- **Câu nói truyền cảm hứng mỗi ngày** dưới lời chào: ~100 câu tích cực (danh ngôn, tục ngữ, ca dao), mỗi ngày một câu (giống nhau cho cả công ty, đổi lúc 0h); bấm ↻ để xem câu khác.
+- **Câu nói truyền cảm hứng mỗi ngày** dưới lời chào: 160 câu tích cực (danh ngôn, tục ngữ, ca dao). **Mỗi người một câu riêng, trong cùng ngày không ai trùng ai** (đủ cho tối đa 160 tài khoản đang hoạt động), đổi câu mới lúc 0h; bấm ↻ để xem câu khác trong số câu chưa ai nhận hôm nay.
 - Phần đầu trang: lời chào, đồng hồ, **thời tiết tại vị trí hiện tại** dạng tóm tắt nhỏ, bấm để xem chi tiết (định vị của thiết bị → ước lượng theo mạng → mặc định Hà Nội; dự báo 4 ngày, lời nhắc mưa / nắng nóng), ô đếm nhanh việc **quá hạn / hôm nay / sắp tới / tin chưa đọc**, sinh nhật; đổi hình nền.
 - **Quan trọng cần lưu ý**: công việc khẩn cấp / quan trọng chưa xong mà bạn thực hiện, đã giao hoặc đang theo dõi — quá hạn lên đầu.
 - **Việc cần làm**: gom công việc Wework, đề xuất & văn bản chờ duyệt, đề xuất bị trả lại, công việc chờ đánh giá, nhắc chấm công, lịch nghỉ sắp tới — chia tab Quá hạn / Hôm nay / Sắp tới / Cần xử lý.

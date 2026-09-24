@@ -101,12 +101,108 @@ export const QUOTES = [
   ['Sự đơn giản là đỉnh cao của sự tinh tế.', 'Leonardo da Vinci'],
   ['Đừng chờ cơ hội, hãy chuẩn bị để sẵn sàng khi nó đến.', 'Khuyết danh'],
   ['Ngày mới, năng lượng mới, thành công mới!', 'Khuyết danh'],
+  ['Mỗi bước tiến nhỏ hôm nay là nền móng cho thành công lớn ngày mai.', 'Khuyết danh'],
+  ['Hãy làm việc với trái tim, bạn sẽ thấy công việc nhẹ nhàng hơn.', 'Khuyết danh'],
+  ['Người biết lắng nghe là người biết dẫn dắt.', 'Khuyết danh'],
+  ['Sự tự tin đến từ sự chuẩn bị kỹ lưỡng.', 'Khuyết danh'],
+  ['Tinh thần tốt là một nửa của hiệu suất.', 'Khuyết danh'],
+  ['Thành công thuộc về những người không bỏ cuộc.', 'Khuyết danh'],
+  ['Hãy chọn tiến bộ thay vì hoàn hảo.', 'Khuyết danh'],
+  ['Ý tưởng tuyệt vời cần hành động tuyệt vời.', 'Khuyết danh'],
+  ['Hãy trở thành phiên bản tốt nhất của chính mình.', 'Khuyết danh'],
+  ['Lòng biết ơn là khởi đầu của mọi niềm vui.', 'Khuyết danh'],
+  ['Hãy để mỗi việc bạn làm mang dấu ấn chất lượng.', 'Khuyết danh'],
+  ['Không có thang máy dẫn tới thành công, bạn phải đi cầu thang.', 'Zig Ziglar'],
+  ['Đừng để ngày hôm qua chiếm quá nhiều của ngày hôm nay.', 'Will Rogers'],
+  ['Làm điều đúng đắn, ngay cả khi không ai nhìn thấy.', 'Khuyết danh'],
+  ['Một lời cảm ơn đúng lúc có thể làm sáng cả ngày của đồng nghiệp.', 'Khuyết danh'],
+  ['Hãy ưu tiên điều quan trọng, đừng chỉ chạy theo điều khẩn cấp.', 'Stephen Covey'],
+  ['Bắt đầu bằng mục tiêu cuối cùng trong đầu.', 'Stephen Covey'],
+  ['Hãy hỏi nhiều hơn, học nhiều hơn, làm tốt hơn.', 'Khuyết danh'],
+  ['Sự nhiệt tình có sức lan toả mạnh mẽ.', 'Khuyết danh'],
+  ['Tập thể mạnh khi mỗi người đều được lắng nghe.', 'Khuyết danh'],
+  ['Hãy biến áp lực thành động lực.', 'Khuyết danh'],
+  ['Những người lạc quan luôn tìm được lối đi.', 'Khuyết danh'],
+  ['Thắng không kiêu, bại không nản.', 'Khuyết danh'],
+  ['Gần mực thì đen, gần đèn thì sáng — hãy lan toả năng lượng tốt.', 'Tục ngữ Việt Nam'],
+  ['Lời nói chẳng mất tiền mua, lựa lời mà nói cho vừa lòng nhau.', 'Ca dao Việt Nam'],
+  ['Thất bại là mẹ thành công.', 'Tục ngữ Việt Nam'],
+  ['Muốn đi nhanh hãy đi một mình, muốn đi xa hãy đi cùng nhau.', 'Ngạn ngữ châu Phi'],
+  ['Mỗi ngày hãy học thêm một điều mới.', 'Khuyết danh'],
+  ['Hãy tận hưởng hành trình, không chỉ đích đến.', 'Khuyết danh'],
+  ['Sự chính trực là phẩm chất quý giá nhất của người làm việc.', 'Khuyết danh'],
+  ['Khi bạn giúp người khác thành công, bạn cũng thành công.', 'Khuyết danh'],
+  ['Hãy biến những ngày bình thường thành những ngày đáng nhớ.', 'Khuyết danh'],
+  ['Can đảm không phải là không sợ hãi, mà là vượt qua nó.', 'Nelson Mandela'],
+  ['Tất cả ước mơ đều có thể thành hiện thực nếu ta can đảm theo đuổi.', 'Walt Disney'],
+  ['Người giỏi là người luôn muốn giỏi hơn.', 'Khuyết danh'],
+  ['Một kế hoạch tốt hôm nay hơn một kế hoạch hoàn hảo tuần sau.', 'George S. Patton'],
+  ['Khởi đầu là phần quan trọng nhất của công việc.', 'Plato'],
+  ['Sự nhất quán tạo nên niềm tin.', 'Khuyết danh'],
+  ['Hãy chăm sóc bản thân để có năng lượng chăm sóc công việc.', 'Khuyết danh'],
+  ['Một nụ cười là đường cong làm mọi thứ thẳng ra.', 'Phyllis Diller'],
+  ['Những việc lớn được làm bởi một chuỗi những việc nhỏ gộp lại.', 'Vincent van Gogh'],
+  ['Hãy tò mò — tò mò là khởi nguồn của sáng tạo.', 'Khuyết danh'],
+  ['Đừng so sánh mình với người khác, hãy so với chính mình hôm qua.', 'Khuyết danh'],
+  ['Hãy làm việc như thể đây là dự án bạn tự hào nhất.', 'Khuyết danh'],
+  ['Thành công hôm nay là kết quả của sự chuẩn bị hôm qua.', 'Khuyết danh'],
+  ['Hãy đặt câu hỏi “Làm sao để tốt hơn?” mỗi ngày.', 'Khuyết danh'],
+  ['Mọi hành trình vĩ đại đều bắt đầu bằng sự dũng cảm bước đi.', 'Khuyết danh'],
+  ['Giữ lời hứa là cách nhanh nhất để xây dựng uy tín.', 'Khuyết danh'],
+  ['Hãy để kết quả nói thay lời.', 'Khuyết danh'],
+  ['Làm ít nhưng chất, còn hơn làm nhiều mà vội.', 'Khuyết danh'],
+  ['Hãy luôn sẵn lòng giúp đỡ — đó là sức mạnh của một tập thể.', 'Khuyết danh'],
+  ['Đổi mới là chìa khoá để phát triển bền vững.', 'Khuyết danh'],
+  ['Hãy tin vào quá trình, kết quả sẽ đến.', 'Khuyết danh'],
+  ['Mỗi thử thách là một bài học quý giá.', 'Khuyết danh'],
+  ['Hãy làm cho hôm nay trở thành kiệt tác của bạn.', 'John Wooden'],
+  ['Đừng chờ cảm hứng, hãy bắt đầu và cảm hứng sẽ đến.', 'Khuyết danh'],
+  ['Chia sẻ kiến thức là cách nhân đôi giá trị của nó.', 'Khuyết danh'],
+  ['Hãy vui vẻ với công việc — niềm vui làm mọi thứ dễ dàng hơn.', 'Khuyết danh'],
+  ['Hãy kết thúc ngày làm việc với một điều bạn tự hào.', 'Khuyết danh'],
+  ['Tương lai thuộc về những ai tin vào vẻ đẹp của ước mơ.', 'Eleanor Roosevelt'],
+  ['Một ngày tốt đẹp bắt đầu bằng một suy nghĩ tích cực.', 'Khuyết danh'],
+  ['Hãy để sự tận tâm trở thành thương hiệu của bạn.', 'Khuyết danh'],
 ];
 
-/** Chỉ số câu nói của một ngày: băm chuỗi ngày để các ngày liền nhau không ra câu liền nhau. */
-export function quoteIndexFor(date = new Date()) {
-  const key = `${date.getFullYear()}-${date.getMonth() + 1}-${date.getDate()}`;
+/** Số ngẫu nhiên có hạt giống (mulberry32) — cùng ngày, mọi máy ra cùng một thứ tự. */
+function seeded(seed) {
+  let a = seed >>> 0;
+  return () => {
+    a = (a + 0x6d2b79f5) >>> 0;
+    let t = a;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+const dayKey = (d) => `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`;
+function hash(str) {
   let h = 2166136261;
-  for (let i = 0; i < key.length; i++) { h ^= key.charCodeAt(i); h = Math.imul(h, 16777619); }
-  return (h >>> 0) % QUOTES.length;
+  for (let i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = Math.imul(h, 16777619); }
+  return h >>> 0;
+}
+
+/** Thứ tự câu nói của một ngày: hoán vị ngẫu nhiên (Fisher–Yates) theo ngày. */
+export function dailyOrder(date = new Date()) {
+  const order = QUOTES.map((_, i) => i);
+  const rnd = seeded(hash(dayKey(date)));
+  for (let i = order.length - 1; i > 0; i--) {
+    const j = Math.floor(rnd() * (i + 1));
+    [order[i], order[j]] = [order[j], order[i]];
+  }
+  return order;
+}
+
+/**
+ * Câu của từng người trong ngày: xếp tài khoản theo id, người thứ k nhận câu thứ k của hoán vị ngày
+ * → trong cùng một ngày không ai trùng ai (khi số tài khoản ≤ số câu), mỗi ngày mỗi người một câu mới.
+ * spare: các câu chưa ai nhận hôm nay (dùng cho nút "câu khác" mà vẫn không trùng người khác).
+ */
+export function quoteFor(userId, userIds, date = new Date()) {
+  const order = dailyOrder(date);
+  const ids = [...new Set(userIds)].sort((a, b) => a - b);
+  let rank = ids.indexOf(userId);
+  if (rank < 0) rank = hash(`${dayKey(date)}#${userId}`) % order.length;
+  return { index: order[rank % order.length], spare: order.slice(ids.length) };
 }
