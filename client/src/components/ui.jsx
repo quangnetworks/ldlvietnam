@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { X, ChevronLeft, ChevronRight, Check, Search, Bold, Italic, Underline, List, ListOrdered } from 'lucide-react';
 import DOMPurify from 'dompurify';
@@ -79,13 +79,23 @@ export function useClickOutside(ref, onOutside, active = true) {
 /** Dropdown: trigger is a render prop receiving (open, toggle). */
 export function Dropdown({ trigger, children, align = 'left', className, width }) {
   const [open, setOpen] = useState(false);
+  const [side, setSide] = useState(align);
   const ref = useRef(null);
+  const menuRef = useRef(null);
   useClickOutside(ref, () => setOpen(false), open);
+  // Đổi hướng mở nếu menu tràn ra ngoài màn hình (vd. avatar nằm sát mép trái ở thanh bên)
+  useLayoutEffect(() => {
+    if (!open) { setSide(align); return; }
+    const r = menuRef.current?.getBoundingClientRect();
+    if (!r) return;
+    if (side === 'right' && r.left < 8) setSide('left');
+    else if (side === 'left' && r.right > window.innerWidth - 8) setSide('right');
+  }, [open, side, align]);
   return (
     <div className={cx('dropdown', className)} ref={ref}>
       {trigger(open, () => setOpen((o) => !o))}
       {open && (
-        <div className={cx('dropdown-menu', align === 'right' && 'right')} style={width ? { width } : undefined}
+        <div ref={menuRef} className={cx('dropdown-menu', side === 'right' && 'right')} style={width ? { width } : undefined}
           onClick={(e) => { if (e.target.closest('[data-close]')) setOpen(false); }}>
           {typeof children === 'function' ? children(() => setOpen(false)) : children}
         </div>
@@ -133,6 +143,13 @@ export function FilterSelect({ value, options, onChange, placeholder }) {
   );
 }
 
+/**
+ * Field wraps its children in a <label>. After any click inside a custom widget the browser re-dispatches the
+ * click to the first button in the label — the chip's × — which silently removed the value just picked.
+ * Widgets cancel that label activation on their root (their own buttons have no default action to lose).
+ */
+export const stopLabelActivation = (e) => e.preventDefault();
+
 /** Pick one or many users with search. */
 export function UserPicker({ users, value, onChange, multiple = false, placeholder = 'Chọn người', exclude = [] }) {
   const [open, setOpen] = useState(false);
@@ -152,7 +169,7 @@ export function UserPicker({ users, value, onChange, multiple = false, placehold
     }
   };
   return (
-    <div className="picker" ref={ref}>
+    <div className="picker" ref={ref} onClick={stopLabelActivation}>
       <div className="picker-control" onClick={() => setOpen((o) => !o)} tabIndex={0}
         onKeyDown={(e) => e.key === 'Enter' && setOpen((o) => !o)}>
         {selected.length === 0 && <span className="muted">{placeholder}</span>}
@@ -200,7 +217,7 @@ export function MultiSelect({ options, value = [], onChange, placeholder = 'Ch�
   useClickOutside(ref, () => setOpen(false), open);
   const byId = new Map(options.map((o) => [o.value, o]));
   return (
-    <div className="picker" ref={ref}>
+    <div className="picker" ref={ref} onClick={stopLabelActivation}>
       <div className="picker-control" onClick={() => setOpen((o) => !o)}>
         {!value.length && <span className="muted">{placeholder}</span>}
         {value.map((v) => (
@@ -300,7 +317,7 @@ export function RichEditor({ value, onChange, placeholder, minHeight = 160 }) {
     onChange(ref.current.innerHTML);
   };
   return (
-    <div className="rich-editor">
+    <div className="rich-editor" onClick={stopLabelActivation}>
       <div className="rich-toolbar">
         <button type="button" onMouseDown={(e) => { e.preventDefault(); cmd('bold'); }} title="In đậm"><Bold size={14} /></button>
         <button type="button" onMouseDown={(e) => { e.preventDefault(); cmd('italic'); }} title="In nghiêng"><Italic size={14} /></button>
@@ -322,7 +339,8 @@ export function RichEditor({ value, onChange, placeholder, minHeight = 160 }) {
 
 export function Field({ label, required, children, hint }) {
   return (
-    <label className="field">
+    // Khi ô bên trong là widget tuỳ biến (control đầu tiên là <button>), bấm vào nhãn không được "bấm hộ" nút đó
+    <label className="field" onClick={(e) => { if (e.currentTarget.control?.tagName === 'BUTTON') e.preventDefault(); }}>
       <span className="field-label">{label}{required && <b className="req"> *</b>}</span>
       {children}
       {hint && <small className="muted">{hint}</small>}
