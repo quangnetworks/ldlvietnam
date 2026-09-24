@@ -25,6 +25,7 @@ export const PRIORITY = {
   normal: { label: 'Bình thường', cls: '' },
   important: { label: 'Quan trọng', cls: 'tag-orange' },
   urgent: { label: 'Khẩn cấp', cls: 'tag-red' },
+  critical: { label: 'Quan trọng & khẩn cấp', cls: 'tag-critical' },
 };
 
 export const RECURRING = { daily: 'Hằng ngày', weekly: 'Hằng tuần', monthly: 'Hằng tháng' };

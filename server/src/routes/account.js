@@ -426,9 +426,9 @@ r.get('/home/agenda', async (c) => {
     const rows = await all(`SELECT t.id, t.title, t.status, t.priority, date(t.due_date) AS due, t.assignee_id, t.creator_id,
         p.name AS project_name, a.name AS assignee_name, a.color AS assignee_color
       FROM tasks t LEFT JOIN projects p ON p.id = t.project_id LEFT JOIN users a ON a.id = t.assignee_id
-      WHERE t.status IN ('todo','doing','review') AND t.priority IN ('urgent','important')
+      WHERE t.status IN ('todo','doing','review') AND t.priority IN ('critical','urgent','important')
         AND (t.assignee_id = ? OR t.creator_id = ? OR EXISTS (SELECT 1 FROM task_followers f WHERE f.task_id = t.id AND f.user_id = ?))
-      ORDER BY CASE t.priority WHEN 'urgent' THEN 0 ELSE 1 END, t.due_date IS NULL, t.due_date LIMIT 30`, user.id, user.id, user.id);
+      ORDER BY CASE t.priority WHEN 'critical' THEN 0 WHEN 'urgent' THEN 1 ELSE 2 END, t.due_date IS NULL, t.due_date LIMIT 30`, user.id, user.id, user.id);
     for (const t of rows) {
       important.push({
         key: `imp-${t.id}`, id: t.id, title: t.title, priority: t.priority, status: t.status, due: t.due, bucket: bucketOf(t.due),
@@ -438,7 +438,8 @@ r.get('/home/agenda', async (c) => {
     }
     // quá hạn trước, rồi khẩn cấp, rồi theo thời hạn
     const rank = { overdue: 0, today: 1, upcoming: 2, todo: 3 };
-    important.sort((a, b) => rank[a.bucket] - rank[b.bucket] || (a.priority === 'urgent' ? 0 : 1) - (b.priority === 'urgent' ? 0 : 1)
+    const pr = { critical: 0, urgent: 1, important: 2 };
+    important.sort((a, b) => rank[a.bucket] - rank[b.bucket] || pr[a.priority] - pr[b.priority]
       || String(a.due || '9999').localeCompare(String(b.due || '9999')));
   }
   return c.json({ today, counts, items, important });

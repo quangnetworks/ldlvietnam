@@ -99,3 +99,17 @@ export function useAssignable(users, projectId, keep = []) {
   const ok = new Set([...scope.ids, ...keep.filter(Boolean)]);
   return users.filter((u) => ok.has(u.id));
 }
+
+/** Tạo nhanh nhóm công việc trong dự án; trả về id nhóm mới (hoặc null nếu huỷ). */
+export async function createTaskList(projectId, toast) {
+  const name = window.prompt('Tên nhóm công việc mới (ví dụ: Chuẩn bị, Triển khai, Nghiệm thu)');
+  if (!name?.trim()) return null;
+  try {
+    const lists = await api.post(`/projects/${projectId}/lists`, { name: name.trim() });
+    toast?.(`Đã tạo nhóm "${name.trim()}"`);
+    return { lists, id: lists.reduce((m, l) => (l.id > m ? l.id : m), 0) };
+  } catch (e) {
+    toast?.(e.message, 'error');
+    return null;
+  }
+}

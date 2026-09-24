@@ -11,7 +11,9 @@ const r = new Hono();
 
 const APP = 'wework';
 export const TASK_STATUSES = ['todo', 'doing', 'review', 'done', 'failed'];
-const PRIORITIES = ['normal', 'important', 'urgent'];
+// critical = Quan trọng & khẩn cấp (ô "làm ngay" của ma trận Eisenhower)
+const PRIORITIES = ['normal', 'important', 'urgent', 'critical'];
+const PRIORITY_LABEL = { normal: 'Bình thường', important: 'Quan trọng', urgent: 'Khẩn cấp', critical: 'Quan trọng & khẩn cấp' };
 const STATUS_LABEL = { todo: 'Cần làm', doing: 'Đang làm', review: 'Chờ đánh giá', done: 'Hoàn thành', failed: 'Thất bại' };
 const RECURRING = ['daily', 'weekly', 'monthly'];
 
@@ -202,8 +204,9 @@ function buildTaskQuery(u, q) {
       else if (s === 'unreviewed') parts.push("t.status IN ('todo','doing','review')");
       else if (s === 'overdue') { parts.push("(t.status IN ('todo','doing') AND t.due_date IS NOT NULL AND date(t.due_date) < date(?))"); params.push(today()); }
       else if (s === 'late') parts.push("(t.status = 'done' AND t.due_date IS NOT NULL AND date(t.completed_at) > date(t.due_date))");
-      else if (s === 'urgent') parts.push("t.priority = 'urgent'");
-      else if (s === 'important') parts.push("t.priority = 'important'");
+      else if (s === 'urgent') parts.push("t.priority IN ('urgent','critical')");
+      else if (s === 'important') parts.push("t.priority IN ('important','critical')");
+      else if (s === 'critical') parts.push("t.priority = 'critical'");
     }
     if (parts.length) where.push(`(${parts.join(' OR ')})`);
   }
@@ -266,9 +269,9 @@ r.get('/wework/summary', async (c) => {
     new_assigned: await selectTasks(u, "WHERE t.assignee_id = ? AND t.status IN ('todo','doing') ORDER BY t.created_at DESC LIMIT 5", uid),
     new_created: await selectTasks(u, 'WHERE t.creator_id = ? AND IFNULL(t.assignee_id,0) <> ? ORDER BY t.created_at DESC LIMIT 5', uid, uid),
     alerts: await selectTasks(u, `WHERE t.assignee_id = ? AND t.status IN ('todo','doing')
-      AND (t.priority IN ('urgent','important') OR (t.due_date IS NOT NULL AND date(t.due_date) <= date(?, '+2 day')))
+      AND (t.priority IN ('urgent','important','critical') OR (t.due_date IS NOT NULL AND date(t.due_date) <= date(?, '+2 day')))
       ORDER BY t.due_date LIMIT 5`, uid, td),
-    goals: await all('SELECT * FROM goals WHERE user_id = ? ORDER BY id DESC', uid),
+    goals: await all(`${GOAL_SELECT} WHERE g.user_id = ? ORDER BY g.id DESC`, uid),
     team: await all(`SELECT u.id, u.name, u.color, u.title,
         (SELECT COUNT(*) FROM tasks t WHERE t.assignee_id = u.id AND t.status IN ('todo','doing')) AS active,
         (SELECT COUNT(*) FROM tasks t WHERE t.assignee_id = u.id AND t.status IN ('todo','doing') AND date(t.due_date) < date(?)) AS overdue
@@ -425,7 +428,7 @@ r.get('/wework/reports/overview', async (c) => {
     if (t.project_id) add(byProject, t.project_id, b);
     if (!t.due_date) noDue++;
     if (b === 'review' && t.due_date && t.due_date.slice(0, 10) < td) reviewOverdue++;
-    eisen[t.priority === 'urgent' ? 'urgent' : t.priority === 'important' ? 'important' : 'none']++;
+    eisen[{ urgent: 'urgent', important: 'important', critical: 'both' }[t.priority] || 'none']++;
   }
   const withUser = (map) => Object.entries(map).map(([id, v]) => ({ id: Number(id), name: byUser[id]?.name || 'Tài khoản đã xoá', color: byUser[id]?.color, ...v }))
     .sort((a, b) => b.total - a.total);
@@ -565,6 +568,7 @@ async function fullTask(id, user) {
   t.attachments = await all(`SELECT a.id, a.original_name, a.mime, a.size, a.created_at, u.name AS user_name FROM task_attachments a
     LEFT JOIN users u ON u.id = a.user_id WHERE a.task_id = ? AND a.result_id IS NULL ORDER BY a.id`, id);
   t.parent = t.parent_id ? await get('SELECT id, title FROM tasks WHERE id = ?', t.parent_id) : null;
+  t.goal = t.goal_id ? await get('SELECT g.id, g.title, g.progress, g.user_id, u.name AS owner_name FROM goals g LEFT JOIN users u ON u.id = g.user_id WHERE g.id = ?', t.goal_id) : null;
   t.can_edit = await canEditTask(user, t);
   // người chỉ được giao việc: không đổi thời gian, mô tả, dự án, lặp lại, không xoá
   t.can_manage = await isTaskOwner(user, t);
@@ -603,7 +607,7 @@ function parseTaskBody(b, partial) {
     out.recurring = b.recurring || null;
   }
   if (b.position !== undefined) out.position = toInt(b.position, 0);
-  if (b.goal_id !== undefined) out.goal_id = toInt(b.goal_id);
+  if (b.goal_id !== undefined) out.goal_id = toInt(b.goal_id) || null;
   if (out.start_date && out.due_date && out.start_date.slice(0, 10) > out.due_date.slice(0, 10)) {
     throw badRequest('Thời hạn phải sau ngày bắt đầu');
   }
@@ -619,6 +623,7 @@ async function checkProjectAccess(user, projectId) {
 export async function createTask(user, data, followers = [], { creatorId = null, skipAssignCheck = false } = {}) {
   await checkProjectAccess(user, data.project_id);
   if (!skipAssignCheck) await checkAssign(user, data.assignee_id ?? user.id, data.project_id);
+  if (data.goal_id && !(await get('SELECT 1 FROM goals WHERE id = ?', data.goal_id))) data.goal_id = null;
   if (data.parent_id) {
     const parent = await get('SELECT * FROM tasks WHERE id = ?', data.parent_id);
     if (!parent) throw badRequest('Công việc cha không tồn tại');
@@ -642,6 +647,7 @@ export async function createTask(user, data, followers = [], { creatorId = null,
   );
   await batch([...new Set(followers)].map((f) => ['INSERT OR IGNORE INTO task_followers(task_id, user_id) VALUES (?,?)', [id, f]]));
   await logActivity('task', id, user.id, 'created', 'Tạo công việc');
+  if (data.goal_id) await refreshGoalProgress(data.goal_id);
   await notify(assignee, { actorId: user.id, app: APP, type: 'assigned',
     title: `${user.name} đã giao cho bạn công việc "${data.title}"`, link: `/wework/task/${id}` });
   await notify(followers, { actorId: user.id, app: APP, type: 'follow',
@@ -667,6 +673,7 @@ function shiftDate(value, recurring) {
 
 async function applyTaskUpdate(user, t, data) {
   if (!Object.keys(data).length) return;
+  if (data.goal_id && !(await get('SELECT 1 FROM goals WHERE id = ?', data.goal_id))) throw badRequest('Mục tiêu không tồn tại');
   await checkOwnerFields(user, t, data);
   if (data.assignee_id !== undefined && data.assignee_id !== t.assignee_id) {
     await checkAssign(user, data.assignee_id, data.project_id !== undefined ? data.project_id : t.project_id);
@@ -718,7 +725,14 @@ async function applyTaskUpdate(user, t, data) {
   }
   if (data.due_date !== undefined && data.due_date !== t.due_date) changes.push(`Thời hạn: ${data.due_date || 'Không có'}`);
   if (data.start_date !== undefined && data.start_date !== t.start_date) changes.push(`Ngày bắt đầu: ${data.start_date || 'Không có'}`);
-  if (data.priority !== undefined && data.priority !== t.priority) changes.push(`Ưu tiên: ${data.priority}`);
+  if (data.priority !== undefined && data.priority !== t.priority) changes.push(`Ưu tiên: ${PRIORITY_LABEL[data.priority]}`);
+  if (data.goal_id !== undefined && data.goal_id !== t.goal_id) {
+    const g = data.goal_id ? await get('SELECT title FROM goals WHERE id = ?', data.goal_id) : null;
+    changes.push(g ? `Gắn mục tiêu: ${g.title}` : 'Bỏ gắn mục tiêu');
+  }
+  if ((data.status !== undefined && data.status !== t.status) || (data.goal_id !== undefined && data.goal_id !== t.goal_id)) {
+    await refreshGoalProgress(t.goal_id, data.goal_id);
+  }
   if (data.title !== undefined && data.title !== t.title) changes.push(`Đổi tên: ${data.title}`);
   if (data.description !== undefined && data.description !== t.description) changes.push('Cập nhật mô tả');
   if (data.project_id !== undefined && data.project_id !== t.project_id) changes.push('Chuyển dự án');
@@ -753,6 +767,7 @@ r.delete('/tasks/:id', async (c) => {
   const files = await deleteTaskFiles(t.id);
   await run('DELETE FROM tasks WHERE id = ?', t.id);
   for (const f of files) await removeFile(f.filename);
+  await refreshGoalProgress(t.goal_id);
   return c.json({ ok: true });
 });
 
@@ -1213,32 +1228,85 @@ r.get('/wework/members', async (c) => {
     ORDER BY u.name COLLATE NOCASE`, today(), ...(team ? [c.get('user').id] : [])));
 });
 
-// ================================================================ goals
+// ================================================================ goals (mục tiêu)
 const clampPct = (v) => Math.min(100, Math.max(0, toInt(v, 0)));
 
-r.get('/goals', async (c) => c.json(await all(`SELECT g.*, (SELECT COUNT(*) FROM tasks t WHERE t.goal_id = g.id) AS task_count,
-    (SELECT COUNT(*) FROM tasks t WHERE t.goal_id = g.id AND t.status = 'done') AS task_done
-    FROM goals g WHERE g.user_id = ? ORDER BY g.id DESC`, c.get('user').id)));
+/** Tiến độ mục tiêu tự tính = % công việc gắn kèm đã hoàn thành (nếu bật tự tính và có công việc). */
+export async function refreshGoalProgress(...goalIds) {
+  for (const gid of [...new Set(goalIds.filter(Boolean))]) {
+    const x = await get(`SELECT g.auto_progress, (SELECT COUNT(*) FROM tasks t WHERE t.goal_id = g.id) AS n,
+      (SELECT COUNT(*) FROM tasks t WHERE t.goal_id = g.id AND t.status = 'done') AS d FROM goals g WHERE g.id = ?`, gid);
+    if (x?.auto_progress && x.n) await run('UPDATE goals SET progress = ? WHERE id = ?', Math.round((x.d / x.n) * 100), gid);
+  }
+}
+
+const GOAL_SELECT = `SELECT g.*, (SELECT COUNT(*) FROM tasks t WHERE t.goal_id = g.id) AS task_count,
+    (SELECT COUNT(*) FROM tasks t WHERE t.goal_id = g.id AND t.status = 'done') AS task_done,
+    (SELECT COUNT(*) FROM tasks t WHERE t.goal_id = g.id AND t.status IN ('todo','doing') AND t.due_date IS NOT NULL AND date(t.due_date) < date('now')) AS task_overdue
+  FROM goals g`;
+async function ownGoal(c) {
+  const g = await get('SELECT * FROM goals WHERE id = ? AND user_id = ?', toInt(c.req.param('id')), c.get('user').id);
+  if (!g) throw notFound('Mục tiêu không tồn tại');
+  return g;
+}
+
+r.get('/goals', async (c) => c.json(await all(`${GOAL_SELECT} WHERE g.user_id = ? ORDER BY g.id DESC`, c.get('user').id)));
 r.post('/goals', async (c) => {
   const b = await jsonBody(c);
   const title = String(b.title || '').trim();
   if (!title) throw badRequest('Tên mục tiêu là bắt buộc');
-  const { lastId } = await run('INSERT INTO goals(user_id, title, progress, due_date) VALUES (?,?,?,?)',
-    c.get('user').id, title, clampPct(b.progress), b.due_date || null);
-  return c.json(await get('SELECT * FROM goals WHERE id = ?', lastId), 201);
+  const { lastId } = await run('INSERT INTO goals(user_id, title, progress, due_date, auto_progress, description) VALUES (?,?,?,?,?,?)',
+    c.get('user').id, title, clampPct(b.progress), b.due_date || null, b.auto_progress === false ? 0 : 1, b.description || null);
+  await linkGoalTasks(c.get('user'), lastId, idList(b.task_ids));
+  return c.json(await get(`${GOAL_SELECT} WHERE g.id = ?`, lastId), 201);
 });
 r.put('/goals/:id', async (c) => {
-  const g = await get('SELECT * FROM goals WHERE id = ? AND user_id = ?', toInt(c.req.param('id')), c.get('user').id);
-  if (!g) throw notFound();
+  const g = await ownGoal(c);
   const b = await jsonBody(c);
-  await run('UPDATE goals SET title = COALESCE(?, title), progress = COALESCE(?, progress), due_date = ? WHERE id = ?',
+  await run('UPDATE goals SET title = COALESCE(?, title), progress = COALESCE(?, progress), due_date = ?, auto_progress = ?, description = ? WHERE id = ?',
     b.title?.trim() || null, b.progress === undefined ? null : clampPct(b.progress),
-    b.due_date === undefined ? g.due_date : b.due_date || null, g.id);
-  return c.json(await get('SELECT * FROM goals WHERE id = ?', g.id));
+    b.due_date === undefined ? g.due_date : b.due_date || null,
+    b.auto_progress === undefined ? g.auto_progress : b.auto_progress ? 1 : 0,
+    b.description === undefined ? g.description : b.description || null, g.id);
+  await refreshGoalProgress(g.id);
+  return c.json(await get(`${GOAL_SELECT} WHERE g.id = ?`, g.id));
 });
 r.delete('/goals/:id', async (c) => {
-  await run('DELETE FROM goals WHERE id = ? AND user_id = ?', toInt(c.req.param('id')), c.get('user').id);
+  const g = await ownGoal(c);
+  await batch([['UPDATE tasks SET goal_id = NULL WHERE goal_id = ?', [g.id]], ['DELETE FROM goals WHERE id = ?', [g.id]]]);
   return c.json({ ok: true });
+});
+
+/** Gắn công việc vào mục tiêu: công việc phải xem được và (người tạo / người thực hiện / quản lý) được sửa. */
+async function linkGoalTasks(user, goalId, ids) {
+  let n = 0;
+  const old = [];
+  for (const id of ids) {
+    const t = await get('SELECT * FROM tasks WHERE id = ?', id);
+    if (!t || !(await canViewTask(user, id)) || !(await canEditTask(user, t))) continue;
+    if (t.goal_id === goalId) continue;
+    if (t.goal_id) old.push(t.goal_id);
+    await run("UPDATE tasks SET goal_id = ?, updated_at = datetime('now') WHERE id = ?", goalId, id);
+    await logActivity('task', id, user.id, 'updated', 'Gắn vào mục tiêu');
+    n++;
+  }
+  await refreshGoalProgress(goalId, ...old);
+  return n;
+}
+r.get('/goals/:id/tasks', async (c) => {
+  const g = await ownGoal(c);
+  return c.json(await selectTasks(c.get('user'), `WHERE t.goal_id = ? ORDER BY CASE t.status WHEN 'done' THEN 1 ELSE 0 END, t.due_date IS NULL, t.due_date, t.id`, g.id));
+});
+r.post('/goals/:id/tasks', async (c) => {
+  const g = await ownGoal(c);
+  const n = await linkGoalTasks(c.get('user'), g.id, idList((await jsonBody(c)).task_ids));
+  return c.json({ linked: n, goal: await get(`${GOAL_SELECT} WHERE g.id = ?`, g.id) });
+});
+r.delete('/goals/:id/tasks/:tid', async (c) => {
+  const g = await ownGoal(c);
+  await run("UPDATE tasks SET goal_id = NULL, updated_at = datetime('now') WHERE id = ? AND goal_id = ?", toInt(c.req.param('tid')), g.id);
+  await refreshGoalProgress(g.id);
+  return c.json(await get(`${GOAL_SELECT} WHERE g.id = ?`, g.id));
 });
 
 // ================================================================ custom filters

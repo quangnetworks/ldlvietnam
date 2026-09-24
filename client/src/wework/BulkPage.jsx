@@ -47,7 +47,7 @@ export default function BulkPage() {
           </select>
           <select className="input input-sm" value="" onChange={(e) => e.target.value && run('update', { priority: e.target.value })} disabled={!selected.length}>
             <option value="">Đổi ưu tiên...</option>
-            <option value="normal">Bình thường</option><option value="important">Quan trọng</option><option value="urgent">Khẩn cấp</option>
+            <option value="normal">Bình thường</option><option value="important">Quan trọng</option><option value="urgent">Khẩn cấp</option><option value="critical">Quan trọng & khẩn cấp</option>
           </select>
           <div style={{ minWidth: 200 }}><UserPicker users={users} value={assignee} onChange={setAssignee} placeholder="Giao cho..." /></div>
           <button className="btn btn-sm" disabled={!selected.length || !assignee} onClick={() => run('update', { assignee_id: assignee })}>Giao việc</button>

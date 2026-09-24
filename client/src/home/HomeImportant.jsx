@@ -37,7 +37,7 @@ export default function HomeImportant({ data }) {
                 <span className="grow imp-body">
                   <b className="imp-title" title={i.title}>{i.title}</b>
                   <small className="imp-sub">
-                    <span className={cx('imp-flag', i.priority)}>{i.priority === 'urgent' ? <><Flame size={11} /> Khẩn cấp</> : <><Star size={11} /> Quan trọng</>}</span>
+                    <span className={cx('imp-flag', i.priority)}>{i.priority === 'critical' ? <><Flame size={11} /> Quan trọng & khẩn cấp</> : i.priority === 'urgent' ? <><Flame size={11} /> Khẩn cấp</> : <><Star size={11} /> Quan trọng</>}</span>
                     <span className="muted ellipsis">{ROLE[i.role]} · {STATUS[i.status]}{i.project_name ? ` · ${i.project_name}` : ''}</span>
                   </small>
                 </span>

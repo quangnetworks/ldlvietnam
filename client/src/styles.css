@@ -1637,3 +1637,21 @@ button.rpt-task:hover { background: var(--hover); }
 .weather.glass-pop .weather-side { flex: none; }
 .weather.glass-pop .weather-meta, .weather.glass-pop .weather-desc { white-space: nowrap; }
 .weather.glass-pop .weather-main > div:nth-child(2) { min-width: 0; flex: 1; }
+.tag-critical { background: linear-gradient(90deg, #e03131, #f76707); color: #fff; }
+.imp-flag.critical, .mt-tag.critical { background: #e03131; color: #fff; }
+.imp-item.critical { border-left-color: #c92a2a; }
+
+/* ---------- Mục tiêu ---------- */
+.goal-meta { display: block; margin-top: 3px; font-size: 11.5px; }
+.goal-tasks { margin-top: 16px; display: flex; flex-direction: column; gap: 8px; border-top: 1px solid var(--line); padding-top: 14px; }
+.goal-tasks > .row b { display: inline-flex; align-items: center; gap: 6px; }
+.goal-search { position: relative; }
+.goal-task-list { display: flex; flex-direction: column; gap: 4px; max-height: 320px; overflow: auto; }
+.goal-task { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border: 1px solid var(--line); border-radius: 10px; }
+.goal-task.done .goal-task-main span { text-decoration: line-through; color: var(--muted); }
+.goal-task-main { border: 0; background: none; font: inherit; color: inherit; text-align: left; cursor: pointer; min-width: 0; padding: 0; }
+.status-pill.overdue { background: var(--tint-red); color: var(--red); }
+/* Nhóm công việc: nút tạo nổi bật */
+.list-add-inline { display: flex; gap: 8px; align-items: center; margin-top: 10px; }
+.list-add-inline .input { max-width: 320px; }
+.board-add-col { min-width: 240px; border: 1.5px dashed var(--line-2); border-radius: 12px; display: flex; align-items: flex-start; padding: 10px; background: none; }

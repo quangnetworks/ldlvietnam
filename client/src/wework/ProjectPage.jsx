@@ -59,7 +59,26 @@ function BoardCard({ t, onOpen }) {
   );
 }
 
-function Board({ columns, tasks, field, onMove, onOpen, projectId, onAdded, quickAdd }) {
+/** Ô tạo nhóm công việc ngay tại chỗ (Enter để tạo, Esc để huỷ). */
+function NewListInline({ onCreate, className }) {
+  const [open, setOpen] = useState(false);
+  const [name, setName] = useState('');
+  const submit = async () => {
+    if (!name.trim()) return;
+    if (await onCreate(name.trim())) { setName(''); setOpen(false); }
+  };
+  if (!open) return <button type="button" className={cx('btn btn-sm', className)} onClick={() => setOpen(true)}><Plus size={14} /> Thêm nhóm công việc</button>;
+  return (
+    <div className={cx('list-add-inline', className)}>
+      <input className="input input-sm" autoFocus value={name} onChange={(e) => setName(e.target.value)} placeholder="Tên nhóm, ví dụ: Chuẩn bị / Triển khai / Nghiệm thu"
+        onKeyDown={(e) => { if (e.key === 'Enter' && !e.nativeEvent.isComposing) submit(); if (e.key === 'Escape') setOpen(false); }} />
+      <button type="button" className="btn btn-sm btn-primary" disabled={!name.trim()} onClick={submit}>Tạo nhóm</button>
+      <button type="button" className="btn btn-sm" onClick={() => setOpen(false)}>Huỷ</button>
+    </div>
+  );
+}
+
+function Board({ columns, tasks, field, onMove, onOpen, projectId, onAdded, quickAdd, onCreateList }) {
   const [over, setOver] = useState(null);
   return (
     <div className="board">
@@ -80,6 +99,7 @@ function Board({ columns, tasks, field, onMove, onOpen, projectId, onAdded, quic
           </div>
         );
       })}
+      {onCreateList && <div className="board-add-col"><NewListInline onCreate={onCreateList} /></div>}
     </div>
   );
 }
@@ -137,6 +157,7 @@ export default function ProjectPage() {
   const { id } = useParams();
   const navigate = useNavigate();
   const toast = useToast();
+  const { user } = useApp();
   const { openTask, openCreate, version, bump, loadProjects, canReports } = useWework();
   const [params, setParams] = useSearchParams();
   const view = params.get('view') || 'list';
@@ -166,11 +187,14 @@ export default function ProjectPage() {
       toast(e.message, 'error');
     }
   };
+  // mọi thành viên dự án được tạo nhóm công việc (đổi tên / xoá do quản lý dự án)
+  const canAddList = isManager || project.members.some((m) => m.id === user.id) || user.role === 'admin';
+  const createList = async (name) => {
+    try { await api.post(`/projects/${id}/lists`, { name }); toast(`Đã tạo nhóm "${name}"`); reloadProject(); return true; } catch (e) { toast(e.message, 'error'); return false; }
+  };
   const addList = async () => {
     const name = window.prompt('Tên nhóm công việc mới');
-    if (!name?.trim()) return;
-    await api.post(`/projects/${id}/lists`, { name });
-    reloadProject();
+    if (name?.trim()) createList(name.trim());
   };
   const renameList = async (l) => {
     const name = window.prompt('Đổi tên nhóm công việc', l.name);
@@ -204,7 +228,7 @@ export default function ProjectPage() {
           <button className="btn btn-primary" onClick={() => openCreate({ project_id: project.id })}><Plus size={15} /> Tạo công việc</button>
           <Dropdown align="right" trigger={(o, t) => <button className="btn" onClick={t} aria-label="Thêm"><MoreHorizontal size={16} /></button>}>
             {isManager && <MenuItem icon={Settings} onClick={() => setEditing(true)}>Cài đặt</MenuItem>}
-            {isManager && <MenuItem icon={Plus} onClick={addList}>Thêm nhóm công việc</MenuItem>}
+            {canAddList && <MenuItem icon={Plus} onClick={addList}>Thêm nhóm công việc</MenuItem>}
             {isManager && !project.is_template && <MenuItem icon={Copy} onClick={async () => {
               const p = await api.post(`/projects/${id}/save-template`, {});
               toast(`Đã lưu thành mẫu "${p.name}"`);
@@ -267,11 +291,12 @@ export default function ProjectPage() {
                 </div>
               );
             })}
-            {isManager && <button className="btn btn-sm mt" onClick={addList}><Plus size={14} /> Thêm nhóm công việc</button>}
+            {canAddList && <NewListInline onCreate={createList} className="mt" />}
+            {canAddList && !project.lists.length && <p className="muted small">Chia công việc theo giai đoạn / hạng mục bằng các nhóm công việc (ví dụ: Chuẩn bị, Triển khai, Nghiệm thu).</p>}
           </div>
         )}
         {view === 'board' && (
-          <Board columns={listColumns} tasks={tasks} field="list_id" onOpen={openTask} projectId={project.id} onAdded={bump} quickAdd
+          <Board columns={listColumns} tasks={tasks} field="list_id" onOpen={openTask} projectId={project.id} onAdded={bump} quickAdd onCreateList={canAddList ? createList : null}
             onMove={(taskId, listId) => moveTask(taskId, { list_id: listId })} />
         )}
         {view === 'status' && (

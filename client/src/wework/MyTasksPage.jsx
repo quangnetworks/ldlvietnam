@@ -6,7 +6,7 @@ import { api } from '../api.js';
 import { useApp, useFetch, useToast } from '../context.jsx';
 import { Avatar, Dropdown, MenuItem, Spinner } from '../components/ui.jsx';
 import { useDebounced } from '../components/shell.jsx';
-import { isoDate, parseDate, fmtDate, cx } from '../utils.js';
+import { isoDate, parseDate, fmtDate, PRIORITY, cx } from '../utils.js';
 import { useWework } from './WeworkLayout.jsx';
 
 /** "Công việc của tôi" dạng bảng (theo bố cục Base Wework): tab giao cho tôi / tôi giao đi / đang theo dõi, nhóm theo thời hạn. */
@@ -28,7 +28,9 @@ const STATUSES = [
   { value: 'done', label: 'Đã hoàn thành' },
   { value: 'late', label: 'Hoàn thành muộn' },
   { value: 'failed', label: 'Thất bại' },
-  { value: 'urgent,important', label: 'Khẩn cấp & quan trọng' },
+  { value: 'critical', label: 'Quan trọng & khẩn cấp' },
+  { value: 'urgent', label: 'Khẩn cấp' },
+  { value: 'important', label: 'Quan trọng' },
 ];
 const GROUP_BY = [
   { value: 'due', label: 'Thời hạn' },
@@ -89,7 +91,7 @@ function groupTasks(items, by, projects) {
     return Object.entries(BADGE).map(([k, v]) => ({ key: k, label: v.label, items: items.filter((t) => badgeOf(t) === k), defaults: {} }));
   }
   if (by === 'priority') {
-    return [['urgent', 'Khẩn cấp'], ['important', 'Quan trọng'], ['normal', 'Bình thường']]
+    return [['critical', 'Quan trọng & khẩn cấp'], ['urgent', 'Khẩn cấp'], ['important', 'Quan trọng'], ['normal', 'Bình thường']]
       .map(([k, l]) => ({ key: k, label: l, items: items.filter((t) => t.priority === k), defaults: { priority: k } }));
   }
   const ids = [...new Set(items.map((t) => t.project_id || 0))];
@@ -194,7 +196,7 @@ export default function MyTasksPage() {
       case 'parent': return t.parent_title
         ? <button type="button" className="mt-link ellipsis" onClick={(e) => { e.stopPropagation(); openTask(t.parent_id); }}>{t.parent_title}</button>
         : null;
-      case 'labels': return t.priority !== 'normal' ? <span className={cx('mt-tag', t.priority)}>{t.priority === 'urgent' ? 'Khẩn cấp' : 'Quan trọng'}</span> : null;
+      case 'labels': return t.priority !== 'normal' ? <span className={cx('mt-tag', t.priority)}>{PRIORITY[t.priority]?.label}</span> : null;
       case 'results': return t.result_count ? <span className="mt-res"><Award size={13} /> {t.result_count}</span> : null;
       case 'creator': return <Person name={t.creator_name} color={t.creator_color} id={t.creator_id} />;
       case 'assignee': return <Person name={t.assignee_name} color={t.assignee_color} id={t.assignee_id} />;

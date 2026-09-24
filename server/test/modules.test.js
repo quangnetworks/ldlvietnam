@@ -503,3 +503,30 @@ test('a member can belong to several departments', async () => {
   assert.ok((await mkt.get('/wework/assignable')).data.ids.includes(demo.user.id));
   await admin.put(`/users/${demo.user.id}`, { ...me, extra_department_ids: [] });
 });
+
+test('goals: link related tasks, progress follows completed tasks; critical priority fills the Eisenhower matrix', async () => {
+  const demo = await login('demo');
+  const admin = await login('admin');
+  const { data: g } = await demo.post('/goals', { title: 'Mở 20 điểm bán mới Q4', progress: 0 });
+  const { data: a } = await demo.post('/tasks', { title: 'Khảo sát khu vực A' });
+  const { data: b } = await demo.post('/tasks', { title: 'Ký hợp đồng điểm bán B', goal_id: g.id, priority: 'critical' });
+  const linked = await demo.post(`/goals/${g.id}/tasks`, { task_ids: [a.id] });
+  assert.equal(linked.data.linked, 1);
+  assert.equal(linked.data.goal.task_count, 2);
+  assert.equal((await demo.get(`/goals/${g.id}/tasks`)).data.length, 2);
+  await demo.put(`/tasks/${a.id}`, { status: 'done' });
+  assert.equal((await demo.get('/goals')).data.find((x) => x.id === g.id).progress, 50);
+  assert.equal((await demo.get(`/tasks/${b.id}`)).data.goal.title, 'Mở 20 điểm bán mới Q4');
+  // bỏ gắn → tiến độ tính lại
+  const after = (await demo.del(`/goals/${g.id}/tasks/${a.id}`)).data;
+  assert.equal(after.task_count, 1);
+  assert.equal(after.progress, 0);
+  // người khác không xem được mục tiêu của tôi
+  assert.equal((await admin.get(`/goals/${g.id}/tasks`)).status, 404);
+  // mức ưu tiên "Quan trọng & khẩn cấp" được tính vào ô "both" và lọc khẩn cấp
+  const r = (await admin.get('/wework/reports/overview?from=2020-01-01')).data;
+  assert.ok(r.eisenhower.both >= 1);
+  assert.equal((await admin.get('/wework/reports/tasks?from=2020-01-01&priority=critical')).data.total, r.eisenhower.both);
+  assert.ok((await demo.get('/tasks?status=urgent&scope=mine')).data.items.some((t) => t.id === b.id));
+  assert.ok((await demo.get('/home/agenda')).data.important.some((t) => t.id === b.id));
+});

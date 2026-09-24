@@ -357,7 +357,7 @@ export function ReportView({ projectId }) {
             <div className="rpt-stack">
               <Card title="Ma trận Eisenhower">
                 <div className="rpt-eisen" role="table" aria-label="Ma trận Eisenhower">
-                  {[['imp', 'important', 'Quan trọng'], ['both', null, 'Quan trọng & khẩn cấp'], ['none', 'normal', 'Bình thường'], ['urg', 'urgent', 'Khẩn cấp']].map(([cls, pr, label]) => {
+                  {[['imp', 'important', 'Quan trọng'], ['both', 'critical', 'Quan trọng & khẩn cấp'], ['none', 'normal', 'Bình thường'], ['urg', 'urgent', 'Khẩn cấp']].map(([cls, pr, label]) => {
                     const n = r.eisenhower[cls === 'imp' ? 'important' : cls === 'urg' ? 'urgent' : cls];
                     return pr && n ? (
                       <button key={cls} type="button" className={cx('q clickable', cls)} onClick={() => open(`Công việc: ${label}`, { priority: pr })}><b>{n}</b><small>{label}</small></button>

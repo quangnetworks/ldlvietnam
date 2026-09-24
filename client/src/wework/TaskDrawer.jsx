@@ -2,14 +2,14 @@ import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
   X, Star, Eye, Trash2, Link2, Paperclip, Plus, CheckSquare, GitBranch, Calendar, User, Flag, Repeat, FolderKanban,
-  MessageSquare, History, Download,
+  MessageSquare, History, Download, Target,
 } from 'lucide-react';
 import { api, toFormData } from '../api.js';
 import { useApp, useFetch, useToast } from '../context.jsx';
 import { Drawer, Spinner, Avatar, UserPicker, SafeHtml, RichEditor, FileChip, Tabs, Progress, Empty } from '../components/ui.jsx';
 import { TASK_STATUS, RECURRING, fmtDateTime, timeAgo, cx } from '../utils.js';
 import { useWework } from './WeworkLayout.jsx';
-import { StatusCircle, TaskTags, useAssignable } from './taskParts.jsx';
+import { StatusCircle, TaskTags, useAssignable, createTaskList } from './taskParts.jsx';
 import TaskResults from './TaskResults.jsx';
 import FileViewer from '../components/FileViewer.jsx';
 
@@ -29,6 +29,7 @@ export function TaskDetail({ id, onClose, onChanged, standalone }) {
   const [activity, reloadActivity] = useFetch(() => api.get(`/tasks/${id}/activity`), [id]);
   const [viewing, setViewing] = useState(null);
   const assignable = useAssignable(users, t?.project_id, [t?.assignee_id]);
+  const [goals, reloadGoals] = useFetch(() => api.get('/goals'), []);
 
   useEffect(() => { if (t) { setTitle(t.title); setDesc(t.description || ''); } }, [t]);
   useEffect(() => {
@@ -136,7 +137,7 @@ export function TaskDetail({ id, onClose, onChanged, standalone }) {
           </div>
           <div className="td-field"><span><Flag size={14} /> Ưu tiên</span>
             <select className="input" disabled={ro} value={t.priority} onChange={(e) => update({ priority: e.target.value })}>
-              <option value="normal">Bình thường</option><option value="important">Quan trọng</option><option value="urgent">Khẩn cấp</option>
+              <option value="normal">Bình thường</option><option value="important">Quan trọng</option><option value="urgent">Khẩn cấp</option><option value="critical">Quan trọng & khẩn cấp</option>
             </select>
           </div>
           <div className="td-field"><span><Repeat size={14} /> Lặp lại</span>
@@ -153,9 +154,34 @@ export function TaskDetail({ id, onClose, onChanged, standalone }) {
             </select>
           </div>
           <div className="td-field"><span><CheckSquare size={14} /> Nhóm công việc</span>
-            <select className="input" disabled={ro || !lists.length} value={t.list_id || ''} onChange={(e) => update({ list_id: e.target.value || null })}>
+            <select className="input" disabled={ro || !t.project_id} title={!t.project_id ? 'Chọn dự án trước' : undefined} value={t.list_id || ''}
+              onChange={async (e) => {
+                if (e.target.value === '__new') {
+                  const r = await createTaskList(t.project_id, toast);
+                  if (r) { setLists(r.lists); update({ list_id: r.id }); }
+                  return;
+                }
+                update({ list_id: e.target.value || null });
+              }}>
               <option value="">— Không chọn —</option>
               {lists.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
+              <option value="__new">＋ Tạo nhóm công việc mới…</option>
+            </select>
+          </div>
+          <div className="td-field span-2"><span><Target size={14} /> Mục tiêu</span>
+            <select className="input" disabled={ro} value={t.goal_id || ''} onChange={async (e) => {
+              if (e.target.value === '__new') {
+                const title = window.prompt('Tên mục tiêu mới');
+                if (!title?.trim()) return;
+                try { await api.post('/goals', { title: title.trim(), task_ids: [t.id] }); reloadGoals(); reload(); onChanged?.(); toast('Đã tạo mục tiêu và gắn công việc'); } catch (err) { toast(err.message, 'error'); }
+                return;
+              }
+              update({ goal_id: e.target.value || null }, e.target.value ? 'Đã gắn công việc vào mục tiêu' : null);
+            }}>
+              <option value="">— Không gắn mục tiêu —</option>
+              {(goals || []).map((g) => <option key={g.id} value={g.id}>{g.title} ({g.progress}%)</option>)}
+              {t.goal && !(goals || []).some((g) => g.id === t.goal.id) && <option value={t.goal.id}>{t.goal.title} — của {t.goal.owner_name}</option>}
+              <option value="__new">＋ Tạo mục tiêu mới…</option>
             </select>
           </div>
         </div>
