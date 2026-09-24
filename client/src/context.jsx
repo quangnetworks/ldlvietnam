@@ -44,8 +44,8 @@ export function AppProvider({ children }) {
     refreshMe();
   }, [refreshMe]);
 
-  const login = async (username, password) => {
-    const r = await api.post('/auth/login', { username, password });
+  const login = async (username, password, otp) => {
+    const r = await api.post('/auth/login', { username, password, otp: otp || undefined });
     setUser(r.user);
     await refreshMe();
   };

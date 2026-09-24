@@ -6,17 +6,31 @@ import {
 } from '../auth.js';
 import { badRequest, notFound, toInt, jsonBody } from '../util.js';
 import { userApps, grantApps, audit, recordLogin, MODULES } from '../platform.js';
+import { verifyTotp, ipAllowed } from '../security.js';
+import { isExpired } from '../auth.js';
 
 const r = new Hono();
 
 // ---------- Auth ----------
 r.post('/auth/login', async (c) => {
-  const { username, password } = await jsonBody(c);
+  const { username, password, otp } = await jsonBody(c);
   if (!username || !password) throw badRequest('Vui lòng nhập tên đăng nhập và mật khẩu');
   const u = await get('SELECT * FROM users WHERE lower(username) = lower(?) OR lower(email) = lower(?)', username, username);
   if (!u || !u.active || !(await verifyPassword(password, u.password_hash))) {
     await recordLogin(c, u && u.active ? u : null, String(username).slice(0, 100), false);
     return c.json({ error: 'Tên đăng nhập hoặc mật khẩu không đúng' }, 401);
+  }
+  if (isExpired(u)) return c.json({ error: 'Tài khoản khách đã hết hạn truy cập. Liên hệ quản trị viên.' }, 401);
+  if (!(await ipAllowed(c, u))) {
+    await recordLogin(c, u, u.username, false);
+    return c.json({ error: 'Địa chỉ IP của bạn không nằm trong danh sách được phép đăng nhập' }, 403);
+  }
+  if (u.totp_enabled) {
+    if (!otp) return c.json({ error: 'Nhập mã xác thực 6 số từ ứng dụng Authenticator', need_otp: true }, 401);
+    if (!(await verifyTotp(u.totp_secret, otp))) {
+      await recordLogin(c, u, u.username, false);
+      return c.json({ error: 'Mã xác thực không đúng hoặc đã hết hạn', need_otp: true }, 401);
+    }
   }
   await recordLogin(c, u, u.username, true);
   const token = await signToken(c, u);
@@ -86,6 +100,10 @@ r.put('/settings', requireAdmin, async (c) => {
 // ---------- Users ----------
 r.get('/users', async (c) => {
   const qs = c.req.query();
+  // Tài khoản khách chỉ thấy thông tin tối thiểu (tên) để chọn người nhận / người duyệt
+  if (c.get('user').role === 'guest') {
+    return c.json(await all("SELECT u.id, u.name, u.username, u.color, u.title, u.role FROM users u WHERE u.active = 1 ORDER BY u.name COLLATE NOCASE"));
+  }
   const q = `%${(qs.q || '').trim()}%`;
   const includeInactive = qs.all === '1' && c.get('user').role === 'admin';
   return c.json(await all(
@@ -111,7 +129,8 @@ function validateUserBody(b, creating) {
     if (!b.password || String(b.password).length < 6) throw badRequest('Mật khẩu phải có ít nhất 6 ký tự');
     if (!b.name?.trim()) throw badRequest('Họ tên là bắt buộc');
   }
-  if (b.role && !['admin', 'member'].includes(b.role)) throw badRequest('Vai trò không hợp lệ');
+  if (b.role && !['admin', 'member', 'guest'].includes(b.role)) throw badRequest('Vai trò không hợp lệ');
+  if (b.expires_at && !/^\d{4}-\d{2}-\d{2}$/.test(b.expires_at)) throw badRequest('Ngày hết hạn không hợp lệ');
 }
 
 r.post('/users', requireAdmin, async (c) => {
@@ -126,8 +145,10 @@ r.post('/users', requireAdmin, async (c) => {
     b.username.trim(), await hashPassword(b.password), b.name.trim(), b.email || null, b.phone || null,
     b.title || null, toInt(b.department_id), toInt(b.manager_id), b.role || 'member', b.color || null
   );
-  await run('UPDATE users SET birthday = ?, address = ? WHERE id = ?', b.birthday || null, b.address || null, lastId);
-  await grantApps(lastId, Array.isArray(b.apps) ? b.apps : null);
+  await run('UPDATE users SET birthday = ?, address = ?, expires_at = ? WHERE id = ?', b.birthday || null, b.address || null,
+    b.role === 'guest' ? b.expires_at || null : null, lastId);
+  // Tài khoản khách: chỉ nhận ứng dụng được chọn rõ ràng
+  await grantApps(lastId, Array.isArray(b.apps) ? b.apps : b.role === 'guest' ? [] : null);
   await audit(c.get('user').id, 'user.create', `Tạo tài khoản @${b.username.trim()}`);
   return c.json(await loadUser(lastId), 201);
 });
@@ -151,6 +172,9 @@ r.put('/users/:id', requireAdmin, async (c) => {
       b.birthday ?? null, b.address ?? null, id);
   }
   if (Array.isArray(b.apps)) await grantApps(id, b.apps.filter((k) => MODULES[k]));
+  if (b.expires_at !== undefined || b.role !== undefined) {
+    await run("UPDATE users SET expires_at = CASE WHEN role = 'guest' THEN ? ELSE NULL END WHERE id = ?", b.expires_at || null, id);
+  }
   if (b.active !== undefined) {
     if (id === c.get('user').id && !b.active) throw badRequest('Không thể vô hiệu hóa chính mình');
     await run('UPDATE users SET active = ? WHERE id = ?', b.active ? 1 : 0, id);

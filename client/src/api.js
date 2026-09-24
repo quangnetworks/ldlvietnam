@@ -1,7 +1,8 @@
 export class ApiError extends Error {
-  constructor(status, message) {
+  constructor(status, message, data) {
     super(message);
     this.status = status;
+    this.data = data;
   }
 }
 
@@ -33,7 +34,7 @@ async function request(method, url, { body, params } = {}) {
   const data = isJson ? await res.json() : await res.text();
   if (!res.ok) {
     if (res.status === 401 && !url.startsWith('/auth/login')) onUnauthorized();
-    throw new ApiError(res.status, (isJson && data?.error) || `Lỗi ${res.status}`);
+    throw new ApiError(res.status, (isJson && data?.error) || `Lỗi ${res.status}`, isJson ? data : null);
   }
   return data;
 }

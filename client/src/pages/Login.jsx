@@ -6,6 +6,8 @@ export default function Login() {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
+  const [otp, setOtp] = useState('');
+  const [needOtp, setNeedOtp] = useState(false);
   const [busy, setBusy] = useState(false);
 
   const submit = async (e) => {
@@ -13,9 +15,12 @@ export default function Login() {
     setError('');
     setBusy(true);
     try {
-      await login(username.trim(), password);
+      await login(username.trim(), password, needOtp ? otp : undefined);
     } catch (err) {
-      setError(err.message);
+      if (err.data?.need_otp) {
+        if (needOtp) setError(err.message);
+        setNeedOtp(true);
+      } else setError(err.message);
     } finally {
       setBusy(false);
     }
@@ -41,7 +46,14 @@ export default function Login() {
           <span className="field-label">Mật khẩu</span>
           <input className="input" type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="current-password" />
         </label>
-        <button className="btn btn-primary btn-block" disabled={busy || !username || !password}>
+        {needOtp && (
+          <label className="field">
+            <span className="field-label">Mã xác thực 2 lớp (6 số trong ứng dụng Authenticator)</span>
+            <input className="input otp-input" autoFocus inputMode="numeric" maxLength={6} value={otp}
+              onChange={(e) => setOtp(e.target.value.replace(/\D/g, ''))} autoComplete="one-time-code" />
+          </label>
+        )}
+        <button className="btn btn-primary btn-block" disabled={busy || !username || !password || (needOtp && otp.length !== 6)}>
           {busy ? 'Đang đăng nhập...' : 'Đăng nhập'}
         </button>
       </form>

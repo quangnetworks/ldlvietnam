@@ -1,7 +1,7 @@
 import { NavLink, Outlet, Link } from 'react-router-dom';
 import {
   UserCircle2, Bell, Users, Network, LayoutGrid, Power, Settings, Pencil, KeyRound, Palette, History, Building2, AppWindow,
-  ScrollText, FileText, GitPullRequestArrow, Home, LockKeyhole,
+  ScrollText, FileText, GitPullRequestArrow, Home, LockKeyhole, ShieldCheck, Shield, Webhook,
 } from 'lucide-react';
 import { useApp } from '../context.jsx';
 import { Avatar } from '../components/ui.jsx';
@@ -52,11 +52,13 @@ export default function AccountLayout() {
           <SideLink to="/account/edit" icon={Pencil}>Chỉnh sửa</SideLink>
           <SideLink to="/account/password" icon={KeyRound}>Thay đổi mật khẩu</SideLink>
           <SideLink to="/account/color" icon={Palette}>Đổi màu hiển thị</SideLink>
+          <SideLink to="/account/2fa" icon={ShieldCheck}>Bảo mật hai lớp cá nhân</SideLink>
           <SideLink to="/account/logins" icon={History}>Lịch sử đăng nhập cá nhân</SideLink>
         </div>
         {admin && (
           <div className="acc-side-section">
             <div className="acc-side-title">ỨNG DỤNG & AN TOÀN</div>
+            <SideLink to="/account/security" icon={Shield}>Bảo mật theo dải IP</SideLink>
             <SideLink to="/account/company" icon={Building2}>Chỉnh sửa công ty</SideLink>
             <SideLink to="/account/apps" icon={AppWindow}>Quản lý ứng dụng</SideLink>
             <SideLink to="/account/departments" icon={Network}>Phòng ban</SideLink>
@@ -64,6 +66,7 @@ export default function AccountLayout() {
             <SideLink to="/account/bulk-password" icon={LockKeyhole}>Đổi mật khẩu hàng loạt</SideLink>
             <SideLink to="/office/settings" icon={FileText}>Cài đặt Base Office</SideLink>
             <SideLink to="/request/settings" icon={GitPullRequestArrow}>Quản lý nhóm đề xuất</SideLink>
+            <SideLink to="/request/settings/webhooks" icon={Webhook}>Webhook Base Request</SideLink>
           </div>
         )}
       </aside>

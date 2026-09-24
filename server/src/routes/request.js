@@ -4,6 +4,7 @@ import { requireAdmin } from '../auth.js';
 import {
   badRequest, notFound, forbidden, toInt, idList, paginate, jsonBody, formBody, storeFiles, removeFile, sendFile,
 } from '../util.js';
+import { fireRequestEvent } from './webhooks.js';
 
 const r = new Hono();
 const APP = 'request';
@@ -262,6 +263,7 @@ r.post('/requests', async (c) => {
   if (!draft) {
     await startFlow(id, user);
     await notify(followers, { actorId: user.id, app: APP, type: 'follow', title: `${user.name} tạo đề xuất "${title}"`, link: `/request/${id}` });
+    await fireRequestEvent(c, 'request.submitted', id);
   }
   return c.json(await fullRequest(id, user), 201);
 });
@@ -297,6 +299,7 @@ r.put('/requests/:id', async (c) => {
     if (!(await get('SELECT 1 FROM request_approvers WHERE request_id = ?', q.id))) throw badRequest('Đề xuất cần ít nhất một người duyệt');
     await logActivity('request', q.id, user.id, 'submitted', q.status === 'returned' ? 'Gửi lại đề xuất' : 'Gửi đề xuất');
     await startFlow(q.id, user);
+    await fireRequestEvent(c, 'request.submitted', q.id);
   }
   return c.json(await fullRequest(q.id, user));
 });
@@ -330,10 +333,12 @@ r.post('/requests/:id/decide', async (c) => {
     await run("UPDATE request_approvers SET status = 'skipped' WHERE request_id = ? AND status = 'pending'", q.id);
     await notify([q.creator_id, ...watchers], { actorId: user.id, app: APP, type: finalStatus,
       title: `${user.name}: ${ACTION_LABEL[action].toLowerCase()} đề xuất "${q.title}"`, link: `/request/${q.id}` });
+    await fireRequestEvent(c, `request.${finalStatus}`, q.id, { comment });
   } else {
     await run("UPDATE requests SET updated_at = datetime('now') WHERE id = ?", q.id);
     await notify(q.creator_id, { actorId: user.id, app: APP, type: 'approved', title: `${user.name} đã duyệt đề xuất "${q.title}"`, link: `/request/${q.id}` });
     await notifyCurrent(q.id, user, `Đề xuất "${q.title}" đến lượt bạn duyệt`);
+    await fireRequestEvent(c, 'request.step_approved', q.id, { comment });
   }
   return c.json(await fullRequest(q.id, user));
 });
@@ -347,6 +352,7 @@ r.post('/requests/:id/submit', async (c) => {
   if (!(await get('SELECT 1 FROM request_approvers WHERE request_id = ?', q.id))) throw badRequest('Đề xuất cần ít nhất một người duyệt');
   await logActivity('request', q.id, user.id, 'submitted', q.status === 'returned' ? 'Gửi lại đề xuất' : 'Gửi đề xuất');
   await startFlow(q.id, user);
+  await fireRequestEvent(c, 'request.submitted', q.id);
   return c.json(await fullRequest(q.id, user));
 });
 
@@ -357,6 +363,7 @@ r.post('/requests/:id/cancel', async (c) => {
   await run("UPDATE requests SET status = 'cancelled', completed_at = datetime('now'), updated_at = datetime('now') WHERE id = ?", q.id);
   await run("UPDATE request_approvers SET status = 'skipped' WHERE request_id = ? AND status = 'pending'", q.id);
   await logActivity('request', q.id, user.id, 'cancelled', 'Huỷ đề xuất');
+  await fireRequestEvent(c, 'request.cancelled', q.id);
   return c.json(await fullRequest(q.id, user));
 });
 
@@ -399,6 +406,7 @@ r.post('/requests/:id/comments', async (c) => {
   const watchers = (await all('SELECT user_id FROM request_followers WHERE request_id = ?', q.id)).map((x) => x.user_id);
   await notify([q.creator_id, ...approvers, ...watchers], { actorId: user.id, app: APP, type: 'comment',
     title: `${user.name} bình luận trong đề xuất "${q.title}"`, link: `/request/${q.id}` });
+  await fireRequestEvent(c, 'request.commented', q.id, { comment: content.slice(0, 1000) });
   return c.json(await get(`${COMMENT_SELECT} WHERE c.id = ?`, lastId), 201);
 });
 r.get('/requests/:id/activity', async (c) => {

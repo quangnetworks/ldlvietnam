@@ -37,7 +37,7 @@ async function login(username, password = '123456') {
 test('me returns accessible apps; login is logged', async () => {
   const demo = await login('demo');
   const me = await demo.get('/auth/me');
-  assert.deepEqual(me.data.apps.sort(), ['office', 'request', 'wework']);
+  assert.deepEqual(me.data.apps.sort(), ['checkin', 'drive', 'hrm', 'message', 'office', 'request', 'timeoff', 'wework']);
   const logs = await demo.get('/account/login-logs');
   assert.ok(logs.data.items.length >= 1);
   assert.ok(logs.data.items.every((l) => l.user_id === demo.user.id));
@@ -63,7 +63,8 @@ test('members list, groups, CSV import/export, audit log', async () => {
   const admin = await login('admin');
   const demo = await login('demo');
   const m = await admin.get('/account/members');
-  assert.equal(m.data.counts.all, 10);
+  assert.equal(m.data.counts.all, 11);
+  assert.equal(m.data.counts.guests, 1);
   assert.ok(m.data.items.find((u) => u.username === 'demo').apps.includes('wework'));
   assert.equal((await demo.get('/account/members/export')).status, 403);
   const csv = await admin.get('/account/members/export');

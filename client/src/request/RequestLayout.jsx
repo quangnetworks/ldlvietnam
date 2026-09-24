@@ -2,7 +2,7 @@ import { createContext, useCallback, useContext, useMemo, useState } from 'react
 import { Link, NavLink, Outlet, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import {
   Home, Bell, BarChart3, Settings, PlusCircle, PlayCircle, LayoutGrid, Inbox, Send, Eye, Star, ChevronLeft, Search, ChevronDown,
-  FolderCog, History, ListChecks, Copy, PlusSquare,
+  FolderCog, History, ListChecks, Copy, PlusSquare, Webhook,
 } from 'lucide-react';
 import { api } from '../api.js';
 import { useApp, useFetch } from '../context.jsx';
@@ -99,6 +99,7 @@ function SettingsSidebar() {
         {link('/request/settings', LayoutGrid, 'Tất cả nhóm đề xuất')}
         {link('/request/settings/all-requests', FolderCog, 'Tất cả đề xuất hệ thống')}
         {link('/request/settings/history', History, 'Lịch sử chỉnh sửa nhóm')}
+        {link('/request/settings/webhooks', Webhook, 'Webhook')}
         {link('/request/settings/bulk', ListChecks, 'Tác vụ hàng loạt')}
         {link('/request/settings/templates', Copy, 'Tạo nhóm từ mẫu')}
         {link('/request/settings/group/new', PlusSquare, 'Tạo nhóm đề xuất')}

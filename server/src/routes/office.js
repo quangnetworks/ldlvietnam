@@ -18,7 +18,7 @@ function visibilitySql(user) {
   return {
     sql: `(d.creator_id = ? OR d.issuer_id = ?
           OR EXISTS (SELECT 1 FROM document_approvers da WHERE da.document_id = d.id AND da.user_id = ?)
-          OR (d.status IN ('issued','archived') AND (d.is_public = 1
+          OR (d.status IN ('issued','archived') AND (${user.role === 'guest' ? '0' : 'd.is_public'} = 1
               OR EXISTS (SELECT 1 FROM document_recipients dr WHERE dr.document_id = d.id
                          AND (dr.user_id = ? OR (dr.department_id IS NOT NULL AND dr.department_id = ?))))))`,
     params: [user.id, user.id, user.id, user.id, user.department_id ?? -1],

@@ -1,6 +1,7 @@
 import { sign, verify } from 'hono/jwt';
 import { getCookie } from 'hono/cookie';
 import { get, getSetting, setSetting } from './db.js';
+import { ipAllowed } from './security.js';
 
 export const COOKIE = 'ldl_token';
 const ITERATIONS = 60000;
@@ -50,7 +51,7 @@ export async function signToken(c, user) {
 }
 
 export const PUBLIC_USER_FIELDS =
-  'u.id, u.username, u.name, u.email, u.phone, u.title, u.department_id, u.manager_id, u.role, u.color, u.active, u.birthday, u.address, u.bio, u.profile, u.last_login_at, u.created_at';
+  'u.id, u.username, u.name, u.email, u.phone, u.title, u.department_id, u.manager_id, u.role, u.color, u.active, u.birthday, u.address, u.bio, u.profile, u.last_login_at, u.created_at, u.totp_enabled, u.expires_at';
 
 export function loadUser(id) {
   return get(
@@ -59,6 +60,8 @@ export function loadUser(id) {
     id
   );
 }
+
+export const isExpired = (u) => !!u.expires_at && u.expires_at < new Date().toISOString().slice(0, 10);
 
 export async function requireAuth(c, next) {
   const header = c.req.header('authorization');
@@ -72,6 +75,8 @@ export async function requireAuth(c, next) {
   }
   const user = await loadUser(uid);
   if (!user || !user.active) return c.json({ error: 'Tài khoản không hợp lệ' }, 401);
+  if (isExpired(user)) return c.json({ error: 'Tài khoản khách đã hết hạn truy cập' }, 401);
+  if (!(await ipAllowed(c, user))) return c.json({ error: 'Địa chỉ IP của bạn không nằm trong danh sách được phép truy cập' }, 403);
   c.set('user', user);
   await next();
 }

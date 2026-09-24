@@ -78,6 +78,7 @@ export default function Home() {
   const [bgOpen, setBgOpen] = useState(false);
   const [prefs, reloadPrefs] = useFetch(() => api.get('/me/prefs'), []);
   const [summary] = useFetch(() => api.get('/home/summary'), []);
+  const [chat] = useFetch(() => ((apps || []).includes('message') ? api.get('/chat/unread') : Promise.resolve(null)), [apps]);
   const bg = BACKGROUNDS[Number(prefs?.home_bg_index) || 0] || BACKGROUNDS[0];
 
   const list = useMemo(() => ECOSYSTEM
@@ -95,6 +96,7 @@ export default function Home() {
     c.requests_to_approve > 0 && { label: `${c.requests_to_approve} đề xuất chờ bạn duyệt`, to: '/request?tab=my_turn' },
     c.documents_to_approve > 0 && { label: `${c.documents_to_approve} văn bản chờ bạn duyệt`, to: '/office?box=pending_me' },
     c.tasks_active > 0 && { label: `${c.tasks_active} công việc đang thực hiện`, to: '/wework/my' },
+    chat?.unread > 0 && { label: `${chat.unread} tin nhắn chưa đọc`, to: '/message' },
     c.tasks_overdue > 0 && { label: `${c.tasks_overdue} công việc quá hạn`, to: '/wework/my?status=overdue', danger: true },
   ].filter(Boolean);
   const pad = (n) => String(n).padStart(2, '0');

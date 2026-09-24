@@ -42,6 +42,27 @@ Webapp nội bộ gồm 2 phân hệ, giao diện và chức năng mô phỏng *
   xem dạng **Danh sách**, **Kanban** (kéo thả), **Theo trạng thái**, **Lịch**, **Tiến độ (Gantt)**, Hoạt động, Báo cáo.
 - Thành viên, **Báo cáo** (theo trạng thái, thành viên, dự án, xu hướng 30 ngày), **Tác vụ hàng loạt**, tìm nhanh.
 
+### Bảo mật
+- **Bảo mật hai lớp (2FA)** theo chuẩn TOTP — quét mã QR bằng Google / Microsoft Authenticator; quản trị viên có thể đặt lại 2FA cho thành viên.
+- **Giới hạn truy cập theo dải IP** (IPv4, CIDR) — quản trị viên luôn được truy cập để tránh bị khoá ngoài.
+- **Tài khoản khách** (đối tác, NPP): có ngày hết hạn, chỉ dùng các ứng dụng được cấp, không xem danh bạ và văn bản công khai.
+
+### Webhook Base Request — `/request/settings/webhooks`
+- Gửi sự kiện (tạo, duyệt từng bước, chấp thuận, từ chối, trả lại, huỷ, bình luận) tới URL HTTPS; ký `X-LDL-Signature: sha256=<HMAC>` bằng secret; lọc theo nhóm đề xuất; nhật ký gửi và nút gửi thử.
+
+### HRM+ — `/hrm`, `/checkin`, `/timeoff`
+- **Base HRM**: hồ sơ nhân sự (mã NV, CCCD, hợp đồng, BHXH, MST, ngân hàng...), tổng quan theo phòng ban, cảnh báo hết hạn hợp đồng / thử việc, sinh nhật, nhân sự mới.
+- **Base Checkin**: chấm công vào / ra (giờ Việt Nam), đi muộn / về sớm, bảng công tháng dạng lịch, bảng công nhân viên theo ngày, xuất CSV, giới hạn chấm công theo IP văn phòng.
+- **Base Timeoff**: quỹ phép năm theo nhân viên, đơn nghỉ đi qua **Base Request** (nhóm "Đề xuất nghỉ phép"), lịch nghỉ công ty.
+
+### Base Drive — `/drive`
+- Tài liệu của tôi / tài liệu công ty / được chia sẻ / gần đây / thùng rác; thư mục lồng nhau, tải lên kéo thả, đổi tên, di chuyển, xem trực tuyến, tải xuống.
+- Chia sẻ cho thành viên / phòng ban / nhóm với quyền Xem hoặc Chỉnh sửa (kế thừa theo thư mục cha).
+
+### Base Message — `/message`
+- Kênh công khai / riêng tư, tin nhắn 1-1, số tin chưa đọc, gửi tệp / ảnh, sửa / xoá tin nhắn của mình, nhắc tên `@tên_đăng_nhập` (có thông báo), tìm kiếm tin nhắn.
+- Cập nhật tin nhắn mới mỗi ~6 giây (polling, tạm dừng khi tab ẩn).
+
 ### Chung
 - Đăng nhập, thông báo thời gian thực (polling), chuyển ứng dụng, tài khoản & đổi mật khẩu.
 - **Cài đặt Office**: quyền tạo văn bản (tất cả / người / nhóm / phòng ban), văn thư cấp số, mẫu số hiệu `{seq}/{year}/{prefix}-LDL`, hạn hiệu lực mặc định; loại văn bản / kho / thư mục.

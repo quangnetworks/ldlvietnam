@@ -1,14 +1,20 @@
 import { Hono } from 'hono';
-import { all, get, run, batch, getSetting } from '../db.js';
-import { requireAdmin, hashPassword, loadUser, PUBLIC_USER_FIELDS } from '../auth.js';
-import { badRequest, notFound, toInt, idList, jsonBody, paginate } from '../util.js';
+import { all, get, run, batch, getSetting, setSetting } from '../db.js';
+import { requireAdmin, hashPassword, verifyPassword, loadUser, PUBLIC_USER_FIELDS } from '../auth.js';
+import { randomBase32, otpauthUrl, verifyTotp, securitySettings, validIpRule, clientIp, ipMatches } from '../security.js';
+import { badRequest, notFound, forbidden, toInt, idList, jsonBody, paginate } from '../util.js';
 import { MODULES, userApps, grantApps, audit } from '../platform.js';
 
 const r = new Hono();
 
 // ================================================================ profile
+const guestGuard = (c) => {
+  if (c.get('user').role === 'guest') throw forbidden('Tài khoản khách không xem được danh bạ công ty');
+};
+
 r.get('/account/profile/:id', async (c) => {
   const id = toInt(c.req.param('id'));
+  if (c.get('user').role === 'guest' && id !== c.get('user').id) guestGuard(c);
   const u = await loadUser(id);
   if (!u) throw notFound('Tài khoản không tồn tại');
   const [manager, reports, groups, apps] = await Promise.all([
@@ -22,10 +28,12 @@ r.get('/account/profile/:id', async (c) => {
 
 // ================================================================ members
 r.get('/account/members', async (c) => {
+  guestGuard(c);
   const q = c.req.query();
   const where = [];
   const params = [];
   if (q.tab === 'admins') where.push("u.role = 'admin' AND u.active = 1");
+  else if (q.tab === 'guests') where.push("u.role = 'guest' AND u.active = 1");
   else if (q.tab === 'disabled') where.push('u.active = 0');
   else where.push('u.active = 1');
   if (q.q) {
@@ -49,8 +57,9 @@ r.get('/account/members', async (c) => {
     u.apps = u.role === 'admin' ? Object.keys(MODULES) : (u.app_keys ? u.app_keys.split(',') : []);
     delete u.app_keys;
   }
-  const counts = await get(`SELECT SUM(active = 1) AS all_count, SUM(active = 1 AND role = 'admin') AS admins, SUM(active = 0) AS disabled FROM users`);
-  return c.json({ items, counts: { all: counts.all_count || 0, admins: counts.admins || 0, disabled: counts.disabled || 0 } });
+  const counts = await get(`SELECT SUM(active = 1) AS all_count, SUM(active = 1 AND role = 'admin') AS admins, SUM(active = 0) AS disabled,
+    SUM(active = 1 AND role = 'guest') AS guests FROM users`);
+  return c.json({ items, counts: { all: counts.all_count || 0, admins: counts.admins || 0, disabled: counts.disabled || 0, guests: counts.guests || 0 } });
 });
 
 const csvEsc = (v) => `"${String(v ?? '').replace(/^[=+\-@\t\r]/, "'$&").replace(/"/g, '""')}"`;
@@ -293,7 +302,7 @@ r.get('/home/summary', async (c) => {
   const apps = await userApps(user);
   const out = { apps, announcements: [], counters: {} };
   if (apps.includes('office')) {
-    const vis = user.role === 'admin' ? ['1=1', []] : [`(d.is_public = 1 OR EXISTS (SELECT 1 FROM document_recipients dr WHERE dr.document_id = d.id
+    const vis = user.role === 'admin' ? ['1=1', []] : [`(${user.role === 'guest' ? '0' : 'd.is_public'} = 1 OR EXISTS (SELECT 1 FROM document_recipients dr WHERE dr.document_id = d.id
       AND (dr.user_id = ? OR dr.department_id = ?)))`, [user.id, user.department_id ?? -1]];
     out.announcements = await all(`SELECT d.id, d.title, d.code, d.issued_at, u.name AS issuer_name FROM documents d
       LEFT JOIN users u ON u.id = d.issuer_id WHERE d.status = 'issued' AND d.deleted_at IS NULL AND ${vis[0]}
@@ -314,6 +323,53 @@ r.get('/home/summary', async (c) => {
   out.birthdays = await all(`SELECT id, name, color, birthday FROM users WHERE active = 1 AND birthday IS NOT NULL
     AND substr(birthday, 6, 5) = strftime('%m-%d', 'now')`);
   return c.json(out);
+});
+
+// ================================================================ security (2FA, IP)
+r.post('/account/2fa/setup', async (c) => {
+  const user = c.get('user');
+  if (user.totp_enabled) throw badRequest('Bảo mật hai lớp đang bật');
+  const secret = randomBase32();
+  await run('UPDATE users SET totp_secret = ? WHERE id = ?', secret, user.id);
+  return c.json({ secret, url: otpauthUrl(secret, user.email || user.username) });
+});
+r.post('/account/2fa/enable', async (c) => {
+  const user = c.get('user');
+  const row = await get('SELECT totp_secret FROM users WHERE id = ?', user.id);
+  if (!row.totp_secret) throw badRequest('Chưa tạo mã bí mật');
+  if (!(await verifyTotp(row.totp_secret, (await jsonBody(c)).code))) throw badRequest('Mã xác thực không đúng. Kiểm tra lại giờ trên điện thoại.');
+  await run('UPDATE users SET totp_enabled = 1 WHERE id = ?', user.id);
+  await audit(user.id, 'security.2fa', 'Bật bảo mật hai lớp');
+  return c.json({ ok: true });
+});
+r.post('/account/2fa/disable', async (c) => {
+  const user = c.get('user');
+  const row = await get('SELECT password_hash FROM users WHERE id = ?', user.id);
+  if (!(await verifyPassword((await jsonBody(c)).password || '', row.password_hash))) throw badRequest('Mật khẩu không đúng');
+  await run('UPDATE users SET totp_enabled = 0, totp_secret = NULL WHERE id = ?', user.id);
+  await audit(user.id, 'security.2fa', 'Tắt bảo mật hai lớp');
+  return c.json({ ok: true });
+});
+r.post('/account/2fa/reset/:id', requireAdmin, async (c) => {
+  const u = await get('SELECT id, username FROM users WHERE id = ?', toInt(c.req.param('id')));
+  if (!u) throw notFound();
+  await run('UPDATE users SET totp_enabled = 0, totp_secret = NULL WHERE id = ?', u.id);
+  await audit(c.get('user').id, 'security.2fa', `Đặt lại bảo mật hai lớp cho @${u.username}`);
+  return c.json({ ok: true });
+});
+
+r.get('/account/security', requireAdmin, async (c) => c.json({ ...(await securitySettings()), current_ip: clientIp(c) }));
+r.put('/account/security', requireAdmin, async (c) => {
+  const b = await jsonBody(c);
+  const rules = (Array.isArray(b.ip_rules) ? b.ip_rules : String(b.ip_rules || '').split(/[\n,]/)).map((x) => x.trim()).filter(Boolean);
+  const bad = rules.filter((x) => !validIpRule(x));
+  if (bad.length) throw badRequest(`Dải IP không hợp lệ: ${bad.join(', ')}`);
+  if (b.ip_enabled && !rules.length) throw badRequest('Cần ít nhất một địa chỉ IP khi bật giới hạn');
+  const next = { ip_enabled: !!b.ip_enabled, ip_rules: rules.slice(0, 100) };
+  await setSetting('security_settings', JSON.stringify(next));
+  await audit(c.get('user').id, 'security.ip', next.ip_enabled ? `Bật giới hạn IP (${rules.length} dải)` : 'Tắt giới hạn IP');
+  const ip = clientIp(c);
+  return c.json({ ...next, current_ip: ip, current_ip_allowed: !next.ip_enabled || rules.some((x) => ipMatches(ip, x)) });
 });
 
 export default r;

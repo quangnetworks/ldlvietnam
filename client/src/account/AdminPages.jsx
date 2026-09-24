@@ -14,12 +14,12 @@ import { LoginHistory } from './ProfilePages.jsx';
 const appByKey = Object.fromEntries(MODULE_APPS.map((a) => [a.module, a]));
 
 // ---------------------------------------------------------------- user form
-function UserModal({ user: editing, onClose, onSaved }) {
+function UserModal({ user: editing, guest = false, onClose, onSaved }) {
   const { users, departments } = useApp();
   const toast = useToast();
   const [f, setF] = useState(editing ? { ...editing, password: '', department_id: editing.department_id || '' } : {
-    username: '', password: '', name: '', email: '', phone: '', title: '', department_id: '', manager_id: null, role: 'member',
-    birthday: '', apps: MODULE_APPS.map((a) => a.module),
+    username: '', password: '', name: '', email: '', phone: '', title: '', department_id: '', manager_id: null, role: guest ? 'guest' : 'member',
+    birthday: '', apps: guest ? [] : MODULE_APPS.map((a) => a.module), expires_at: '',
   });
   const [err, setErr] = useState('');
   const set = (k) => (e) => setF({ ...f, [k]: e?.target ? e.target.value : e });
@@ -56,11 +56,17 @@ function UserModal({ user: editing, onClose, onSaved }) {
         </Field>
         <Field label="Quản lý trực tiếp"><UserPicker users={users} exclude={editing ? [editing.id] : []} value={f.manager_id} onChange={set('manager_id')} placeholder="Không có" /></Field>
         <Field label="Vai trò">
-          <select className="input" value={f.role} onChange={set('role')}>
+          <select className="input" value={f.role} onChange={(e) => setF({ ...f, role: e.target.value, apps: e.target.value === 'guest' && !editing ? [] : f.apps })}>
             <option value="member">Thành viên</option>
             <option value="admin">Quản trị hệ thống</option>
+            <option value="guest">Tài khoản khách (đối tác, NPP…)</option>
           </select>
         </Field>
+        {f.role === 'guest' && (
+          <Field label="Hạn truy cập" hint="Tài khoản khách tự khoá sau ngày này; chỉ thấy nội dung được chia sẻ trực tiếp">
+            <input type="date" className="input" value={f.expires_at || ''} onChange={set('expires_at')} />
+          </Field>
+        )}
         <div className="span-2">
           <span className="field-label">Ứng dụng được sử dụng {f.role === 'admin' && <small className="muted">(quản trị viên dùng được tất cả)</small>}</span>
           <div className="app-checks">
@@ -146,6 +152,7 @@ export function MembersPage() {
   const tabs = [
     { value: 'all', label: `TẤT CẢ (${data?.counts.all ?? '…'})` },
     { value: 'admins', label: 'QUẢN TRỊ HỆ THỐNG' },
+    { value: 'guests', label: `TK KHÁCH (${data?.counts.guests ?? 0})` },
     ...(admin ? [{ value: 'disabled', label: 'VÔ HIỆU HOÁ' }, { value: 'logins', label: 'LỊCH SỬ ĐĂNG NHẬP' }] : []),
   ];
 
@@ -159,6 +166,7 @@ export function MembersPage() {
         {admin && (
           <Dropdown align="right" trigger={(o, t) => <button className="btn btn-success" onClick={t}>Thêm tài khoản <ChevronDown size={15} /></button>}>
             <MenuItem icon={UserPlus} onClick={() => setEdit({})}>Tạo tài khoản</MenuItem>
+            <MenuItem icon={UserPlus} onClick={() => setEdit({ guest: true })}>Tạo tài khoản khách</MenuItem>
             <MenuItem icon={FileDown} onClick={() => { window.location.href = api.url('/account/members/export'); }}>Xuất ra Excel</MenuItem>
             <MenuItem icon={FileUp} onClick={() => setImporting(true)}>Nhập từ Excel</MenuItem>
           </Dropdown>
@@ -176,6 +184,8 @@ export function MembersPage() {
                   <div className="small"><b>@{u.username}</b> · <i className="muted">{u.title || 'Chưa nhập chức danh'}</i></div>
                   <div className="mem-apps">
                     {u.role === 'admin' && <span className="text-red small">Quản trị cấp cao · </span>}
+                    {u.role === 'guest' && <span className="badge badge-gray">KHÁCH{u.expires_at ? ` · HẾT HẠN ${fmtDate(u.expires_at)}` : ''}</span>}
+                    {!!u.totp_enabled && <span className="small text-green" title="Đã bật bảo mật hai lớp">2FA · </span>}
                     {u.apps.map((k) => appByKey[k] && <span key={k} title={appByKey[k].name}><AppIcon app={appByKey[k]} size={16} /></span>)}
                   </div>
                 </div>
@@ -195,6 +205,12 @@ export function MembersPage() {
                   <MenuItem icon={Eye} onClick={() => { window.location.href = `/account/u/${u.id}`; }}>Xem hồ sơ</MenuItem>
                   {admin && <MenuItem icon={Pencil} onClick={() => setEdit(u)}>Sửa tài khoản</MenuItem>}
                   {admin && u.id !== user.id && <MenuItem icon={KeyRound} onClick={() => setResetFor(u)}>Đặt lại mật khẩu</MenuItem>}
+                  {admin && !!u.totp_enabled && <MenuItem icon={ShieldCheck} onClick={async () => {
+                    if (!window.confirm(`Tắt bảo mật hai lớp của ${u.name}? (dùng khi nhân viên mất điện thoại)`)) return;
+                    await api.post(`/account/2fa/reset/${u.id}`);
+                    toast('Đã đặt lại bảo mật hai lớp');
+                    refresh();
+                  }}>Đặt lại bảo mật 2 lớp</MenuItem>}
                   {admin && u.id !== user.id && (u.active
                     ? <MenuItem icon={UserX} danger onClick={() => setActive(u, false)}>Vô hiệu hoá</MenuItem>
                     : <MenuItem icon={UserCheck} onClick={() => setActive(u, true)}>Kích hoạt lại</MenuItem>)}
@@ -206,7 +222,7 @@ export function MembersPage() {
           {!data.items.length && <Empty icon={Users} title="Không có thành viên nào" />}
         </div>
       )}
-      {edit && <UserModal user={edit.id ? edit : null} onClose={() => { setEdit(null); if (params.get('edit')) setParams({}); }} onSaved={() => { setEdit(null); refresh(); }} />}
+      {edit && <UserModal user={edit.id ? edit : null} guest={!!edit.guest} onClose={() => { setEdit(null); if (params.get('edit')) setParams({}); }} onSaved={() => { setEdit(null); refresh(); }} />}
       {importing && <ImportModal onClose={() => setImporting(false)} onDone={refresh} />}
       {resetFor && <ResetPasswordModal ids={[resetFor.id]} title={`Đặt lại mật khẩu cho ${resetFor.name}`} onClose={() => setResetFor(null)} />}
     </div>

@@ -6,6 +6,10 @@ import officeRoutes from './routes/office.js';
 import weworkRoutes from './routes/wework.js';
 import accountRoutes from './routes/account.js';
 import requestRoutes from './routes/request.js';
+import webhookRoutes from './routes/webhooks.js';
+import hrmRoutes from './routes/hrm.js';
+import driveRoutes from './routes/drive.js';
+import chatRoutes from './routes/chat.js';
 import { requireModule } from './platform.js';
 
 const PUBLIC_API = new Set(['/api/health', '/api/auth/login', '/api/auth/logout']);
@@ -24,6 +28,10 @@ export function createApp() {
   app.route('/api', weworkRoutes);
   app.route('/api', accountRoutes);
   app.route('/api', requestRoutes);
+  app.route('/api', webhookRoutes);
+  app.route('/api', hrmRoutes);
+  app.route('/api', driveRoutes);
+  app.route('/api', chatRoutes);
   app.all('/api/*', (c) => c.json({ error: 'API không tồn tại' }, 404));
 
   app.onError((err, c) => {

@@ -227,7 +227,7 @@ export async function buildSeed() {
 
   // ---------- Account: quyền ứng dụng, nhóm người dùng, hồ sơ
   add("INSERT OR IGNORE INTO apps(key, enabled) VALUES ('office', 1), ('wework', 1), ('request', 1)");
-  add('INSERT OR IGNORE INTO app_access(app_key, user_id) SELECT a.key, u.id FROM apps a CROSS JOIN users u');
+  add("INSERT OR IGNORE INTO app_access(app_key, user_id) SELECT a.key, u.id FROM apps a CROSS JOIN users u WHERE u.role <> 'guest'");
   add("INSERT INTO user_groups(id, name, description) VALUES (1, 'Ban lãnh đạo', 'Giám đốc và các trưởng phòng'), (2, 'Văn thư - Hành chính', 'Tiếp nhận, cấp số và lưu trữ văn bản')");
   for (const k of ['gd', 'hr', 'kd', 'mkt', 'kt']) add('INSERT INTO user_group_members(group_id, user_id) VALUES (1, ?)', users[k]);
   for (const k of ['hr', 'nv4']) add('INSERT INTO user_group_members(group_id, user_id) VALUES (2, ?)', users[k]);
@@ -259,12 +259,65 @@ export async function buildSeed() {
   log('request', 1, users.nv1, 'created', 'Tạo đề xuất', datetimeOffset(-1));
   log('request', 2, users.nv2, 'created', 'Tạo đề xuất', datetimeOffset(-10));
   log('request', 2, users.kd, 'approved', 'Đã chấp thuận: Đồng ý', datetimeOffset(-9));
+
+  // ---------- HRM: hồ sơ nhân sự
+  const hr = [
+    ['gd', 'LDL001', 'Nam', '2015-03-01', 'Không xác định thời hạn', null, 'working'],
+    ['hr', 'LDL002', 'Nữ', '2018-06-15', 'Không xác định thời hạn', null, 'working'],
+    ['kd', 'LDL003', 'Nam', '2019-01-10', 'Không xác định thời hạn', null, 'working'],
+    ['mkt', 'LDL004', 'Nữ', '2020-09-01', 'Xác định thời hạn 36 tháng', dateOffset(20), 'working'],
+    ['kt', 'LDL005', 'Nữ', '2017-04-03', 'Không xác định thời hạn', null, 'working'],
+    ['nv1', 'LDL006', 'Nam', '2023-02-20', 'Xác định thời hạn 12 tháng', dateOffset(150), 'working'],
+    ['nv2', 'LDL007', 'Nữ', '2024-05-06', 'Xác định thời hạn 12 tháng', dateOffset(25), 'working'],
+    ['nv3', 'LDL008', 'Nam', dateOffset(-40), 'Thử việc', dateOffset(20), 'probation'],
+    ['nv4', 'LDL009', 'Nam', '2022-11-14', 'Xác định thời hạn 24 tháng', dateOffset(300), 'working'],
+  ];
+  for (const [k, code, gender, hire, ctype, cend, status] of hr) {
+    add(`INSERT INTO hr_profiles(user_id, employee_code, gender, hire_date, contract_type, contract_end, probation_end, work_status)
+      VALUES (?,?,?,?,?,?,?,?)`, users[k], code, gender, hire, ctype, cend, status === 'probation' ? dateOffset(20) : null, status);
+  }
+  add("INSERT OR REPLACE INTO settings(key, value) VALUES ('hrm_settings', ?)", JSON.stringify({ managers: [users.hr] }));
+
+  // ---------- Checkin: vài ngày chấm công gần đây (giờ VN = UTC+7)
+  const utcAt = (day, vnMinutes) => {
+    const m = vnMinutes - 7 * 60;
+    return `${day} ${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}:00`;
+  };
+  for (let d = 1; d <= 6; d++) {
+    const day = dateOffset(-d);
+    if (new Date(`${day}T00:00:00Z`).getUTCDay() === 0) continue;
+    for (const [k, inAt] of [['nv1', 8 * 60 + 25], ['nv2', 8 * 60 + 35 + d * 3], ['kd', 8 * 60 + 15], ['hr', 8 * 60 + 28]]) {
+      add('INSERT OR IGNORE INTO checkins(user_id, date, check_in_at, check_out_at) VALUES (?,?,?,?)', users[k], day,
+        utcAt(day, inAt), utcAt(day, 17 * 60 + 30 + d));
+    }
+  }
+
+  // ---------- Drive: tài liệu công ty & cá nhân
+  add("INSERT INTO drive_items(id, space, kind, name, owner_id) VALUES (1, 'company', 'folder', 'Quy chế - Chính sách', ?)", users.hr);
+  add("INSERT INTO drive_items(id, space, kind, name, owner_id) VALUES (2, 'company', 'folder', 'Biểu mẫu', ?)", users.hr);
+  add("INSERT INTO drive_items(id, space, kind, name, owner_id) VALUES (3, 'company', 'folder', 'Tài liệu bán hàng', ?)", users.kd);
+  add("INSERT INTO drive_items(id, space, kind, name, owner_id) VALUES (4, 'personal', 'folder', 'Khách hàng 2026', ?)", users.nv1);
+  add("INSERT INTO drive_shares(item_id, department_id, permission) VALUES (4, ?, 'view')", dep.kd);
+
+  // ---------- Message: kênh chung & tin nhắn mẫu
+  add("INSERT OR IGNORE INTO chat_channels(id, name, description, kind, created_by, last_message_at) VALUES (1, 'chung', 'Kênh trao đổi chung toàn công ty', 'public', ?, ?)", users.admin, datetimeOffset(0));
+  add("INSERT INTO chat_channels(id, name, description, kind, created_by, last_message_at) VALUES (2, 'kinh-doanh', 'Phòng Kinh doanh', 'private', ?, ?)", users.kd, datetimeOffset(0));
+  for (const k of ['kd', 'nv1', 'nv2', 'gd']) add('INSERT INTO chat_members(channel_id, user_id) VALUES (2, ?)', users[k]);
+  add('INSERT INTO chat_messages(channel_id, user_id, content, created_at) VALUES (1, ?, ?, ?)', users.hr, 'Chào mọi người, Chính sách nhân sự 2026 đã được ban hành trên Base Office, mọi người xem giúp nhé!', datetimeOffset(-1));
+  add('INSERT INTO chat_messages(channel_id, user_id, content, created_at) VALUES (1, ?, ?, ?)', users.gd, 'Cảm ơn chị Chi Lan. Các trưởng phòng phổ biến lại cho nhân viên trong tuần này.', datetimeOffset(-1));
+  add('INSERT INTO chat_messages(channel_id, user_id, content, created_at) VALUES (2, ?, ?, ?)', users.kd, '@demo em gửi báo giá cho NPP Hà Nam trước thứ 6 nhé.', datetimeOffset(0));
+
+  // ---------- Tài khoản khách (đối tác NPP) chỉ dùng Base Request
+  add(`INSERT INTO users(id, username, password_hash, name, email, title, role, color, expires_at) VALUES (11, 'npp.hanam', ?, 'NPP Hà Nam (khách)', 'npp.hanam@partner.vn', 'Nhà phân phối', 'guest', '#868e96', ?)`,
+    hash, dateOffset(90));
+  add("INSERT OR IGNORE INTO app_access(app_key, user_id) VALUES ('request', 11)");
   add("INSERT INTO notifications(user_id, actor_id, app, type, title, link) VALUES (?,?, 'wework', 'assigned', ?, '/wework')",
     users.nv1, users.mkt, 'Nguyễn Minh Trang đã giao cho bạn công việc "Thiết kế bộ nhận diện chiến dịch"');
   return S;
 }
 
-const TABLES = ['request_attachments', 'request_comments', 'request_stars', 'request_followers', 'request_approvers', 'requests',
+const TABLES = ['chat_messages', 'chat_members', 'chat_channels', 'drive_shares', 'drive_items', 'leave_quotas', 'checkins', 'hr_profiles',
+  'webhook_logs', 'webhooks', 'request_attachments', 'request_comments', 'request_stars', 'request_followers', 'request_approvers', 'requests',
   'request_group_stars', 'request_group_followers', 'request_group_approvers', 'notes', 'user_prefs', 'login_logs', 'app_access',
   'user_group_members', 'user_groups', 'notifications', 'activity_logs', 'custom_filters', 'goals', 'task_attachments', 'task_comments', 'task_checklist',
   'task_stars', 'task_followers', 'tasks', 'task_lists', 'project_members', 'projects', 'document_comments', 'document_views',

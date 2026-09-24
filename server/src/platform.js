@@ -7,6 +7,11 @@ export const MODULES = {
   office: 'Base Office',
   wework: 'Base Wework',
   request: 'Base Request',
+  checkin: 'Base Checkin',
+  timeoff: 'Base Timeoff',
+  hrm: 'Base HRM',
+  drive: 'Base Drive',
+  message: 'Base Message',
 };
 
 /** API path prefixes owned by each module (used to enforce app access). */
@@ -14,7 +19,8 @@ const PREFIXES = [
   ['/api/documents', 'office'], ['/api/office', 'office'],
   ['/api/tasks', 'wework'], ['/api/projects', 'wework'], ['/api/wework', 'wework'], ['/api/goals', 'wework'],
   ['/api/filters', 'wework'], ['/api/search', 'wework'],
-  ['/api/requests', 'request'], ['/api/request-groups', 'request'], ['/api/request', 'request'],
+  ['/api/requests', 'request'], ['/api/request-groups', 'request'], ['/api/request', 'request'], ['/api/webhooks', 'request'],
+  ['/api/checkin', 'checkin'], ['/api/timeoff', 'timeoff'], ['/api/hrm', 'hrm'], ['/api/drive', 'drive'], ['/api/chat', 'message'],
 ];
 
 export function moduleForPath(path) {

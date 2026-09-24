@@ -28,6 +28,14 @@ import RequestForm from './request/RequestForm.jsx';
 import RequestDetail from './request/RequestDetail.jsx';
 import { GroupsAdmin, GroupEditor, TemplatesPage, GroupHistory, RequestReports, RequestGuide } from './request/GroupsAdmin.jsx';
 import { useApp as useAppCtx } from './context.jsx';
+import { TwoFactorPage, SecuritySettingsPage } from './account/SecurityPages.jsx';
+import { WebhooksPage } from './request/Webhooks.jsx';
+import ModuleShell from './components/ModuleShell.jsx';
+import { HrmHome, HrmEmployees, HrmEmployee, HrmSettings } from './hrm/Hrm.jsx';
+import { CheckinHome, CheckinTeam, CheckinSettings } from './hrm/Checkin.jsx';
+import { TimeoffHome, TimeoffCalendar, TimeoffBalances } from './hrm/Timeoff.jsx';
+import DrivePage from './drive/Drive.jsx';
+import MessagePage from './message/Message.jsx';
 
 /** Guard a module route by the user's app access (Account → Ứng dụng). */
 function RequireApp({ app, children }) {
@@ -93,6 +101,8 @@ export default function App() {
         <Route path="departments" element={<DepartmentsPage />} />
         <Route path="audit" element={<AuditPage />} />
         <Route path="bulk-password" element={<BulkPasswordPage />} />
+        <Route path="2fa" element={<TwoFactorPage />} />
+        <Route path="security" element={<SecuritySettingsPage />} />
       </Route>
       <Route path="/request" element={<RequireApp app="request"><RequestLayout /></RequireApp>}>
         <Route index element={<RequestList />} />
@@ -103,12 +113,36 @@ export default function App() {
         <Route path="settings/bulk" element={<GroupsAdmin bulk />} />
         <Route path="settings/all-requests" element={<RequestList adminAll />} />
         <Route path="settings/history" element={<GroupHistory />} />
+        <Route path="settings/webhooks" element={<WebhooksPage />} />
         <Route path="settings/templates" element={<TemplatesPage />} />
         <Route path="settings/group/:id" element={<GroupEditor />} />
         <Route path=":id" element={<RequestDetail />} />
         <Route path=":id/edit" element={<RequestForm />} />
       </Route>
       <Route path="/admin" element={<Navigate to="/account/members" replace />} />
+      <Route path="/hrm" element={<RequireApp app="hrm"><ModuleShell app="hrm" /></RequireApp>}>
+        <Route index element={<HrmHome />} />
+        <Route path="employees" element={<HrmEmployees />} />
+        <Route path="employees/:id" element={<HrmEmployee />} />
+        <Route path="settings" element={<HrmSettings />} />
+      </Route>
+      <Route path="/checkin" element={<RequireApp app="checkin"><ModuleShell app="checkin" /></RequireApp>}>
+        <Route index element={<CheckinHome />} />
+        <Route path="team" element={<CheckinTeam />} />
+        <Route path="settings" element={<CheckinSettings />} />
+      </Route>
+      <Route path="/timeoff" element={<RequireApp app="timeoff"><ModuleShell app="timeoff" /></RequireApp>}>
+        <Route index element={<TimeoffHome />} />
+        <Route path="calendar" element={<TimeoffCalendar />} />
+        <Route path="balances" element={<TimeoffBalances />} />
+      </Route>
+      <Route path="/drive" element={<RequireApp app="drive"><ModuleShell app="drive" /></RequireApp>}>
+        <Route index element={<DrivePage />} />
+        <Route path=":space" element={<DrivePage />} />
+        <Route path="folder/:folderId" element={<DrivePage />} />
+      </Route>
+      <Route path="/message" element={<RequireApp app="message"><MessagePage /></RequireApp>} />
+      <Route path="/message/:channelId" element={<RequireApp app="message"><MessagePage /></RequireApp>} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );
