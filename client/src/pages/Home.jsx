@@ -11,6 +11,7 @@ import HomeChat from '../home/HomeChat.jsx';
 import HomeWeather from '../home/HomeWeather.jsx';
 import HomeImportant from '../home/HomeImportant.jsx';
 import PushCard from '../components/PushCard.jsx';
+import HomeQuote from '../home/HomeQuote.jsx';
 import { Avatar, Drawer, Empty } from '../components/ui.jsx';
 import { ECOSYSTEM, CATEGORIES, canOpen, AppIcon } from '../apps.jsx';
 import { fmtDate, timeAgo, cx } from '../utils.js';
@@ -136,6 +137,7 @@ export default function Home() {
           <div className="home2-greet">
             <div className="home2-date">{DAYS[now.getDay()]}, {fmtDate(now)}</div>
             <h1>{greeting(now.getHours())}, {user.name} 👋</h1>
+            <HomeQuote />
             {summary?.birthdays?.length > 0 && (
               <div className="home2-bday"><Cake size={15} /> Sinh nhật hôm nay: {summary.birthdays.map((b) => b.name).join(', ')} 🎉</div>
             )}

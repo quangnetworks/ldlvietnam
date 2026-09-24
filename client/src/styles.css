@@ -1760,3 +1760,22 @@ button.rpt-task:hover { background: var(--hover); }
 .mention-box > input { flex: 1; min-width: 0; }
 .mention-box.inline { align-items: center; }
 .hchat-compose .mention-box .input { border-radius: 20px; padding-left: 14px; }
+
+/* ---------- Câu nói truyền cảm hứng mỗi ngày (Home) ---------- */
+.home2-greet { flex: 1 1 420px; min-width: 0; }
+.home2-quote { position: relative; display: flex; align-items: flex-start; gap: 10px; margin: 12px 0 0; max-width: 640px; padding: 10px 38px 10px 14px;
+  border-radius: 14px; background: rgba(255, 255, 255, 0.1); border: 1px solid rgba(255, 255, 255, 0.16);
+  -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px); }
+.home2-quote-ico { flex: none; margin-top: 3px; opacity: 0.75; }
+.home2-quote-body { min-width: 0; animation: quote-in 0.4s var(--ease, ease-out); }
+.home2-quote blockquote { margin: 0; font-size: 15px; line-height: 1.5; font-style: italic; color: #fff; overflow-wrap: anywhere; }
+.home2-quote figcaption { margin-top: 3px; font-size: 12px; color: rgba(255, 255, 255, 0.72); letter-spacing: 0.2px; }
+.home2-quote-next { position: absolute; top: 8px; right: 8px; width: 26px; height: 26px; display: grid; place-items: center; border-radius: 50%;
+  border: 0; background: transparent; color: rgba(255, 255, 255, 0.65); cursor: pointer; transition: background 0.15s, color 0.15s, transform 0.3s; }
+.home2-quote-next:hover { background: rgba(255, 255, 255, 0.14); color: #fff; }
+.home2-quote-next:active { transform: rotate(180deg); }
+@keyframes quote-in { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+@media (max-width: 860px) {
+  .home2-quote { margin-top: 10px; padding: 9px 36px 9px 12px; }
+  .home2-quote blockquote { font-size: 14px; }
+}
