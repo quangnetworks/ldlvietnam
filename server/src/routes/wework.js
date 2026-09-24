@@ -1,5 +1,5 @@
 import { Hono } from 'hono';
-import { all, get, run, batch, logActivity, notify, getSetting, setSetting, markSeen } from '../db.js';
+import { all, get, run, batch, logActivity, notify, getSetting, setSetting, markSeen, findMentions } from '../db.js';
 import { requireAdmin, userDeptIds, inDeptSql } from '../auth.js';
 import { publicFileLink } from '../files.js';
 import { audit } from '../platform.js';
@@ -867,11 +867,7 @@ r.post('/tasks/:id/comments', async (c) => {
   const { lastId } = await run('INSERT INTO task_comments(task_id, user_id, content) VALUES (?,?,?)', t.id, user.id, content);
   const watchers = (await all('SELECT user_id FROM task_followers WHERE task_id = ?', t.id)).map((x) => x.user_id);
   // @mention: @tên_đăng_nhập (ô bình luận gợi ý người dùng khi gõ @)
-  const mentioned = [];
-  for (const m of content.matchAll(/@([\w.-]+)/g)) {
-    const u = await get('SELECT id FROM users WHERE lower(username) = lower(?) AND active = 1', m[1].replace(/[.-]+$/, ''));
-    if (u && u.id !== user.id && !mentioned.includes(u.id)) mentioned.push(u.id);
-  }
+  const mentioned = await findMentions(content, user.id);
   // người được nhắc tên được thêm vào người theo dõi để mở được công việc và nhận các cập nhật sau
   await batch(mentioned.map((uid) => ['INSERT OR IGNORE INTO task_followers(task_id, user_id) VALUES (?,?)', [t.id, uid]]));
   const snippet = content.replace(/\s+/g, ' ').slice(0, 80);

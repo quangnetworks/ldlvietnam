@@ -34,6 +34,17 @@ export function logActivity(entityType, entityId, userId, action, detail = null)
   );
 }
 
+/**
+ * Người được nhắc tên trong nội dung: "@tên_đăng_nhập" (không phân biệt hoa thường, bỏ dấu chấm / gạch cuối câu).
+ * Trả về id các tài khoản đang hoạt động, bỏ qua người viết.
+ */
+export async function findMentions(content, excludeId = null) {
+  const names = [...new Set([...String(content || '').matchAll(/@([\w.-]+)/g)].map((m) => m[1].replace(/[.-]+$/, '').toLowerCase()))].filter(Boolean);
+  if (!names.length) return [];
+  const rows = await all(`SELECT id FROM users WHERE active = 1 AND lower(username) IN (${names.map(() => '?').join(',')})`, ...names);
+  return rows.map((r) => r.id).filter((id) => id !== excludeId);
+}
+
 /** Người dùng đã mở nội dung (công việc, đề xuất, văn bản, cuộc trò chuyện) → thông báo trỏ tới đó coi như đã đọc. */
 export function markSeen(userId, link) {
   return run('UPDATE notifications SET is_read = 1 WHERE user_id = ? AND link = ? AND is_read = 0', userId, link);

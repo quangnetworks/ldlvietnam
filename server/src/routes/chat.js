@@ -1,6 +1,6 @@
 /** LDL Message: channels (public / private), direct messages, unread counters, attachments, @mentions. */
 import { Hono } from 'hono';
-import { all, get, run, batch, notify, markSeen } from '../db.js';
+import { all, get, run, batch, notify, markSeen, findMentions } from '../db.js';
 import { audit } from '../platform.js';
 import { badRequest, notFound, forbidden, toInt, idList, jsonBody, formBody, storeFiles, sendFile, removeFile } from '../util.js';
 import { publicFileLink } from '../files.js';
@@ -190,10 +190,14 @@ r.post('/chat/channels/:id/messages', async (c) => {
   await run('INSERT INTO chat_members(channel_id, user_id, last_read_id) VALUES (?,?,?) ON CONFLICT DO UPDATE SET last_read_id = excluded.last_read_id',
     ch.id, user.id, lastId);
   // Thông báo: nhắc tên (@username) hoặc tin nhắn 1-1
-  const mentioned = [];
-  for (const m of content.matchAll(/@([\w.]+)/g)) {
-    const u = await get('SELECT id FROM users WHERE username = ?', m[1]);
-    if (u) mentioned.push(u.id);
+  // chỉ nhắc được người xem được kênh (kênh riêng tư / 1-1: thành viên; kênh phòng ban: nhân sự phòng ban)
+  let mentioned = await findMentions(content, user.id);
+  if (mentioned.length && ch.kind !== 'public') {
+    const ok = ch.kind === 'department'
+      ? await all(`SELECT u.id FROM users u WHERE u.role <> 'guest' AND ${inDeptSql('u', '?')}`, ch.department_id, ch.department_id)
+      : await all('SELECT user_id AS id FROM chat_members WHERE channel_id = ?', ch.id);
+    const allowed = new Set(ok.map((x) => x.id));
+    mentioned = mentioned.filter((id) => allowed.has(id));
   }
   if (ch.kind === 'direct') {
     const peer = await get('SELECT user_id FROM chat_members WHERE channel_id = ? AND user_id <> ?', ch.id, user.id);

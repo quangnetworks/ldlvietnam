@@ -10,6 +10,7 @@ import { useFetch, useToast } from '../context.jsx';
 import { Avatar, Spinner, SafeHtml, FileChip, Modal, Field, Tabs, Empty } from '../components/ui.jsx';
 import { DOC_KINDS, fmtDate, fmtDateTime, timeAgo, cx } from '../utils.js';
 import { StatusBadge } from './DocList.jsx';
+import { MentionTextarea, MentionText } from '../components/Mention.jsx';
 
 function ApproveModal({ decision, onClose, onSubmit }) {
   const [comment, setComment] = useState('');
@@ -193,15 +194,15 @@ export default function DocDetail() {
                       <Avatar name={c.user_name} color={c.user_color} size={32} />
                       <div className="grow">
                         <div><b>{c.user_name}</b> <small className="muted">{timeAgo(c.created_at)}</small></div>
-                        <div className="pre">{c.content}</div>
+                        <div className="pre"><MentionText text={c.content} /></div>
                       </div>
                     </div>
                   ))}
                   {comments && !comments.length && <Empty icon={MessageSquare} title="Chưa có thảo luận" />}
                 </div>
                 <form className="comment-form" onSubmit={sendComment}>
-                  <textarea className="input" rows={2} value={comment} onChange={(e) => setComment(e.target.value)} placeholder="Viết bình luận..."
-                    onKeyDown={(e) => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) sendComment(e); }} />
+                  <MentionTextarea className="input" rows={2} value={comment} onChange={setComment} placeholder="Viết bình luận… gõ @ để nhắc tên đồng nghiệp"
+                    onSubmit={() => sendComment({ preventDefault() {} })} />
                   <button className="btn btn-primary" disabled={!comment.trim()}>Gửi</button>
                 </form>
               </div>

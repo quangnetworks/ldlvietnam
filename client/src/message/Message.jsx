@@ -9,6 +9,7 @@ import { ContactsButton, phoneHref } from '../components/Contact.jsx';
 import { parseDate, fmtDate, fileSize, cx } from '../utils.js';
 import FileViewer from '../components/FileViewer.jsx';
 import EmojiPicker, { insertAtCursor } from '../components/EmojiPicker.jsx';
+import { MentionTextarea, MentionText } from '../components/Mention.jsx';
 
 /** Enter để gửi: bỏ qua khi đang gõ dấu tiếng Việt (IME), khi giữ phím, hoặc Shift+Enter xuống dòng. */
 export function isSendKey(e) {
@@ -50,14 +51,19 @@ export function dayLabel(v) {
   return fmtDate(d);
 }
 
-/** Render text with @mentions and links highlighted (no HTML injection). */
-export function RichText({ text }) {
-  const parts = String(text || '').split(/(@[\w.]+|https?:\/\/[^\s]+)/g);
-  return parts.map((p, i) => {
-    if (p.startsWith('@')) return <span key={i} className="mention">{p}</span>;
-    if (/^https?:\/\//.test(p)) return <a key={i} href={p} target="_blank" rel="noopener noreferrer">{p}</a>;
-    return p;
-  });
+/** Tin nhắn: @tên_đăng_nhập hiển thị thành "@Họ tên" nổi bật, liên kết bấm được (không chèn HTML). */
+export const RichText = ({ text }) => <MentionText text={text} />;
+
+/** Người có thể được nhắc tên trong kênh: thành viên (riêng tư / 1-1), nhân sự phòng ban, hoặc mọi người (công khai). */
+export function mentionableUsers(channel, users) {
+  if (!channel) return users;
+  if (channel.kind === 'public') return users.filter((u) => u.role !== 'guest');
+  if (channel.kind === 'department') {
+    const d = String(channel.department_id);
+    return users.filter((u) => u.role !== 'guest' && (String(u.department_id) === d || String(u.extra_departments || '').split(',').includes(d)));
+  }
+  const ids = new Set((channel.members || []).map((m) => m.id));
+  return users.filter((u) => ids.has(u.id));
 }
 
 function NewChannel({ onClose }) {
@@ -332,8 +338,9 @@ function Conversation({ channelId, onActivity }) {
           <button type="button" className="icon-btn" title="Đính kèm tệp" onClick={() => fileRef.current.click()}><Paperclip size={18} /></button>
           <input ref={fileRef} type="file" hidden onChange={(e) => { setFile(e.target.files[0] || null); e.target.value = ''; }} />
           <EmojiPicker onPick={(em) => setText((t) => insertAtCursor(inputRef.current, t, em))} />
-          <textarea ref={inputRef} className="input grow" rows={1} value={text} placeholder={`Nhắn tin tới ${peer ? peer.name : `#${channel.name}`} · Enter để gửi, Shift+Enter xuống dòng`}
-            onChange={(e) => setText(e.target.value)} onKeyDown={(e) => { if (isSendKey(e)) { e.preventDefault(); if (!e.repeat) send(); } }} />
+          <MentionTextarea ref={inputRef} className="input grow" rows={1} value={text} placement="top" users={mentionableUsers(channel, users)}
+            placeholder={`Nhắn tin tới ${peer ? peer.name : `#${channel.name}`} · @ để nhắc tên · Enter để gửi`}
+            onChange={setText} onKeyDown={(e) => { if (isSendKey(e)) { e.preventDefault(); if (!e.repeat) send(); } }} />
           <button className="btn btn-primary" disabled={!text.trim() && !file} aria-label="Gửi"><Send size={16} /></button>
         </div>
       </form>

@@ -2,7 +2,7 @@
  * Nhắc tên trong bình luận: gõ "@" để hiện danh sách người dùng (lọc theo tên / tên đăng nhập),
  * chọn bằng chuột hoặc ↑ ↓ Enter / Tab → chèn "@tên_đăng_nhập ". MentionText hiển thị lại thành "@Họ tên" nổi bật.
  */
-import { forwardRef, useImperativeHandle, useMemo, useRef, useState } from 'react';
+import { forwardRef, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useApp } from '../context.jsx';
 import { Avatar } from './ui.jsx';
 import { cx } from '../utils.js';
@@ -16,7 +16,13 @@ function mentionAt(value, caret) {
   return m ? { start: caret - m[2].length - 1, query: m[2] } : null;
 }
 
-export const MentionTextarea = forwardRef(function MentionTextarea({ value, onChange, onSubmit, users: only, className, ...rest }, ref) {
+/**
+ * Ô nhập có gợi ý @nhắc tên. as="input" cho ô một dòng; placement="top" mở danh sách lên trên (ô soạn tin sát đáy màn hình).
+ * onKeyDown của nơi dùng vẫn được gọi khi danh sách gợi ý không xử lý phím (vd. Enter để gửi tin nhắn).
+ */
+export const MentionTextarea = forwardRef(function MentionTextarea({
+  value, onChange, onSubmit, users: only, className, as = 'textarea', placement = 'bottom', onKeyDown, ...rest
+}, ref) {
   const { users: all } = useApp();
   const users = only || all;
   const el = useRef(null);
@@ -38,13 +44,23 @@ export const MentionTextarea = forwardRef(function MentionTextarea({ value, onCh
     const caret = el.current.selectionStart;
     const text = `@${u.username} `;
     const next = value.slice(0, state.start) + text + value.slice(caret);
+    pendingCaret.current = state.start + text.length;
     onChange(next);
     setState(null);
-    requestAnimationFrame(() => { el.current.focus(); const p = state.start + text.length; el.current.setSelectionRange(p, p); });
   };
+  // Đặt con trỏ ngay sau tên vừa chèn trước khi trình duyệt nhận phím tiếp theo (gõ nhanh không bị lệch chữ)
+  const pendingCaret = useRef(null);
+  useLayoutEffect(() => {
+    if (pendingCaret.current == null || !el.current) return;
+    const p = pendingCaret.current;
+    pendingCaret.current = null;
+    el.current.focus();
+    el.current.setSelectionRange(p, p);
+  }, [value]);
+  const Tag = as;
   return (
-    <div className="mention-box">
-      <textarea ref={el} className={className} value={value} {...rest}
+    <div className={cx('mention-box', as === 'input' && 'inline')}>
+      <Tag ref={el} className={className} value={value} {...rest}
         onChange={(e) => update(e.target.value, e.target.selectionStart)}
         onClick={(e) => setState(mentionAt(value, e.currentTarget.selectionStart))}
         onBlur={() => setTimeout(() => setState(null), 150)}
@@ -55,10 +71,11 @@ export const MentionTextarea = forwardRef(function MentionTextarea({ value, onCh
             if ((e.key === 'Enter' || e.key === 'Tab') && !e.nativeEvent.isComposing) { e.preventDefault(); pick(list[active]); return; }
             if (e.key === 'Escape') { e.preventDefault(); setState(null); return; }
           }
-          if (e.key === 'Enter' && (e.ctrlKey || e.metaKey) && !e.nativeEvent.isComposing) { e.preventDefault(); onSubmit?.(); }
+          if (onSubmit && e.key === 'Enter' && (e.ctrlKey || e.metaKey) && !e.nativeEvent.isComposing) { e.preventDefault(); onSubmit(e); return; }
+          onKeyDown?.(e);
         }} />
       {state && list.length > 0 && (
-        <div className="mention-menu" role="listbox" aria-label="Chọn người để nhắc tên">
+        <div className={cx('mention-menu', placement === 'top' && 'top')} role="listbox" aria-label="Chọn người để nhắc tên">
           {list.map((u, i) => (
             <button type="button" key={u.id} role="option" aria-selected={i === active} className={cx('mention-item', i === active && 'active')}
               onMouseDown={(e) => { e.preventDefault(); pick(u); }} onMouseEnter={() => setActive(i)}>

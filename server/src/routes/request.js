@@ -1,5 +1,5 @@
 import { Hono } from 'hono';
-import { all, get, run, batch, logActivity, notify, markSeen } from '../db.js';
+import { all, get, run, batch, logActivity, notify, markSeen, findMentions } from '../db.js';
 import { requireAdmin } from '../auth.js';
 import {
   badRequest, notFound, forbidden, toInt, idList, paginate, jsonBody, formBody, storeFiles, removeFile, sendFile,
@@ -439,7 +439,13 @@ r.post('/requests/:id/comments', async (c) => {
   const { lastId } = await run('INSERT INTO request_comments(request_id, user_id, content) VALUES (?,?,?)', q.id, user.id, content.slice(0, 5000));
   const approvers = (await all('SELECT user_id FROM request_approvers WHERE request_id = ?', q.id)).map((x) => x.user_id);
   const watchers = (await all('SELECT user_id FROM request_followers WHERE request_id = ?', q.id)).map((x) => x.user_id);
-  await notify([q.creator_id, ...approvers, ...watchers], { actorId: user.id, app: APP, type: 'comment',
+  // @nhắc tên: người được nhắc thành người theo dõi (xem được đề xuất, nhận cập nhật sau) và nhận thông báo riêng
+  const mentioned = await findMentions(content, user.id);
+  await batch(mentioned.map((uid) => ['INSERT OR IGNORE INTO request_followers(request_id, user_id) VALUES (?,?)', [q.id, uid]]));
+  const snippet = content.replace(/\s+/g, ' ').slice(0, 80);
+  await notify(mentioned, { actorId: user.id, app: APP, type: 'mention',
+    title: `${user.name} đã nhắc đến bạn trong đề xuất "${q.title}": ${snippet}`, link: `/request/${q.id}` });
+  await notify([q.creator_id, ...approvers, ...watchers].filter((x) => !mentioned.includes(x)), { actorId: user.id, app: APP, type: 'comment',
     title: `${user.name} bình luận trong đề xuất "${q.title}"`, link: `/request/${q.id}` });
   await fireRequestEvent(c, 'request.commented', q.id, { comment: content.slice(0, 1000) });
   return c.json(await get(`${COMMENT_SELECT} WHERE c.id = ?`, lastId), 201);

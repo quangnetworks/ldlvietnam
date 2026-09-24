@@ -1,5 +1,5 @@
 import { Hono } from 'hono';
-import { all, get, run, batch, logActivity, notify, getSetting, setSetting, markSeen } from '../db.js';
+import { all, get, run, batch, logActivity, notify, getSetting, setSetting, markSeen, findMentions } from '../db.js';
 import { audit } from '../platform.js';
 import { requireAdmin, deptIn, userDeptIds, inDeptSql } from '../auth.js';
 import {
@@ -20,10 +20,11 @@ function visibilitySql(user) {
   return {
     sql: `(d.creator_id = ? OR d.issuer_id = ?
           OR EXISTS (SELECT 1 FROM document_approvers da WHERE da.document_id = d.id AND da.user_id = ?)
+          OR EXISTS (SELECT 1 FROM document_follows df WHERE df.document_id = d.id AND df.user_id = ?)
           OR (d.status IN ('issued','archived') AND (${user.role === 'guest' ? '0' : 'd.is_public'} = 1
               OR EXISTS (SELECT 1 FROM document_recipients dr WHERE dr.document_id = d.id
                          AND (dr.user_id = ? OR (dr.department_id IS NOT NULL AND ${dep.sql}))))))`,
-    params: [user.id, user.id, user.id, user.id, ...dep.params],
+    params: [user.id, user.id, user.id, user.id, user.id, ...dep.params],
   };
 }
 
@@ -470,7 +471,13 @@ r.post('/documents/:id/comments', async (c) => {
   if (!content) throw badRequest('Nội dung bình luận trống');
   const { lastId } = await run('INSERT INTO document_comments(document_id, user_id, content) VALUES (?,?,?)', id, user.id, content);
   const watchers = (await all('SELECT user_id FROM document_follows WHERE document_id = ?', id)).map((x) => x.user_id);
-  await notify([d.creator_id, ...watchers], {
+  // @nhắc tên: người được nhắc theo dõi văn bản (được xem để trao đổi) và nhận thông báo riêng
+  const mentioned = await findMentions(content, user.id);
+  await batch(mentioned.map((uid) => ['INSERT OR IGNORE INTO document_follows(document_id, user_id) VALUES (?,?)', [id, uid]]));
+  const snippet = content.replace(/\s+/g, ' ').slice(0, 80);
+  await notify(mentioned, { actorId: user.id, app: APP, type: 'mention',
+    title: `${user.name} đã nhắc đến bạn trong văn bản "${d.title}": ${snippet}`, link: `/office/doc/${id}` });
+  await notify([d.creator_id, ...watchers].filter((x) => !mentioned.includes(x)), {
     actorId: user.id, app: APP, type: 'comment',
     title: `${user.name} đã bình luận văn bản "${d.title}"`, link: `/office/doc/${id}`,
   });

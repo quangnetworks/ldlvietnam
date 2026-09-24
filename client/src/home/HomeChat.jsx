@@ -4,7 +4,8 @@ import { Send, Building2, Users, ExternalLink, MessagesSquare } from 'lucide-rea
 import { api, toFormData } from '../api.js';
 import { useApp, useToast } from '../context.jsx';
 import { Avatar, Spinner } from '../components/ui.jsx';
-import { hhmm, dayLabel, RichText, isSendKey, mergeMessages } from '../message/Message.jsx';
+import { hhmm, dayLabel, RichText, isSendKey, mergeMessages, mentionableUsers } from '../message/Message.jsx';
+import { MentionTextarea } from '../components/Mention.jsx';
 import EmojiPicker, { insertAtCursor } from '../components/EmojiPicker.jsx';
 import FileViewer from '../components/FileViewer.jsx';
 import { cx } from '../utils.js';
@@ -13,7 +14,7 @@ const POLL_MS = 4000;
 
 /** Khung chat nhóm trên Home: kênh toàn công ty và kênh phòng ban. */
 export default function HomeChat() {
-  const { user } = useApp();
+  const { user, users } = useApp();
   const toast = useToast();
   const [channels, setChannels] = useState(null);
   const [active, setActive] = useState(null);
@@ -135,7 +136,8 @@ export default function HomeChat() {
       </div>
       <form className="hchat-compose" onSubmit={send}>
         <EmojiPicker onPick={(em) => setText((t) => insertAtCursor(inputRef.current, t, em))} align="left" />
-        <input ref={inputRef} className="input" value={text} onChange={(e) => setText(e.target.value)} maxLength={5000}
+        <MentionTextarea as="input" ref={inputRef} className="input" value={text} onChange={setText} maxLength={5000} placement="top"
+          users={mentionableUsers(ch, users)}
           onKeyDown={(e) => { if (e.key === 'Enter' && (!isSendKey(e) || e.repeat)) e.preventDefault(); }}
           placeholder={ch ? `Nhắn tới ${ch.kind === 'department' ? ch.name : 'toàn công ty'}…` : 'Nhắn tin…'} />
         <button className="btn btn-primary" disabled={!text.trim() || sending} aria-label="Gửi"><Send size={15} /></button>

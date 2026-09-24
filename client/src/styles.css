@@ -1757,3 +1757,6 @@ button.rpt-task:hover { background: var(--hover); }
 .push-steps { margin: 0; padding-left: 22px; display: flex; flex-direction: column; gap: 6px; font-size: 14px; }
 .inline-ico { vertical-align: -2px; }
 .push-hint { color: var(--text-2); line-height: 1.5; padding: 8px 10px; border-radius: 10px; background: var(--bg); border: 1px dashed var(--line-2); }
+.mention-box > input { flex: 1; min-width: 0; }
+.mention-box.inline { align-items: center; }
+.hchat-compose .mention-box .input { border-radius: 20px; padding-left: 14px; }

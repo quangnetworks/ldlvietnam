@@ -75,6 +75,10 @@ Webapp nội bộ gồm 2 phân hệ, giao diện và chức năng mô phỏng *
 - **Kết quả công việc**: người thực hiện / người giao / quản lý dự án cập nhật kết quả cụ thể theo từng lần — nội dung văn bản, liên kết (mở trực tiếp), tệp (Word, Excel, PowerPoint, PDF, ảnh, video, âm thanh...); có thông báo cho người giao việc và người theo dõi, sửa / xoá, số kết quả hiển thị trên danh sách công việc.
 - **Xem tệp trực tiếp**: ảnh, video (tua được), âm thanh, PDF, văn bản / mã nguồn, CSV, Word (.docx), Excel (.xlsx, nhiều trang tính) xem ngay trong trình duyệt; mọi định dạng Office (doc, docx, xls, xlsx, ppt, pptx, odt...) còn xem được qua Microsoft Office Online / Google Viewer bằng liên kết tạm có chữ ký 15 phút (cần máy chủ truy cập được từ Internet).
 
+### Nhắc tên @ trong mọi bình luận
+- Gõ **@** trong bình luận công việc (Wework), thảo luận văn bản (Office), thảo luận đề xuất (Request), tin nhắn LDL Message và ô chat nhanh ở Trang chủ → danh sách gợi ý (lọc theo tên / tên đăng nhập, không cần dấu; ↑ ↓ Enter hoặc chạm để chọn). Nội dung hiển thị thành **@Họ tên** nổi bật.
+- Người được nhắc nhận thông báo riêng "… đã nhắc đến bạn …" (kèm thông báo đẩy) và **được thêm vào người theo dõi** để mở được công việc / đề xuất / văn bản đó (kể cả văn bản đang dự thảo). Trong chat chỉ nhắc được người xem được kênh (thành viên kênh riêng tư, nhân sự phòng ban).
+
 ### Bảo mật
 - **Bảo mật hai lớp (2FA)** theo chuẩn TOTP — quét mã QR bằng Google / Microsoft Authenticator; quản trị viên có thể đặt lại 2FA cho thành viên.
 - **Giới hạn truy cập theo dải IP** (IPv4, CIDR) — quản trị viên luôn được truy cập để tránh bị khoá ngoài.

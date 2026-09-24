@@ -10,6 +10,7 @@ import { STATUS, fieldDisplay } from './fields.jsx';
 import { StatusSteps } from './RequestForm.jsx';
 import GroupGuide from './GroupGuide.jsx';
 import FileViewer, { InlinePreview } from '../components/FileViewer.jsx';
+import { MentionTextarea, MentionText } from '../components/Mention.jsx';
 
 const DECIDE = {
   approve: { title: 'Chấp thuận đề xuất', btn: 'Chấp thuận', cls: 'btn-success', need: false },
@@ -106,17 +107,18 @@ export default function RequestDetail() {
                 <div className="comments">
                   {comments?.map((c) => (
                     <div key={c.id} className="comment"><Avatar name={c.user_name} color={c.user_color} size={30} />
-                      <div className="grow"><div><b>{c.user_name}</b> <small className="muted">{timeAgo(c.created_at)}</small></div><div className="pre">{c.content}</div></div></div>
+                      <div className="grow"><div><b>{c.user_name}</b> <small className="muted">{timeAgo(c.created_at)}</small></div><div className="pre"><MentionText text={c.content} /></div></div></div>
                   ))}
                   {comments && !comments.length && <Empty icon={MessageSquare} title="Chưa có thảo luận" />}
                 </div>
                 <form className="comment-form" onSubmit={async (e) => {
-                  e.preventDefault();
+                  e?.preventDefault?.();
                   if (!comment.trim()) return;
                   await api.post(`/requests/${id}/comments`, { content: comment });
                   setComment(''); reloadComments();
                 }}>
-                  <textarea className="input" rows={2} value={comment} onChange={(e) => setComment(e.target.value)} placeholder="Viết bình luận..." />
+                  <MentionTextarea className="input" rows={2} value={comment} onChange={setComment} placeholder="Viết bình luận… gõ @ để nhắc tên đồng nghiệp"
+                    onSubmit={(e) => e.target.form?.requestSubmit()} />
                   <button className="btn btn-primary" disabled={!comment.trim()}>Gửi</button>
                 </form>
               </>

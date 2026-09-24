@@ -710,3 +710,34 @@ test('opening a task / chat marks its notifications as read (keeps the app icon 
   await demo.post(`/chat/channels/${dm.id}/read`, {});
   assert.equal((await demo.get('/notifications?limit=1')).data.unread, before);
 });
+
+test('@mentions in request, document and chat comments: notify and grant access to read the item', async () => {
+  const demo = await login('demo');
+  const mt = await login('minhtrang');
+  const unread = async () => (await mt.get('/notifications?limit=50')).data;
+  // Đề xuất #1 (demo tạo): minhtrang chưa xem được → được nhắc tên → xem được + có thông báo "nhắc đến bạn"
+  const rid = (await demo.get('/requests')).data.items.find((q) => q.creator_id === demo.user.id).id;
+  assert.equal((await mt.get(`/requests/${rid}`)).status, 403);
+  assert.equal((await demo.post(`/requests/${rid}/comments`, { content: 'Nhờ @MinhTrang. xem giúp' })).status, 201);
+  assert.equal((await mt.get(`/requests/${rid}`)).status, 200);
+  assert.ok((await unread()).items.some((n) => n.type === 'mention' && n.link === `/request/${rid}`));
+  // Văn bản nháp: chỉ người tạo / người duyệt xem được → nhắc tên cấp quyền xem để trao đổi
+  const hr = await login('chilan');
+  const gd = await login('giamdoc');
+  const fd = new FormData(); fd.append('title', 'Dự thảo quy chế thưởng'); fd.append('approvers', String(gd.user.id));
+  const doc = (await hr.post('/documents', fd)).data;
+  assert.equal((await mt.get(`/documents/${doc.id}`)).status, 403);
+  await hr.post(`/documents/${doc.id}/comments`, { content: '@minhtrang góp ý phần truyền thông nhé' });
+  assert.equal((await mt.get(`/documents/${doc.id}`)).status, 200);
+  assert.ok((await unread()).items.some((n) => n.type === 'mention' && n.link === `/office/doc/${doc.id}`));
+  // Chat: kênh riêng tư chỉ nhắc được thành viên
+  const ch = (await demo.post('/chat/channels', { name: 'nhom-rieng', kind: 'private', members: [] })).data;
+  const before = (await unread()).items.filter((n) => n.link === `/message/${ch.id}`).length;
+  const m1 = new FormData(); m1.append('content', '@minhtrang ơi');
+  await demo.post(`/chat/channels/${ch.id}/messages`, m1);
+  assert.equal((await unread()).items.filter((n) => n.link === `/message/${ch.id}`).length, before);
+  const chung = (await demo.get('/chat/channels')).data.find((c) => c.kind === 'public');
+  const m2 = new FormData(); m2.append('content', 'Chào @minhtrang');
+  await demo.post(`/chat/channels/${chung.id}/messages`, m2);
+  assert.ok((await unread()).items.some((n) => n.type === 'mention' && n.link === `/message/${chung.id}`));
+});
