@@ -79,9 +79,9 @@ export default function App() {
         <Route index element={<TasksHome />} />
         <Route path="my" element={<MyTasksPage />} />
         <Route path="task/:id" element={<TaskPage />} />
-        <Route path="projects" element={<ProjectsPage kind="project" />} />
-        <Route path="departments" element={<ProjectsPage kind="department" />} />
-        <Route path="templates" element={<ProjectsPage kind="template" />} />
+        <Route path="projects" element={<ProjectsPage key="project" kind="project" />} />
+        <Route path="departments" element={<ProjectsPage key="department" kind="department" />} />
+        <Route path="templates" element={<ProjectsPage key="template" kind="template" />} />
         <Route path="project/:id" element={<ProjectPage />} />
         <Route path="members" element={<AccountMembers />} />
         <Route path="reports" element={<ReportsPage />} />

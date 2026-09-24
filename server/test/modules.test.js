@@ -530,3 +530,32 @@ test('goals: link related tasks, progress follows completed tasks; critical prio
   assert.ok((await demo.get('/tasks?status=urgent&scope=mine')).data.items.some((t) => t.id === b.id));
   assert.ok((await demo.get('/home/agenda')).data.important.some((t) => t.id === b.id));
 });
+
+test('project members: add people or whole departments, change role, remove; multi-department projects', async () => {
+  const admin = await login('admin');
+  const mkt = await login('minhtrang');
+  const demo = await login('demo');
+  const deps = (await admin.get('/departments')).data;
+  const kd = deps.find((d) => d.name === 'Phòng Kinh doanh');
+  const mk = deps.find((d) => d.name === 'Phòng Marketing');
+  // dự án phối hợp 2 phòng ban, thêm luôn nhân sự các phòng ban
+  const { data: p } = await mkt.post('/projects', { name: 'Ra mắt dòng sản phẩm mới', department_ids: [mk.id, kd.id], add_department_members: true });
+  assert.deepEqual(p.departments.map((d) => d.id).sort(), [kd.id, mk.id].sort());
+  assert.ok(p.members.some((m) => m.id === demo.user.id));
+  // thành viên thường không quản lý được thành viên
+  assert.equal((await demo.post(`/projects/${p.id}/members`, { user_ids: [admin.user.id] })).status, 403);
+  // xoá, thêm lại, đổi vai trò
+  assert.ok(!(await mkt.del(`/projects/${p.id}/members/${demo.user.id}`)).data.members.some((m) => m.id === demo.user.id));
+  const add = await mkt.post(`/projects/${p.id}/members`, { user_ids: [demo.user.id], role: 'member' });
+  assert.equal(add.data.added, 1);
+  const promoted = await mkt.put(`/projects/${p.id}/members/${demo.user.id}`, { role: 'manager' });
+  assert.equal(promoted.data.members.find((m) => m.id === demo.user.id).role, 'manager');
+  assert.equal((await mkt.del(`/projects/${p.id}/members/${mkt.user.id}`)).status, 400); // chủ sở hữu
+  // quản trị viên là thành viên thường vẫn quản lý được
+  await mkt.post(`/projects/${p.id}/members`, { user_ids: [admin.user.id], role: 'member' });
+  assert.equal((await admin.get(`/projects/${p.id}`)).data.my_role, 'manager');
+  assert.equal((await admin.put(`/projects/${p.id}/members/${demo.user.id}`, { role: 'member' })).status, 200);
+  // đổi phòng ban phối hợp
+  const upd = await mkt.put(`/projects/${p.id}`, { department_ids: [kd.id] });
+  assert.deepEqual(upd.data.departments.map((d) => d.id), [kd.id]);
+});

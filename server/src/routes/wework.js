@@ -24,7 +24,8 @@ async function projectRole(user, projectId) {
   if (!projectId) return null;
   const p = await get('SELECT owner_id FROM projects WHERE id = ?', projectId);
   if (!p) return null;
-  if (p.owner_id === user.id) return 'manager';
+  // quản trị viên luôn quản lý được mọi dự án (kể cả khi đang là thành viên thường của dự án)
+  if (p.owner_id === user.id || isAdmin(user)) return 'manager';
   const m = await get('SELECT role FROM project_members WHERE project_id = ? AND user_id = ?', projectId, user.id);
   if (m) return m.role;
   return isAdmin(user) ? 'manager' : null;
@@ -1054,6 +1055,8 @@ async function fullProject(id, user) {
   p.members = await all(`SELECT u.id, u.name, u.color, u.title, u.username, m.role FROM project_members m JOIN users u ON u.id = m.user_id
     WHERE m.project_id = ? ORDER BY m.role, u.name`, id);
   p.lists = await projectLists(id);
+  p.departments = await all(`SELECT d.id, d.name FROM project_departments pd JOIN departments d ON d.id = pd.department_id
+    WHERE pd.project_id = ? ORDER BY d.name`, id);
   p.my_role = await projectRole(user, id);
   return p;
 }
@@ -1092,6 +1095,11 @@ function parseProject(b, partial) {
   if (b.kind !== undefined) out.kind = b.kind === 'department' ? 'department' : 'project';
   if (b.status !== undefined) out.status = b.status === 'archived' ? 'archived' : 'active';
   if (b.department_id !== undefined) out.department_id = toInt(b.department_id);
+  // nhiều phòng ban phối hợp: phòng ban đầu tiên là phòng ban chính (department_id)
+  if (b.department_ids !== undefined) {
+    out.department_ids = idList(b.department_ids);
+    out.department_id = out.department_ids[0] ?? null;
+  }
   if (b.is_template !== undefined) out.is_template = b.is_template ? 1 : 0;
   return out;
 }
@@ -1115,6 +1123,8 @@ r.post('/projects', async (c) => {
   const user = c.get('user');
   const b = await jsonBody(c);
   const data = parseProject(b, false);
+  const depIds = data.department_ids || (data.department_id ? [data.department_id] : []);
+  delete data.department_ids;
   const tpl = toInt(b.template_id);
   if (tpl && !(await get('SELECT 1 FROM projects WHERE id = ? AND is_template = 1', tpl))) throw badRequest('Mẫu không tồn tại');
   const { lastId: pid } = await run(`INSERT INTO projects(name, kind, description, color, owner_id, department_id, group_name, is_template, start_date, end_date)
@@ -1122,7 +1132,12 @@ r.post('/projects', async (c) => {
   user.id, data.department_id ?? null, data.group_name ?? null, data.is_template ?? 0, data.start_date ?? null, data.end_date ?? null);
   const members = idList(b.members);
   const managers = idList(b.managers);
+  // tuỳ chọn: thêm toàn bộ nhân sự của các phòng ban phối hợp
+  if (b.add_department_members && depIds.length) {
+    for (const u of await departmentUsers(depIds)) if (!members.includes(u) && !managers.includes(u) && u !== user.id) members.push(u);
+  }
   await batch([
+    ...depIds.map((d) => ['INSERT OR IGNORE INTO project_departments(project_id, department_id) VALUES (?,?)', [pid, d]]),
     ["INSERT INTO project_members(project_id, user_id, role) VALUES (?,?, 'manager')", [pid, user.id]],
     ...members.map((m) => ["INSERT OR IGNORE INTO project_members(project_id, user_id, role) VALUES (?,?, 'member')", [pid, m]]),
     ...managers.map((m) => ["INSERT INTO project_members(project_id, user_id, role) VALUES (?,?, 'manager') ON CONFLICT DO UPDATE SET role = 'manager'", [pid, m]]),
@@ -1150,7 +1165,15 @@ r.post('/projects/:id/save-template', async (c) => {
 
 r.put('/projects/:id', async (c) => {
   const p = await managedProject(c, 'Chỉ quản lý dự án mới được chỉnh sửa');
-  const data = parseProject(await jsonBody(c), true);
+  const b = await jsonBody(c);
+  const data = parseProject(b, true);
+  if (data.department_ids) {
+    const ids = data.department_ids;
+    await batch([['DELETE FROM project_departments WHERE project_id = ?', [p.id]],
+      ...ids.map((d) => ['INSERT OR IGNORE INTO project_departments(project_id, department_id) VALUES (?,?)', [p.id, d]])]);
+    if (b.add_department_members && ids.length) await addMembers(c.get('user'), p, await departmentUsers(ids), 'member');
+  }
+  delete data.department_ids;
   const keys = Object.keys(data);
   if (keys.length) await run(`UPDATE projects SET ${keys.map((k) => `${k} = ?`).join(', ')} WHERE id = ?`, ...keys.map((k) => data[k]), p.id);
   await logActivity('project', p.id, c.get('user').id, 'updated', 'Cập nhật dự án');
@@ -1184,6 +1207,56 @@ r.put('/projects/:id/members', async (c) => {
   await notify(added, { actorId: user.id, app: APP, type: 'project',
     title: `${user.name} đã thêm bạn vào "${p.name}"`, link: `/wework/project/${p.id}` });
   return c.json(await fullProject(p.id, user));
+});
+
+/** Nhân sự đang làm việc thuộc các phòng ban (tính cả phòng ban kiêm nhiệm). */
+async function departmentUsers(depIds) {
+  if (!depIds.length) return [];
+  const ph = depIds.map(() => '?').join(',');
+  return (await all(`SELECT DISTINCT u.id FROM users u WHERE u.active = 1 AND u.role <> 'guest' AND (u.department_id IN (${ph})
+    OR EXISTS (SELECT 1 FROM user_departments ud WHERE ud.user_id = u.id AND ud.department_id IN (${ph})))`, ...depIds, ...depIds)).map((x) => x.id);
+}
+
+async function addMembers(actor, p, userIds, role) {
+  const existing = new Set((await all('SELECT user_id FROM project_members WHERE project_id = ?', p.id)).map((x) => x.user_id));
+  const valid = (await all(`SELECT id FROM users WHERE active = 1 AND id IN (${userIds.map(() => '?').join(',') || 'NULL'})`, ...userIds)).map((x) => x.id);
+  const added = valid.filter((u) => !existing.has(u));
+  await batch(added.map((u) => ['INSERT OR IGNORE INTO project_members(project_id, user_id, role) VALUES (?,?,?)', [p.id, u, role === 'manager' ? 'manager' : 'member']]));
+  if (added.length) {
+    await notify(added, { actorId: actor.id, app: APP, type: 'project', title: `${actor.name} đã thêm bạn vào "${p.name}"`, link: `/wework/project/${p.id}` });
+    await logActivity('project', p.id, actor.id, 'members', `Thêm ${added.length} thành viên`);
+  }
+  return added.length;
+}
+
+/** Thêm thành viên (theo người hoặc cả phòng ban). */
+r.post('/projects/:id/members', async (c) => {
+  const p = await managedProject(c, 'Chỉ quản lý dự án mới được thêm thành viên');
+  const b = await jsonBody(c);
+  const ids = [...idList(b.user_ids), ...(await departmentUsers(idList(b.department_ids)))];
+  if (!ids.length) throw badRequest('Chưa chọn thành viên hoặc phòng ban');
+  const added = await addMembers(c.get('user'), p, [...new Set(ids)], b.role);
+  return c.json({ added, project: await fullProject(p.id, c.get('user')) });
+});
+/** Đổi vai trò thành viên (quản lý / thành viên). */
+r.put('/projects/:id/members/:uid', async (c) => {
+  const p = await managedProject(c, 'Chỉ quản lý dự án mới được đổi vai trò');
+  const uid = toInt(c.req.param('uid'));
+  if (uid === p.owner_id) throw badRequest('Không đổi được vai trò của chủ sở hữu dự án');
+  const role = (await jsonBody(c)).role === 'manager' ? 'manager' : 'member';
+  const { changes } = await run('UPDATE project_members SET role = ? WHERE project_id = ? AND user_id = ?', role, p.id, uid);
+  if (!changes) throw notFound('Thành viên không thuộc dự án');
+  return c.json(await fullProject(p.id, c.get('user')));
+});
+/** Xoá thành viên khỏi dự án (không xoá được chủ sở hữu; công việc của họ vẫn giữ nguyên). */
+r.delete('/projects/:id/members/:uid', async (c) => {
+  const p = await managedProject(c, 'Chỉ quản lý dự án mới được xoá thành viên');
+  const uid = toInt(c.req.param('uid'));
+  if (uid === p.owner_id) throw badRequest('Không xoá được chủ sở hữu dự án');
+  await run('DELETE FROM project_members WHERE project_id = ? AND user_id = ?', p.id, uid);
+  const u = await get('SELECT name FROM users WHERE id = ?', uid);
+  await logActivity('project', p.id, c.get('user').id, 'members', `Xoá thành viên ${u?.name || ''}`);
+  return c.json(await fullProject(p.id, c.get('user')));
 });
 
 // ---------------- task lists (nhóm công việc)

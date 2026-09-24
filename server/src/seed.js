@@ -329,7 +329,7 @@ const TABLES = ['chat_messages', 'chat_members', 'chat_channels', 'drive_shares'
   'webhook_logs', 'webhooks', 'request_attachments', 'request_comments', 'request_stars', 'request_followers', 'request_approvers', 'requests',
   'request_group_stars', 'request_group_followers', 'request_group_approvers', 'notes', 'user_prefs', 'login_logs', 'app_access',
   'user_departments', 'user_group_members', 'user_groups', 'notifications', 'activity_logs', 'custom_filters', 'goals', 'task_attachments', 'task_results', 'task_comments', 'request_group_files', 'task_checklist',
-  'task_stars', 'task_followers', 'tasks', 'task_lists', 'project_members', 'projects', 'document_comments', 'document_views',
+  'task_stars', 'task_followers', 'tasks', 'task_lists', 'project_departments', 'project_members', 'projects', 'document_comments', 'document_views',
   'document_stars', 'document_follows', 'document_recipients', 'document_approvers', 'document_attachments', 'documents',
   'doc_categories', 'doc_folders', 'doc_types', 'users', 'departments'];
 

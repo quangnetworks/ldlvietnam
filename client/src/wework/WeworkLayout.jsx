@@ -131,8 +131,8 @@ export default function WeworkLayout() {
                 <>
                   {link('/wework', 'Công việc', Home)}
                   {link('/wework/my', 'Công việc của tôi', CheckSquare)}
-                  {link('/wework/projects', 'Dự án & phòng ban', FolderKanban)}
-                  {link('/wework/departments', 'Departments', Building2)}
+                  {link('/wework/projects', 'Dự án', FolderKanban)}
+                  {link('/wework/departments', 'Phòng ban', Building2)}
                   {link('/wework/members', 'Thành viên', Users)}
                   {meta.can_view_reports && link('/wework/reports', 'Báo cáo', BarChart3)}
                   <Link to="/office" className="ww-link"><FileText size={16} /> Văn bản (Office)</Link>
