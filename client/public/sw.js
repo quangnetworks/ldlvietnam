@@ -38,3 +38,15 @@ self.addEventListener('notificationclick', (event) => {
     await self.clients.openWindow(url);
   })());
 });
+
+// Trình duyệt tự làm mới đăng ký đẩy (hết hạn / đổi khoá) → đăng ký lại và báo máy chủ (cookie phiên được gửi kèm)
+self.addEventListener('pushsubscriptionchange', (event) => {
+  event.waitUntil((async () => {
+    const options = event.oldSubscription ? event.oldSubscription.options : null;
+    if (!options) return;
+    const sub = await self.registration.pushManager.subscribe(options);
+    await fetch('/api/push/subscribe', {
+      method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(sub.toJSON()),
+    });
+  })());
+});

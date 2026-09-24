@@ -1,5 +1,5 @@
 import { Hono } from 'hono';
-import { all, get, run, batch, logActivity, notify, getSetting, setSetting } from '../db.js';
+import { all, get, run, batch, logActivity, notify, getSetting, setSetting, markSeen } from '../db.js';
 import { audit } from '../platform.js';
 import { requireAdmin, deptIn, userDeptIds, inDeptSql } from '../auth.js';
 import {
@@ -437,6 +437,7 @@ async function requireViewable(c) {
 r.get('/documents/:id', async (c) => {
   const id = await requireViewable(c);
   await run("INSERT INTO document_views(document_id, user_id) VALUES (?,?) ON CONFLICT DO UPDATE SET viewed_at = datetime('now')", id, c.get('user').id);
+  await markSeen(c.get('user').id, `/office/doc/${id}`);
   return c.json(await fullDoc(id, c.get('user')));
 });
 

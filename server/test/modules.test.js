@@ -694,3 +694,19 @@ test('web push: subscribe a device, notifications are encrypted (RFC 8291) and V
     globalThis.fetch = realFetch;
   }
 });
+
+test('opening a task / chat marks its notifications as read (keeps the app icon badge accurate)', async () => {
+  const demo = await login('demo');
+  const gd = await login('giamdoc');
+  const before = (await demo.get('/notifications?limit=1')).data.unread;
+  const t = (await gd.post('/tasks', { title: 'Việc kiểm tra số chưa đọc', assignee_id: demo.user.id })).data;
+  assert.equal((await demo.get('/notifications?limit=1')).data.unread, before + 1);
+  await demo.get(`/tasks/${t.id}`);
+  assert.equal((await demo.get('/notifications?limit=1')).data.unread, before);
+  const dm = (await gd.post('/chat/direct', { user_id: demo.user.id })).data;
+  const fd = new FormData(); fd.append('content', 'Chào em');
+  await gd.post(`/chat/channels/${dm.id}/messages`, fd);
+  assert.equal((await demo.get('/notifications?limit=1')).data.unread, before + 1);
+  await demo.post(`/chat/channels/${dm.id}/read`, {});
+  assert.equal((await demo.get('/notifications?limit=1')).data.unread, before);
+});

@@ -1,6 +1,6 @@
 /** LDL Message: channels (public / private), direct messages, unread counters, attachments, @mentions. */
 import { Hono } from 'hono';
-import { all, get, run, batch, notify } from '../db.js';
+import { all, get, run, batch, notify, markSeen } from '../db.js';
 import { audit } from '../platform.js';
 import { badRequest, notFound, forbidden, toInt, idList, jsonBody, formBody, storeFiles, sendFile, removeFile } from '../util.js';
 import { publicFileLink } from '../files.js';
@@ -220,6 +220,7 @@ r.post('/chat/channels/:id/read', async (c) => {
   const last = toInt((await jsonBody(c)).last_id) || (await get('SELECT MAX(id) AS m FROM chat_messages WHERE channel_id = ?', ch.id)).m || 0;
   await run(`INSERT INTO chat_members(channel_id, user_id, last_read_id) VALUES (?,?,?)
     ON CONFLICT DO UPDATE SET last_read_id = MAX(last_read_id, excluded.last_read_id)`, ch.id, user.id, last);
+  await markSeen(user.id, `/message/${ch.id}`);
   return c.json({ ok: true });
 });
 

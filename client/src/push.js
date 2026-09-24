@@ -13,7 +13,32 @@ const toKey = (b64) => {
   return Uint8Array.from(atob(s + '==='.slice((s.length + 3) % 4)), (c) => c.charCodeAt(0));
 };
 
+export const isWindows = () => /Windows/i.test(navigator.userAgent);
+export const isMobileDevice = () => isIOS() || /Android|Mobi/i.test(navigator.userAgent);
+
+// ---------------------------------------------------------------- cài ứng dụng (Windows / macOS / Android: Edge, Chrome)
+let deferredInstall = null;
+const installListeners = new Set();
+const emitInstall = () => installListeners.forEach((fn) => fn(!!deferredInstall));
+/** Theo dõi khả năng hiện nút "Cài ứng dụng" (sự kiện beforeinstallprompt của Edge / Chrome). */
+export function onInstallChange(fn) {
+  installListeners.add(fn);
+  fn(!!deferredInstall);
+  return () => installListeners.delete(fn);
+}
+export async function promptInstall() {
+  if (!deferredInstall) return false;
+  const e = deferredInstall;
+  deferredInstall = null;
+  emitInstall();
+  e.prompt();
+  const { outcome } = await e.userChoice;
+  return outcome === 'accepted';
+}
+
 export function registerServiceWorker() {
+  window.addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); deferredInstall = e; emitInstall(); });
+  window.addEventListener('appinstalled', () => { deferredInstall = null; emitInstall(); });
   if (!('serviceWorker' in navigator)) return;
   window.addEventListener('load', () => { navigator.serviceWorker.register('/sw.js').catch(() => {}); });
 }
@@ -76,7 +101,15 @@ export async function disablePush() {
   } catch { /* bỏ qua */ }
 }
 
-/** Số trên biểu tượng ứng dụng (Màn hình chính iOS / Android / Dock). */
+/** Đồng bộ số trên biểu tượng với số thông báo chưa đọc trên máy chủ. */
+let lastRefresh = 0;
+export async function refreshBadge(force = false) {
+  if (!force && Date.now() - lastRefresh < 5000) return;
+  lastRefresh = Date.now();
+  try { setBadge((await api.get('/notifications', { limit: 1 })).unread || 0); } catch { /* bỏ qua */ }
+}
+
+/** Số trên biểu tượng ứng dụng (Màn hình chính iPhone, thanh taskbar Windows, Dock macOS, Android). */
 export function setBadge(n) {
   try {
     if (n > 0) navigator.setAppBadge?.(n)?.catch?.(() => {});

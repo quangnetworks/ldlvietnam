@@ -9,6 +9,7 @@ import { useApp, useFetch, useToast } from '../context.jsx';
 import { Avatar, Modal, Field, UserPicker, Spinner, Dropdown, MenuItem, Empty, Tabs, Pagination, MultiSelect } from '../components/ui.jsx';
 import { ContactButtons } from '../components/Contact.jsx';
 import PushCard from '../components/PushCard.jsx';
+import { refreshBadge } from '../push.js';
 import { MODULE_APPS, AppIcon } from '../apps.jsx';
 import { fmtDate, fmtDateTime, cx } from '../utils.js';
 import { LoginHistory } from './ProfilePages.jsx';
@@ -560,7 +561,7 @@ export function NotificationsPage() {
     <div className="acc-page wide">
       <div className="page-head">
         <h1>Thông báo</h1>
-        <button className="btn btn-sm" onClick={async () => { await api.put('/notifications/read-all'); reload(); }}>Đánh dấu tất cả đã đọc</button>
+        <button className="btn btn-sm" onClick={async () => { await api.put('/notifications/read-all'); reload(); refreshBadge(true); }}>Đánh dấu tất cả đã đọc</button>
       </div>
       <PushCard />
       <div className="row gap wrap">
@@ -570,7 +571,7 @@ export function NotificationsPage() {
       <div className="notif-full">
         {data?.items.map((n) => (
           <Link key={n.id} to={n.link || '#'} className={cx('notif-item', !n.is_read && 'unread')}
-            onClick={() => { if (!n.is_read) api.put(`/notifications/${n.id}/read`); }}>
+            onClick={() => { if (!n.is_read) api.put(`/notifications/${n.id}/read`).then(() => refreshBadge(true)); }}>
             <Avatar name={n.actor_name || 'Hệ thống'} color={n.actor_color} size={34} />
             <span className="grow"><span className="notif-title">{n.title}</span>
               <small className="muted">{NOTIF_APPS.find((x) => x[0] === n.app)?.[1] || 'Hệ thống'} · {fmtDateTime(n.created_at)}</small></span>

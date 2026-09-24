@@ -1,5 +1,5 @@
 import { Hono } from 'hono';
-import { all, get, run, batch, logActivity, notify, getSetting, setSetting } from '../db.js';
+import { all, get, run, batch, logActivity, notify, getSetting, setSetting, markSeen } from '../db.js';
 import { requireAdmin, userDeptIds, inDeptSql } from '../auth.js';
 import { publicFileLink } from '../files.js';
 import { audit } from '../platform.js';
@@ -592,6 +592,7 @@ async function fullTask(id, user) {
 
 r.get('/tasks/:id', async (c) => {
   const t = await viewableTask(c);
+  await markSeen(c.get('user').id, `/wework/task/${t.id}`);
   return c.json(await fullTask(t.id, c.get('user')));
 });
 

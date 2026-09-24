@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Bell, Grid3x3, FileText, CheckSquare, Settings, LogOut, User, KeyRound, CheckCheck, GitPullRequestArrow, Sun, Moon, Monitor, BellRing } from 'lucide-react';
+import { Bell, Grid3x3, FileText, CheckSquare, Settings, LogOut, User, KeyRound, CheckCheck, GitPullRequestArrow, Sun, Moon, Monitor, BellRing, Download } from 'lucide-react';
 import { api } from '../api.js';
 import { useApp } from '../context.jsx';
 import { Avatar, Dropdown, MenuItem } from './ui.jsx';
@@ -8,7 +8,8 @@ import { timeAgo, cx } from '../utils.js';
 import { ProfileModal } from '../admin/Profile.jsx';
 import { ECOSYSTEM, canOpen, AppIcon } from '../apps.jsx';
 import { getThemePref, setThemePref, onThemeChange, resolvedTheme } from '../theme.js';
-import { setBadge } from '../push.js';
+import { setBadge, promptInstall } from '../push.js';
+import { useInstallable } from './PushCard.jsx';
 
 const THEMES = [
   { key: 'light', label: 'Sáng', icon: Sun },
@@ -150,6 +151,7 @@ export function NotificationBell({ app, dark }) {
 export function UserMenu({ dark, showName = true }) {
   const { user, logout } = useApp();
   const [profile, setProfile] = useState(null);
+  const installable = useInstallable();
   const navigate = useNavigate();
   return (
     <>
@@ -173,7 +175,8 @@ export function UserMenu({ dark, showName = true }) {
         <div className="menu-section"><small className="muted">Giao diện</small><ThemeSwitch /></div>
         <MenuItem icon={User} onClick={() => navigate('/account')}>Tài khoản</MenuItem>
         <MenuItem icon={KeyRound} onClick={() => setProfile('password')}>Đổi mật khẩu</MenuItem>
-        <MenuItem icon={BellRing} onClick={() => navigate('/account/notifications')}>Thông báo đẩy trên điện thoại</MenuItem>
+        <MenuItem icon={BellRing} onClick={() => navigate('/account/notifications')}>Thông báo đẩy & ứng dụng</MenuItem>
+        {installable && <MenuItem icon={Download} onClick={() => promptInstall()}>Cài ứng dụng LDL</MenuItem>}
         {user.role === 'admin' && <MenuItem icon={Settings} onClick={() => navigate('/account/members')}>Quản trị hệ thống</MenuItem>}
         <MenuItem icon={LogOut} danger onClick={logout}>Đăng xuất</MenuItem>
       </Dropdown>

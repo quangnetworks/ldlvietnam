@@ -1,5 +1,5 @@
 import { Hono } from 'hono';
-import { all, get, run, batch, logActivity, notify } from '../db.js';
+import { all, get, run, batch, logActivity, notify, markSeen } from '../db.js';
 import { requireAdmin } from '../auth.js';
 import {
   badRequest, notFound, forbidden, toInt, idList, paginate, jsonBody, formBody, storeFiles, removeFile, sendFile,
@@ -201,6 +201,7 @@ async function fullRequest(id, user) {
 
 r.get('/requests/:id', async (c) => {
   const q = await viewable(c);
+  await markSeen(c.get('user').id, `/request/${q.id}`);
   return c.json(await fullRequest(q.id, c.get('user')));
 });
 

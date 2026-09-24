@@ -40,6 +40,7 @@ import { TimeoffHome, TimeoffCalendar, TimeoffBalances } from './hrm/Timeoff.jsx
 import DrivePage from './drive/Drive.jsx';
 import MessagePage from './message/Message.jsx';
 import MobileTabBar from './components/MobileNav.jsx';
+import { refreshBadge } from './push.js';
 
 /** Guard a module route by the user's app access (Account → Ứng dụng). */
 function RequireApp({ app, children }) {
@@ -73,6 +74,21 @@ export default function App() {
     navigator.serviceWorker.addEventListener('message', h);
     return () => navigator.serviceWorker.removeEventListener('message', h);
   }, [navigate]);
+  // Mở công việc / đề xuất / văn bản / cuộc trò chuyện → máy chủ đánh dấu thông báo liên quan đã đọc → cập nhật số trên biểu tượng
+  useEffect(() => {
+    if (!user) return undefined;
+    const t = setTimeout(() => refreshBadge(true), 1500);
+    return () => clearTimeout(t);
+  }, [user, location.pathname]);
+  // Số trên biểu tượng ứng dụng (iPhone / taskbar Windows): cập nhật khi mở lại ứng dụng
+  useEffect(() => {
+    if (!user) return undefined;
+    refreshBadge(true);
+    const h = () => { if (!document.hidden) refreshBadge(); };
+    document.addEventListener('visibilitychange', h);
+    window.addEventListener('focus', h);
+    return () => { document.removeEventListener('visibilitychange', h); window.removeEventListener('focus', h); };
+  }, [user]);
   if (loading) return <div className="center-screen"><Spinner /></div>;
   if (!user) {
     if (location.pathname !== '/login') return <Navigate to="/login" replace state={{ from: location.pathname + location.search }} />;

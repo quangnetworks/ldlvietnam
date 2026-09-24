@@ -34,6 +34,11 @@ export function logActivity(entityType, entityId, userId, action, detail = null)
   );
 }
 
+/** Người dùng đã mở nội dung (công việc, đề xuất, văn bản, cuộc trò chuyện) → thông báo trỏ tới đó coi như đã đọc. */
+export function markSeen(userId, link) {
+  return run('UPDATE notifications SET is_read = 1 WHERE user_id = ? AND link = ? AND is_read = 0', userId, link);
+}
+
 let notifyHook = null;
 /** Đăng ký xử lý thêm sau mỗi thông báo (vd. gửi thông báo đẩy tới điện thoại). */
 export const onNotify = (fn) => { notifyHook = fn; };
