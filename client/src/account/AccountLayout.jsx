@@ -30,7 +30,8 @@ export default function AccountLayout() {
   return (
     <div className="acc">
       <nav className="acc-rail">
-        <Link to="/" className="acc-rail-avatar" title="Trang chủ"><Avatar name={user.name} color={user.color} size={36} /></Link>
+        <Link to="/" className="rail-logo" title="Về trang chủ"><img src="/logo-192.png" alt="LDL" /></Link>
+        <Link to="/account" className="acc-rail-avatar" title="Tài khoản của tôi"><Avatar name={user.name} color={user.color} size={36} /></Link>
         <RailLink to="/account" end icon={UserCircle2} label="Cá nhân" />
         <RailLink to="/account/notifications" icon={Bell} label="Thông báo" />
         <RailLink to="/account/members" icon={Users} label="Thành viên" />

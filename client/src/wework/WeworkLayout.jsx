@@ -61,7 +61,7 @@ function QuickSearch() {
 }
 
 export default function WeworkLayout() {
-  const { user } = useApp();
+  const { user, company } = useApp();
   const [projects, setProjects] = useState([]);
   const [taskId, setTaskId] = useState(null);
   const [createDefaults, setCreateDefaults] = useState(null);
@@ -109,6 +109,10 @@ export default function WeworkLayout() {
     <WeworkCtx.Provider value={ctx}>
       <div className="wework">
         <aside className={cx('ww-side', mobileNav && 'open')}>
+          <Link to="/" className="brand side-brand" title="Về trang chủ">
+            <img className="brand-logo" src="/logo-192.png" alt="LDL" />
+            <span className="brand-name">{company}</span>
+          </Link>
           <div className="ww-user">
             <UserMenu dark />
             <div className="grow" />

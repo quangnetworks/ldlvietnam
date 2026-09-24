@@ -5,19 +5,12 @@ import { api } from '../api.js';
 import { useApp, useFetch, useToast } from '../context.jsx';
 import { NotificationBell, UserMenu, ThemeToggle } from '../components/shell.jsx';
 import HomeAgenda from '../home/HomeAgenda.jsx';
+import { BRANDS, applyBrand, getBrandIndex } from '../theme.js';
 import HomeChat from '../home/HomeChat.jsx';
 import { Avatar, Drawer, Empty } from '../components/ui.jsx';
 import { ECOSYSTEM, CATEGORIES, canOpen, AppIcon } from '../apps.jsx';
 import { fmtDate, timeAgo, cx } from '../utils.js';
 
-const BACKGROUNDS = [
-  'linear-gradient(135deg, #1b2a33 0%, #0e3b43 45%, #11242c 100%)',
-  'linear-gradient(135deg, #2b1d1d 0%, #5a1f1f 50%, #1e1414 100%)',
-  'linear-gradient(135deg, #1a1f36 0%, #283593 50%, #121630 100%)',
-  'linear-gradient(135deg, #1d2b1f 0%, #2e5e3a 50%, #142018 100%)',
-  'linear-gradient(135deg, #2d2d2d 0%, #444 50%, #1c1c1c 100%)',
-  'linear-gradient(135deg, #3b2412 0%, #8a4b14 50%, #26170c 100%)',
-];
 const DAYS = ['Chủ nhật', 'Thứ 2', 'Thứ 3', 'Thứ 4', 'Thứ 5', 'Thứ 6', 'Thứ 7'];
 
 function useNow() {
@@ -82,7 +75,13 @@ export default function Home() {
   const [summary] = useFetch(() => api.get('/home/summary'), []);
   const [agenda, reloadAgenda, agendaLoading] = useFetch(() => api.get('/home/agenda'), []);
   const [chat] = useFetch(() => ((apps || []).includes('message') ? api.get('/chat/unread') : Promise.resolve(null)), [apps]);
-  const bg = BACKGROUNDS[Number(prefs?.home_bg_index) || 0] || BACKGROUNDS[0];
+  const [brand, setBrand] = useState(getBrandIndex());
+  useEffect(() => { if (prefs?.home_bg_index != null) setBrand(applyBrand(prefs.home_bg_index)); }, [prefs]);
+  const pickBrand = async (i) => {
+    setBrand(applyBrand(i));
+    await api.put('/me/prefs', { home_bg_index: i });
+    reloadPrefs();
+  };
 
   const list = useMemo(() => ECOSYSTEM
     .filter((a) => cat === 'all' || a.cat === cat)
@@ -105,24 +104,25 @@ export default function Home() {
 
   return (
     <div className="home2">
-      <header className="home2-hero" style={{ background: bg }}>
+      <header className="home2-hero">
         <div className="home2-top">
           <Link to="/" className="brand"><img className="brand-logo" src="/logo-192.png" alt="LDL" /><span className="brand-name">{company}</span></Link>
           <div className="grow" />
           <Link to="/account/members" className="icon-btn on-dark" title="Thành viên"><Users size={18} /></Link>
           <button className="icon-btn on-dark" title="Ghi chú" onClick={() => setNotesOpen(true)}><StickyNote size={18} /></button>
-          <button className="icon-btn on-dark" title="Đổi hình nền" onClick={() => setBgOpen((o) => !o)}><Palette size={18} /></button>
+          <button className="icon-btn on-dark" title="Màu thương hiệu" onClick={() => setBgOpen((o) => !o)}><Palette size={18} /></button>
           <ThemeToggle dark />
           <NotificationBell app="home" dark />
           <UserMenu dark />
         </div>
         {bgOpen && (
           <div className="bg-picker">
-            <b>Chọn hình nền</b>
+            <b>Màu thương hiệu</b>
+            <small className="muted">Áp dụng cho Home và thanh điều hướng của mọi phân hệ</small>
             <div className="row gap">
-              {BACKGROUNDS.map((b, i) => (
-                <button key={i} className={cx('bg-swatch', bg === b && 'active')} style={{ background: b }} aria-label={`Nền ${i + 1}`}
-                  onClick={async () => { await api.put('/me/prefs', { home_bg_index: i }); reloadPrefs(); }} />
+              {BRANDS.map((b, i) => (
+                <button key={b.name} className={cx('bg-swatch', brand === i && 'active')} style={{ background: b.grad }} title={b.name} aria-label={b.name}
+                  onClick={() => pickBrand(i)} />
               ))}
             </div>
           </div>

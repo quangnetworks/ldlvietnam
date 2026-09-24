@@ -19,6 +19,18 @@
         var t = localStorage.getItem('ldl_theme') || 'system';
         if (t === 'system') t = matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
         document.documentElement.dataset.theme = t;
+        var brands = [
+          ['linear-gradient(135deg, #1b2a33 0%, #0e3b43 45%, #11242c 100%)', '#10252c', '#173239', '#1d3e46'],
+          ['linear-gradient(135deg, #2b1d1d 0%, #5a1f1f 50%, #1e1414 100%)', '#261616', '#341d1d', '#442424'],
+          ['linear-gradient(135deg, #1a1f36 0%, #283593 50%, #121630 100%)', '#161a31', '#1f2546', '#283060'],
+          ['linear-gradient(135deg, #1d2b1f 0%, #2e5e3a 50%, #142018 100%)', '#152219', '#1c2f22', '#243d2c'],
+          ['linear-gradient(135deg, #2d2d2d 0%, #444 50%, #1c1c1c 100%)', '#1f1f1f', '#2a2a2a', '#363636'],
+          ['linear-gradient(135deg, #3b2412 0%, #8a4b14 50%, #26170c 100%)', '#27180c', '#352112', '#452b17']
+        ];
+        var b = brands[Number(localStorage.getItem('ldl_brand')) || 0] || brands[0];
+        var st = document.documentElement.style;
+        st.setProperty('--brand-grad', b[0]); st.setProperty('--brand-side', b[1]);
+        st.setProperty('--brand-hover', b[2]); st.setProperty('--brand-active', b[3]);
       } catch (e) {}
     </script>
     <title>Công ty LDL Việt Nam</title>

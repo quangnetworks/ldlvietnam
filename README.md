@@ -12,6 +12,8 @@ Webapp nội bộ gồm 2 phân hệ, giao diện và chức năng mô phỏng *
 
 ### Giao diện sáng / tối
 - Mọi phân hệ hỗ trợ giao diện **Sáng**, **Tối** hoặc **Theo hệ thống** — chọn trong menu tài khoản (góc phải trên) hoặc nút mặt trời / mặt trăng ở Home. Lựa chọn được nhớ trên trình duyệt và đồng bộ theo tài khoản.
+- **Màu thương hiệu** (nút bảng màu ở Home, 6 lựa chọn): áp cho Home, thanh trên cùng, thanh bên và rail của mọi phân hệ, trang đăng nhập.
+- Bấm **logo / tên công ty** ở bất kỳ phân hệ nào để về trang chủ.
 
 ### Tài khoản (Account) — `/account` — nền tảng cho mọi phân hệ
 - Hồ sơ cá nhân: thông tin liên hệ, quản lý trực tiếp, người báo cáo trực tiếp, nhóm, học vấn, kinh nghiệm, giải thưởng; đổi mật khẩu, **ảnh đại diện** (tự cắt vuông, hiển thị trên toàn hệ thống; quản trị viên đổi được cho từng thành viên), màu hiển thị, lịch sử đăng nhập.

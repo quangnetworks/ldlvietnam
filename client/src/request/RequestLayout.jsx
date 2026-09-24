@@ -28,7 +28,7 @@ function Rail() {
   );
   return (
     <nav className="rq-rail">
-      <Link to="/" title="Trang chủ LDL"><img src="/logo-192.png" alt="LDL" className="rq-rail-logo" /></Link>
+      <Link to="/" title="Về trang chủ"><img src="/logo-192.png" alt="LDL" className="rq-rail-logo" /></Link>
       {link('/request', Home, 'Danh sách đề xuất', true)}
       <Link to="/account/notifications" className="rq-rail-link" title="Thông báo"><Bell size={20} /></Link>
       {link('/request/reports', BarChart3, 'Báo cáo')}
