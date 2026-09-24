@@ -102,7 +102,7 @@ r.get('/users', async (c) => {
   const qs = c.req.query();
   // Tài khoản khách chỉ thấy thông tin tối thiểu (tên) để chọn người nhận / người duyệt
   if (c.get('user').role === 'guest') {
-    return c.json(await all("SELECT u.id, u.name, u.username, u.color, u.title, u.role FROM users u WHERE u.active = 1 ORDER BY u.name COLLATE NOCASE"));
+    return c.json(await all("SELECT u.id, u.name, u.username, u.color, u.title, u.role, u.avatar_version FROM users u WHERE u.active = 1 ORDER BY u.name COLLATE NOCASE"));
   }
   const q = `%${(qs.q || '').trim()}%`;
   const includeInactive = qs.all === '1' && c.get('user').role === 'admin';

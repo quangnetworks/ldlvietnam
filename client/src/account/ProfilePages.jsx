@@ -5,6 +5,7 @@ import { api } from '../api.js';
 import { useApp, useFetch, useToast } from '../context.jsx';
 import { Avatar, Spinner, Field, Pagination } from '../components/ui.jsx';
 import { fmtDate, fmtDateTime } from '../utils.js';
+import AvatarEditor from '../components/AvatarEditor.jsx';
 
 const SECTIONS = [
   { key: 'education', label: 'Học vấn', icon: GraduationCap, title: 'Bằng cấp / chuyên ngành', place: 'Trường' },
@@ -31,7 +32,7 @@ export function ProfileView() {
   const { user } = useApp();
   const navigate = useNavigate();
   const uid = id ? Number(id) : user.id;
-  const [p, , loading, error] = useFetch(() => api.get(`/account/profile/${uid}`), [uid]);
+  const [p, reload, loading, error] = useFetch(() => api.get(`/account/profile/${uid}`), [uid]);
   if (error) return <div className="acc-page"><div className="alert alert-error">{error.message}</div></div>;
   if (loading && !p) return <div className="acc-page"><Spinner /></div>;
   const profile = parseProfile(p.profile);
@@ -46,7 +47,7 @@ export function ProfileView() {
       </div>
       <div className="profile">
         <div className="profile-top">
-          <Avatar name={p.name} color={p.color} size={100} />
+          <AvatarEditor userId={p.id} name={p.name} color={p.color} size={100} onChanged={reload} />
           <div className="grow">
             <h1>{p.name} {!p.active && <span className="badge badge-gray">VÔ HIỆU HOÁ</span>}</h1>
             <div className="muted">{p.title || 'Chưa nhập chức danh'}{p.role === 'admin' && <span className="text-red"> · Quản trị hệ thống</span>}</div>
@@ -214,12 +215,20 @@ export function ColorPage() {
   };
   return (
     <div className="acc-page narrow">
-      <h1 className="acc-title">Đổi màu hiển thị</h1>
-      <p className="muted">Màu nền ảnh đại diện của bạn trên toàn hệ thống.</p>
-      <div className="row gap"><Avatar name={user.name} color={user.color} size={72} />
-        <div className="color-row">{COLORS.map((c) => (
-          <button key={c} className={`color-dot lg ${user.color === c ? 'active' : ''}`} style={{ background: c }} onClick={() => pick(c)} aria-label={c} />
-        ))}</div>
+      <h1 className="acc-title">Ảnh đại diện & màu hiển thị</h1>
+      <p className="muted">Ảnh đại diện hiển thị cạnh tên bạn trên toàn hệ thống (Office, Wework, Request, Message...). Nếu chưa có ảnh, hệ thống hiển thị chữ viết tắt trên nền màu bạn chọn.</p>
+      <div className="card">
+        <div className="row gap wrap" style={{ alignItems: 'flex-start' }}>
+          <AvatarEditor userId={user.id} name={user.name} color={user.color} size={96} />
+          <div className="grow">
+            <b>Ảnh đại diện</b>
+            <p className="muted small">Bấm biểu tượng máy ảnh để tải ảnh lên (JPG, PNG, WEBP, GIF). Ảnh được cắt vuông và thu nhỏ tự động.</p>
+            <b>Màu nền chữ viết tắt</b>
+            <div className="color-row mt">{COLORS.map((c) => (
+              <button key={c} className={`color-dot lg ${user.color === c ? 'active' : ''}`} style={{ background: c }} onClick={() => pick(c)} aria-label={c} />
+            ))}</div>
+          </div>
+        </div>
       </div>
     </div>
   );

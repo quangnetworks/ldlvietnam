@@ -10,6 +10,7 @@ import { Avatar, Modal, Field, UserPicker, Spinner, Dropdown, MenuItem, Empty, T
 import { MODULE_APPS, AppIcon } from '../apps.jsx';
 import { fmtDate, fmtDateTime, cx } from '../utils.js';
 import { LoginHistory } from './ProfilePages.jsx';
+import AvatarEditor from '../components/AvatarEditor.jsx';
 
 const appByKey = Object.fromEntries(MODULE_APPS.map((a) => [a.module, a]));
 
@@ -38,6 +39,12 @@ function UserModal({ user: editing, guest = false, onClose, onSaved }) {
     <Modal title={editing ? `Sửa tài khoản @${editing.username}` : 'Tạo tài khoản'} onClose={onClose} width={680}
       footer={<><button className="btn" onClick={onClose}>Hủy</button><button className="btn btn-success" onClick={save}>Lưu</button></>}>
       {err && <div className="alert alert-error">{err}</div>}
+      {editing && (
+        <div className="row gap" style={{ marginBottom: 14 }}>
+          <AvatarEditor userId={editing.id} name={editing.name} color={editing.color} size={64} />
+          <small className="muted">Bấm biểu tượng máy ảnh để đổi ảnh đại diện của thành viên (lưu ngay, không cần bấm Lưu).</small>
+        </div>
+      )}
       <div className="form-grid">
         <Field label="Tên đăng nhập" required><input className="input" disabled={!!editing} value={f.username} onChange={set('username')} /></Field>
         <Field label={editing ? 'Mật khẩu mới (bỏ trống nếu không đổi)' : 'Mật khẩu'} required={!editing}>

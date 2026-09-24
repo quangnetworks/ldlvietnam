@@ -54,10 +54,22 @@ export function AppProvider({ children }) {
     setUser(null);
   };
 
+  // Tra ảnh đại diện theo id, hoặc theo tên khi tên là duy nhất (nhiều API chỉ trả về tên người dùng)
+  const avatarIndex = useMemo(() => {
+    const byId = new Map();
+    const byName = new Map();
+    for (const u of [...users, ...(user ? [user] : [])]) {
+      if (!(u.avatar_version > 0)) continue;
+      byId.set(u.id, u);
+      byName.set(u.name, byName.has(u.name) && byName.get(u.name).id !== u.id ? null : u);
+    }
+    return { byId, byName };
+  }, [users, user]);
+
   const value = useMemo(
-    () => ({ user, setUser, company, setCompany, apps, loading, login, logout, users, departments, loadDirectory, refreshMe }),
+    () => ({ user, setUser, company, setCompany, apps, loading, login, logout, users, departments, loadDirectory, refreshMe, avatarIndex }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [user, company, apps, loading, users, departments]
+    [user, company, apps, loading, users, departments, avatarIndex]
   );
   return (
     <AppCtx.Provider value={value}>

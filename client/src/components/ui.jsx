@@ -3,14 +3,31 @@ import { createPortal } from 'react-dom';
 import { X, ChevronLeft, ChevronRight, Check, Search, Bold, Italic, Underline, List, ListOrdered } from 'lucide-react';
 import DOMPurify from 'dompurify';
 import { initials, fileIcon, fileSize, cx } from '../utils.js';
+import { useApp } from '../context.jsx';
 
-export function Avatar({ name, color, size = 28, title }) {
+export function avatarUrl(id, version) {
+  return `/api/account/users/${id}/avatar?v=${version}`;
+}
+
+/**
+ * Ảnh đại diện: dùng ảnh đã tải lên nếu có (tra theo `uid`, hoặc theo tên nếu tên là duy nhất), ngược lại hiện chữ viết tắt.
+ * `src` dùng để xem trước ảnh chưa lưu.
+ */
+export function Avatar({ name, color, size = 28, title, uid, src }) {
+  const idx = useApp()?.avatarIndex;
+  const [broken, setBroken] = useState('');
+  const hit = uid != null ? idx?.byId.get(uid) : idx?.byName.get(name);
+  const url = src || (hit ? avatarUrl(hit.id, hit.avatar_version) : '');
+  const style = { width: size, height: size, fontSize: Math.max(10, size * 0.4), background: color || '#adb5bd' };
+  if (url && broken !== url) {
+    return (
+      <span className="avatar has-img" title={title ?? name} style={style}>
+        <img src={url} alt="" loading="lazy" onError={() => setBroken(url)} />
+      </span>
+    );
+  }
   return (
-    <span
-      className="avatar"
-      title={title ?? name}
-      style={{ width: size, height: size, fontSize: Math.max(10, size * 0.4), background: color || '#adb5bd' }}
-    >
+    <span className="avatar" title={title ?? name} style={style}>
       {initials(name)}
     </span>
   );

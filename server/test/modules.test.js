@@ -200,3 +200,31 @@ test('Message: public channel, private channel membership, direct message, unrea
   assert.equal(msgs.at(-1).content, 'Chào @duylinh, gửi em file thiết kế nhé');
   assert.ok((await mkt.get('/notifications')).data.items.some((n) => n.app === 'message'));
 });
+
+test('avatar: upload own / by admin, type check, serve, delete', async () => {
+  const png = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1, 2, 3, 4]);
+  const form = (bytes, type) => { const fd = new FormData(); fd.append('files', new File([bytes], 'a.png', { type })); return fd; };
+  const admin = await login('admin');
+  const demo = await login('phuonglinh');
+  const me = demo.user.id;
+  // chỉ chính chủ hoặc admin
+  assert.equal((await demo.post(`/account/users/${admin.user.id}/avatar`, form(png, 'image/png'))).status, 403);
+  // giả mạo định dạng (HTML khai báo là PNG)
+  assert.equal((await demo.post(`/account/users/${me}/avatar`, form(new TextEncoder().encode('<html>'), 'image/png'))).status, 400);
+  const up = await demo.post(`/account/users/${me}/avatar`, form(png, 'image/png'));
+  assert.equal(up.status, 200);
+  assert.equal(up.data.avatar_version, 1);
+  const img = await admin.get(`/account/users/${me}/avatar?v=1`);
+  assert.equal(img.status, 200);
+  assert.equal(img.headers.get('content-type'), 'image/png');
+  assert.match(img.headers.get('cache-control'), /immutable/);
+  const dir = await admin.get('/users');
+  assert.equal(dir.data.find((u) => u.id === me).avatar_version, 1);
+  // admin đổi ảnh cho thành viên
+  assert.equal((await admin.post(`/account/users/${me}/avatar`, form(png, 'image/png'))).data.avatar_version, 2);
+  assert.equal((await demo.del(`/account/users/${me}/avatar`)).status, 200);
+  assert.equal((await admin.get(`/account/users/${me}/avatar?v=2`)).status, 404);
+  assert.equal((await admin.get('/users')).data.find((u) => u.id === me).avatar_version, -2);
+  // tải lại ảnh sau khi xoá dùng phiên bản mới (không trùng cache cũ)
+  assert.equal((await demo.post(`/account/users/${me}/avatar`, form(png, 'image/png'))).data.avatar_version, 3);
+});

@@ -10,7 +10,7 @@ Webapp nội bộ gồm 2 phân hệ, giao diện và chức năng mô phỏng *
 - Đồng hồ, lời chào, việc cần làm (đề xuất / văn bản chờ duyệt, công việc quá hạn), sinh nhật, thông báo toàn công ty, ghi chú cá nhân, đổi hình nền.
 
 ### Tài khoản (Account) — `/account` — nền tảng cho mọi phân hệ
-- Hồ sơ cá nhân: thông tin liên hệ, quản lý trực tiếp, người báo cáo trực tiếp, nhóm, học vấn, kinh nghiệm, giải thưởng; đổi mật khẩu, màu hiển thị, lịch sử đăng nhập.
+- Hồ sơ cá nhân: thông tin liên hệ, quản lý trực tiếp, người báo cáo trực tiếp, nhóm, học vấn, kinh nghiệm, giải thưởng; đổi mật khẩu, **ảnh đại diện** (tự cắt vuông, hiển thị trên toàn hệ thống; quản trị viên đổi được cho từng thành viên), màu hiển thị, lịch sử đăng nhập.
 - Thành viên: tìm kiếm, tab Tất cả / Quản trị hệ thống / Vô hiệu hoá / Lịch sử đăng nhập; tạo, sửa, vô hiệu hoá, đặt lại mật khẩu; **nhập / xuất Excel (CSV)**.
 - Nhóm người dùng, phòng ban; **Quản lý ứng dụng**: bật/tắt từng ứng dụng và phân quyền sử dụng theo tài khoản (được kiểm tra ở cả API).
 - Chỉnh sửa công ty, lịch sử hệ thống (audit), đổi mật khẩu hàng loạt.

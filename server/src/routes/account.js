@@ -2,7 +2,7 @@ import { Hono } from 'hono';
 import { all, get, run, batch, getSetting, setSetting } from '../db.js';
 import { requireAdmin, hashPassword, verifyPassword, loadUser, PUBLIC_USER_FIELDS } from '../auth.js';
 import { randomBase32, otpauthUrl, verifyTotp, securitySettings, validIpRule, clientIp, ipMatches } from '../security.js';
-import { badRequest, notFound, forbidden, toInt, idList, jsonBody, paginate } from '../util.js';
+import { badRequest, notFound, forbidden, toInt, idList, jsonBody, paginate, formBody, storeFiles, removeFile, sendFile } from '../util.js';
 import { MODULES, userApps, grantApps, audit } from '../platform.js';
 
 const r = new Hono();
@@ -370,6 +370,57 @@ r.put('/account/security', requireAdmin, async (c) => {
   await audit(c.get('user').id, 'security.ip', next.ip_enabled ? `Bật giới hạn IP (${rules.length} dải)` : 'Tắt giới hạn IP');
   const ip = clientIp(c);
   return c.json({ ...next, current_ip: ip, current_ip_allowed: !next.ip_enabled || rules.some((x) => ipMatches(ip, x)) });
+});
+
+// ---------------------------------------------------------------- avatar
+// avatar_version > 0: có ảnh (URL ?v=<version> để làm mới cache); <= 0: chưa có / đã xoá (giữ số lớn nhất để URL mới không trùng cache cũ)
+const AVATAR_MAX = 2 * 1024 * 1024;
+const AVATAR_TYPES = { 'image/png': [0x89, 0x50, 0x4e, 0x47], 'image/jpeg': [0xff, 0xd8, 0xff], 'image/webp': [0x52, 0x49, 0x46, 0x46], 'image/gif': [0x47, 0x49, 0x46] };
+
+/** Chính chủ hoặc quản trị viên mới được đổi ảnh đại diện. */
+async function avatarTarget(c) {
+  const user = c.get('user');
+  const id = toInt(c.req.param('id'));
+  if (id !== user.id && user.role !== 'admin') throw forbidden('Chỉ quản trị viên được đổi ảnh đại diện của người khác');
+  const target = await get('SELECT id, username, avatar FROM users WHERE id = ?', id);
+  if (!target) throw notFound('Tài khoản không tồn tại');
+  return target;
+}
+
+r.get('/account/users/:id/avatar', async (c) => {
+  const u = await get('SELECT avatar FROM users WHERE id = ?', toInt(c.req.param('id')));
+  if (!u?.avatar) throw notFound('Chưa có ảnh đại diện');
+  const ext = u.avatar.split('.').pop().toLowerCase();
+  const mime = { png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', webp: 'image/webp', gif: 'image/gif' }[ext] || 'image/jpeg';
+  const res = await sendFile(c, { filename: u.avatar, original_name: `avatar.${ext}`, mime }, true);
+  // URL có ?v=<phiên bản> nên được phép lưu đệm lâu
+  res.headers.set('Cache-Control', 'private, max-age=31536000, immutable');
+  return res;
+});
+
+r.post('/account/users/:id/avatar', async (c) => {
+  const target = await avatarTarget(c);
+  const { files } = await formBody(c);
+  const f = files[0];
+  if (!f) throw badRequest('Chưa chọn ảnh');
+  if (f.size > AVATAR_MAX) throw badRequest('Ảnh quá lớn (tối đa 2MB)');
+  const magic = AVATAR_TYPES[f.type];
+  const head = new Uint8Array(await f.slice(0, 4).arrayBuffer());
+  if (!magic || !magic.every((b, i) => head[i] === b)) throw badRequest('Chỉ chấp nhận ảnh PNG, JPG, WEBP hoặc GIF');
+  const ext = { 'image/png': 'png', 'image/jpeg': 'jpg', 'image/webp': 'webp', 'image/gif': 'gif' }[f.type];
+  const [stored] = await storeFiles([new File([f], `avatar.${ext}`, { type: f.type })]);
+  await run('UPDATE users SET avatar = ?, avatar_version = ABS(avatar_version) + 1 WHERE id = ?', stored.filename, target.id);
+  if (target.avatar) await removeFile(target.avatar);
+  if (target.id !== c.get('user').id) await audit(c.get('user').id, 'user.avatar', `Đổi ảnh đại diện của @${target.username}`);
+  return c.json(await get('SELECT id, avatar_version FROM users WHERE id = ?', target.id));
+});
+
+r.delete('/account/users/:id/avatar', async (c) => {
+  const target = await avatarTarget(c);
+  await run('UPDATE users SET avatar = NULL, avatar_version = -ABS(avatar_version) WHERE id = ?', target.id);
+  if (target.avatar) await removeFile(target.avatar);
+  if (target.id !== c.get('user').id) await audit(c.get('user').id, 'user.avatar', `Xoá ảnh đại diện của @${target.username}`);
+  return c.json({ ok: true });
 });
 
 export default r;

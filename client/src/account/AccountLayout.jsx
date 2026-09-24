@@ -51,7 +51,7 @@ export default function AccountLayout() {
           <SideLink to="/account" icon={Settings}>Tài khoản</SideLink>
           <SideLink to="/account/edit" icon={Pencil}>Chỉnh sửa</SideLink>
           <SideLink to="/account/password" icon={KeyRound}>Thay đổi mật khẩu</SideLink>
-          <SideLink to="/account/color" icon={Palette}>Đổi màu hiển thị</SideLink>
+          <SideLink to="/account/color" icon={Palette}>Ảnh đại diện & màu</SideLink>
           <SideLink to="/account/2fa" icon={ShieldCheck}>Bảo mật hai lớp cá nhân</SideLink>
           <SideLink to="/account/logins" icon={History}>Lịch sử đăng nhập cá nhân</SideLink>
         </div>
