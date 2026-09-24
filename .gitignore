@@ -6,3 +6,4 @@ server/data/
 .env
 server/.wrangler/
 .wrangler/
+server/.seed.sql

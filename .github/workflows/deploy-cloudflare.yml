@@ -46,4 +46,4 @@ jobs:
         if: steps.check.outputs.ready == 'true'
       - name: Provision D1/R2 và deploy
         if: steps.check.outputs.ready == 'true'
-        run: ./server/scripts/cf-setup.sh
+        run: node server/scripts/cf-setup.mjs --reuse

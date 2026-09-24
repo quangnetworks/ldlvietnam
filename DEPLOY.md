@@ -1,57 +1,59 @@
 # Deploy LDL Workspace lên Cloudflare
 
-Ứng dụng chạy trên **Cloudflare Workers**:
+Ứng dụng chạy trên **Cloudflare Workers** dưới dạng một Worker **hoàn toàn mới**, tách biệt với các Worker bạn đang có:
 
-| Thành phần | Dịch vụ Cloudflare |
-|---|---|
-| API (Hono) | Workers |
-| Cơ sở dữ liệu | D1 (SQLite) — `ldl-workspace-db` |
-| Tệp đính kèm | R2 — `ldl-workspace-files` |
-| Giao diện React | Workers Static Assets |
+| Thành phần | Dịch vụ Cloudflare | Tên |
+|---|---|---|
+| API + giao diện | Workers (+ Static Assets) | `ldlvietnam-workspace` |
+| Cơ sở dữ liệu | D1 (SQLite) | `ldlvietnam-workspace-db` |
+| Tệp đính kèm | R2 | `ldlvietnam-workspace-files` |
 
-Mọi thứ (tạo D1, R2, chạy migration, tạo dữ liệu mẫu lần đầu, deploy) được tự động hoá bởi
-GitHub Actions (`.github/workflows/deploy-cloudflare.yml` → `server/scripts/cf-setup.sh`).
+Script `server/scripts/cf-setup.mjs` tự tạo D1, R2, chạy migration, tạo dữ liệu ban đầu, build giao diện và deploy.
+Lần đầu, nếu một trong ba tên trên **đã tồn tại** trên tài khoản, script **dừng lại, không ghi đè** gì cả.
 
-## Bước 1 — Chuẩn bị tài khoản Cloudflare (làm 1 lần)
+## Cách 1 — Deploy từ máy tính (dùng tài khoản wrangler đang đăng nhập)
 
-1. Đăng ký / đăng nhập https://dash.cloudflare.com
-2. **Bật R2**: menu trái → *R2 Object Storage* → *Enable R2* (gói miễn phí 10 GB, Cloudflare có thể yêu cầu thêm phương thức thanh toán nhưng không tính phí trong hạn mức).
-3. Lấy **Account ID**: trang *Workers & Pages* → cột phải *Account ID* → Copy.
-4. Tạo **API Token**: *My Profile* → *API Tokens* → *Create Token* → mẫu **Edit Cloudflare Workers** → *Use template*,
-   rồi bấm *+ Add more* để thêm 2 quyền:
-   - `Account` · `D1` · `Edit`
-   - `Account` · `Workers R2 Storage` · `Edit`
+Yêu cầu: **Node.js 22+**, **Git**, và **R2 đã được bật** trên tài khoản
+(Dashboard → *R2 Object Storage* → *Enable*; nếu bạn chưa dùng R2 bao giờ).
 
-   → *Continue to summary* → *Create Token* → Copy token (chỉ hiện 1 lần).
+```bash
+git clone -b claude/charming-heisenberg-xtzan2 https://github.com/quangnetworks/ldlvietnam.git
+cd ldlvietnam/server
+npm ci
+npx wrangler whoami          # kiểm tra đúng tài khoản Cloudflare đang dùng cho các Worker khác
+node scripts/cf-setup.mjs    # tạo mới Worker + D1 + R2 và deploy
+```
 
-## Bước 2 — Thêm secrets vào GitHub (làm 1 lần)
+Chạy được trên Windows (PowerShell / CMD), macOS và Linux. Nếu `whoami` báo chưa đăng nhập, chạy `npx wrangler login`.
+Nếu tài khoản có nhiều account, đặt `CLOUDFLARE_ACCOUNT_ID` trước khi chạy
+(PowerShell: `$env:CLOUDFLARE_ACCOUNT_ID="..."`, bash: `export CLOUDFLARE_ACCOUNT_ID=...`).
 
-Repo `quangnetworks/ldlvietnam` → *Settings* → *Secrets and variables* → *Actions* → *New repository secret*:
+Kết thúc, script in ra địa chỉ dạng `https://ldlvietnam-workspace.<tên-tài-khoản>.workers.dev`.
 
-| Name | Value |
-|---|---|
-| `CLOUDFLARE_API_TOKEN` | token vừa tạo |
-| `CLOUDFLARE_ACCOUNT_ID` | Account ID |
+**Cập nhật code về sau** (giữ nguyên dữ liệu): `git pull && npm ci && node scripts/cf-setup.mjs --reuse`
 
-## Bước 3 — Deploy
+## Cách 2 — Tự deploy bằng GitHub Actions
 
-Tab *Actions* → **Deploy to Cloudflare** → *Run workflow*. Từ đó mỗi lần push lên nhánh `main`
-(hoặc nhánh hiện tại) sẽ tự deploy lại. Dữ liệu D1/R2 được giữ nguyên giữa các lần deploy.
+Workflow `.github/workflows/deploy-cloudflare.yml` chạy test rồi deploy (`cf-setup.mjs --reuse`) mỗi khi push,
+khi repo có 2 secret `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`.
 
-Khi xong, địa chỉ ứng dụng hiện trong log bước *Provision D1/R2 và deploy*, dạng:
-`https://ldl-workspace.<tên-tài-khoản>.workers.dev`
+1. Tạo **API Token**: *My Profile* → *API Tokens* → *Create Token* → mẫu **Edit Cloudflare Workers** → *Use template*,
+   bấm *+ Add more* thêm `Account · D1 · Edit` và `Account · Workers R2 Storage · Edit` → *Create Token*.
+2. Repo → *Settings* → *Secrets and variables* → *Actions*: thêm `CLOUDFLARE_API_TOKEN` và `CLOUDFLARE_ACCOUNT_ID`.
+3. Tab *Actions* → **Deploy to Cloudflare** → *Run workflow*.
 
-Đăng nhập lần đầu: **admin / 123456** — hãy **đổi mật khẩu ngay** (menu tài khoản → Đổi mật khẩu),
-rồi vào *Quản trị* để tạo tài khoản cho nhân viên và khoá / xoá các tài khoản mẫu.
+## Sau khi deploy
+
+Đăng nhập **admin / 123456** — **đổi mật khẩu ngay** (menu tài khoản → Đổi mật khẩu),
+rồi vào *Quản trị* tạo tài khoản cho nhân viên và khoá các tài khoản mẫu.
 
 ## Tuỳ chọn
 
-- **Tên miền riêng** (vd. `work.ldlvietnam.vn`): Workers & Pages → `ldl-workspace` → *Settings* → *Domains & Routes* → *Add Custom Domain* (tên miền phải quản lý DNS trên Cloudflare).
+- **Tên miền riêng** (vd. `work.ldlvietnam.vn`): Workers & Pages → `ldlvietnam-workspace` → *Settings* → *Domains & Routes* → *Add Custom Domain* (tên miền phải quản lý DNS trên Cloudflare).
 - **Bắt đầu với dữ liệu trống** thay vì dữ liệu mẫu: sau lần deploy đầu, vào Quản trị xoá/khoá dữ liệu mẫu, hoặc chạy
   `npx wrangler d1 execute DB --remote --command "DELETE FROM tasks; DELETE FROM documents; DELETE FROM projects;"` trong thư mục `server`.
 - **Gói trả phí Workers ($5/tháng)** được khuyến nghị khi dùng thật: gói miễn phí giới hạn 100.000 request/ngày,
   10 ms CPU và 50 truy vấn D1 cho mỗi request — đủ cho nhóm nhỏ nhưng có thể chạm giới hạn khi thao tác hàng loạt nhiều bản ghi.
-- **Deploy thủ công từ máy tính** (Node 22): `cd server && npm ci && npx wrangler login && ./scripts/cf-setup.sh`
 
 ## Chạy thử môi trường Cloudflare trên máy
 
