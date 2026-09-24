@@ -288,46 +288,6 @@ export function GroupHistory() {
   );
 }
 
-export function RequestReports() {
-  const [from, setFrom] = useState('');
-  const [to, setTo] = useState('');
-  const [r] = useFetch(() => api.get('/request/reports', { from, to }), [from, to]);
-  const STATUS_VI = { pending: 'Chờ duyệt', approved: 'Đã chấp thuận', rejected: 'Đã từ chối', returned: 'Đã trả lại', cancelled: 'Đã huỷ' };
-  const total = (r?.by_status || []).reduce((s, x) => s + x.c, 0);
-  return (
-    <div className="rq-page">
-      <div className="rq-head"><div className="grow"><h1>Báo cáo đề xuất</h1></div>
-        <input type="date" className="input input-sm" value={from} onChange={(e) => setFrom(e.target.value)} aria-label="Từ ngày" />
-        <input type="date" className="input input-sm" value={to} onChange={(e) => setTo(e.target.value)} aria-label="Đến ngày" />
-      </div>
-      {!r ? <Spinner /> : (
-        <>
-          <div className="stat-row">
-            <div className="stat-tile"><div className="stat-label">Tổng đề xuất</div><div className="stat-value">{total}</div></div>
-            {Object.entries(STATUS_VI).map(([k, l]) => (
-              <div key={k} className="stat-tile"><div className="stat-label">{l}</div><div className="stat-value">{r.by_status.find((x) => x.status === k)?.c || 0}</div></div>
-            ))}
-          </div>
-          <div className="card">
-            <h3 className="card-title">Theo nhóm đề xuất</h3>
-            <div className="table-wrap"><table className="table">
-              <thead><tr><th>Nhóm đề xuất</th><th>Tổng</th><th>Chờ duyệt</th><th>Chấp thuận</th><th>Từ chối</th><th>TG xử lý TB</th></tr></thead>
-              <tbody>{r.by_group.map((g) => <tr key={g.id}><td>{g.name}</td><td>{g.total}</td><td>{g.pending}</td><td className="text-green">{g.approved}</td><td className="text-red">{g.rejected}</td><td>{g.avg_hours != null ? `${g.avg_hours} giờ` : '—'}</td></tr>)}</tbody>
-            </table></div>
-          </div>
-          <div className="card">
-            <h3 className="card-title">Theo người duyệt</h3>
-            <div className="table-wrap"><table className="table">
-              <thead><tr><th>Người duyệt</th><th>Được giao</th><th>Đã xử lý</th><th>Đang chờ</th></tr></thead>
-              <tbody>{r.by_approver.map((u) => <tr key={u.id}><td><span className="row gap-sm"><Avatar name={u.name} color={u.color} size={22} /> {u.name}</span></td><td>{u.total}</td><td>{u.handled}</td><td className={u.waiting ? 'text-red' : ''}>{u.waiting}</td></tr>)}</tbody>
-            </table></div>
-          </div>
-        </>
-      )}
-    </div>
-  );
-}
-
 export function RequestGuide() {
   const steps = [
     ['Tạo đề xuất', 'Bấm "Tạo đề xuất", chọn loại (nghỉ phép, tạm ứng, thanh toán…), điền biểu mẫu, đính kèm chứng từ và gửi.'],

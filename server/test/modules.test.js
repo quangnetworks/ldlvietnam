@@ -263,3 +263,24 @@ test('department chat channel: members of the department only, shown on home', a
   assert.ok(info.members.some((m) => m.id === demo.user.id));
   assert.ok(!info.members.some((m) => m.id === mkt.user.id));
 });
+
+test('wework report overview: buckets add up and filters apply', async () => {
+  const admin = await login('admin');
+  const r = await admin.get('/wework/reports/overview?from=2020-01-01');
+  assert.equal(r.status, 200);
+  const s = r.data.summary;
+  assert.equal(s.on_time + s.late + s.doing + s.review + s.overdue + s.failed, s.total);
+  assert.equal(r.data.scanned, s.total);
+  assert.equal(r.data.cards.tasks.total, s.total);
+  assert.ok(r.data.daily.length > 0 && r.data.daily.length <= 92);
+  assert.equal(r.data.daily.at(-1).total <= s.total, true);
+  const memberSum = r.data.assigned.reduce((a, m) => a + m.total, 0);
+  assert.ok(memberSum <= s.total);
+  const e = r.data.eisenhower;
+  assert.equal(e.important + e.both + e.none + e.urgent, s.total);
+  const done = await admin.get('/wework/reports/overview?from=2020-01-01&status=done');
+  assert.equal(done.data.summary.doing + done.data.summary.overdue + done.data.summary.review, 0);
+  const demo = await login('demo');
+  const mine = await demo.get('/wework/reports/overview?from=2020-01-01');
+  assert.ok(mine.data.summary.total <= s.total);
+});

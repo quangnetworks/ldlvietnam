@@ -10,6 +10,9 @@ Webapp nội bộ gồm 2 phân hệ, giao diện và chức năng mô phỏng *
 - **Chat nhóm**: kênh toàn công ty và kênh phòng ban (tự tạo cho mỗi phòng ban, thành viên theo phòng ban của tài khoản).
 - Lưới ứng dụng theo nhóm Work+ / HRM+ / Info+ / Finance+ / Platform, tìm kiếm ứng dụng; thông báo toàn công ty; ghi chú cá nhân.
 
+### Giao diện
+- Ngôn ngữ thiết kế chung lấy cảm hứng iOS 27: chữ hệ thống Apple, bo góc lớn, nút dạng viên thuốc, vật liệu kính mờ cho menu / hộp thoại / thông báo, điều khiển phân đoạn, chuyển động mềm.
+
 ### Giao diện sáng / tối
 - Mọi phân hệ hỗ trợ giao diện **Sáng**, **Tối** hoặc **Theo hệ thống** — chọn trong menu tài khoản (góc phải trên) hoặc nút mặt trời / mặt trăng ở Home. Lựa chọn được nhớ trên trình duyệt và đồng bộ theo tài khoản.
 - **Màu thương hiệu** (nút bảng màu ở Home, 6 lựa chọn): áp cho Home, thanh trên cùng, thanh bên và rail của mọi phân hệ, trang đăng nhập.
@@ -26,7 +29,8 @@ Webapp nội bộ gồm 2 phân hệ, giao diện và chức năng mô phỏng *
 - Quy trình **duyệt lần lượt** hoặc **chỉ cần một người duyệt**, người duyệt mặc định + người tạo tự chọn thêm, người theo dõi mặc định, **SLA**.
 - Tab Tất cả / Đến lượt duyệt / Quá hạn / Chờ xử lý / Đã chấp thuận / Đã từ chối / Đã trả lại / Đã đánh dấu / Đã lưu nháp; Gửi đến tôi / Tôi gửi đi / Đang theo dõi.
 - Chấp thuận, từ chối, trả lại (kèm lý do), gửi lại, huỷ; bình luận, tệp đính kèm, lịch sử, thông báo.
-- Quản lý nhóm đề xuất: bật/tạm đóng, tác vụ hàng loạt, tạo từ mẫu, lịch sử chỉnh sửa; báo cáo theo nhóm và người duyệt.
+- Quản lý nhóm đề xuất: bật/tạm đóng, tác vụ hàng loạt, tạo từ mẫu, lịch sử chỉnh sửa.
+- **Báo cáo đề xuất**: chỉ số tổng quan (chờ duyệt, chấp thuận, từ chối, quá SLA, thời gian xử lý TB), biểu đồ trạng thái, tỷ lệ đúng SLA, đề xuất mới theo ngày, theo nhóm đề xuất (xuất Excel) và theo người duyệt (thời gian phản hồi TB).
 
 ### Văn bản (Office) — `/office`
 - Danh sách văn bản dạng **danh sách** hoặc **bảng**; tab *Tất cả / Thông báo / Văn bản đến / Văn bản đi / Văn bản nội bộ*.
@@ -46,7 +50,8 @@ Webapp nội bộ gồm 2 phân hệ, giao diện và chức năng mô phỏng *
   mô tả, **checklist**, **công việc con**, tệp đính kèm, thảo luận (nhắc tên bằng `@tên_đăng_nhập`), lịch sử.
 - Dự án & phòng ban: tạo mới / từ **mẫu**, lưu dự án thành mẫu, thành viên & vai trò, nhóm công việc;
   xem dạng **Danh sách**, **Kanban** (kéo thả), **Theo trạng thái**, **Lịch**, **Tiến độ (Gantt)**, Hoạt động, Báo cáo.
-- Thành viên, **Báo cáo** (theo trạng thái, thành viên, dự án, xu hướng 30 ngày), **Tác vụ hàng loạt**, tìm nhanh.
+- Thành viên, **Tác vụ hàng loạt**, tìm nhanh.
+- **Báo cáo tổng hợp** (bố cục theo Base Wework): bộ lọc thời gian / mốc ngày (tạo, thời hạn, bắt đầu, hoàn thành) / dự án / công việc con / trạng thái; thẻ tổng quan Dự án · Phòng ban · Công việc · Mục tiêu · Thành viên; biểu đồ tròn trạng thái (HT đúng hạn, đang xử lý, quá hạn, chờ đánh giá, HT muộn, thất bại), thành viên xuất sắc, công việc không đúng hạn, ma trận Eisenhower, chờ đánh giá; quá trình theo ngày (luỹ kế) và tổng hợp theo tuần; công việc được giao / đã tạo theo thành viên (xuất Excel), còn nhiều việc nhất, làm muộn nhiều nhất, tạo nhiều / chưa giao nhiều nhất; dự án & phòng ban, sức khoẻ dự án, phân bổ theo phòng ban; mục tiêu và các con số thống kê. Mọi biểu đồ có tooltip, chú thích và chế độ xem dạng bảng.
 
 ### Bảo mật
 - **Bảo mật hai lớp (2FA)** theo chuẩn TOTP — quét mã QR bằng Google / Microsoft Authenticator; quản trị viên có thể đặt lại 2FA cho thành viên.

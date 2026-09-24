@@ -199,6 +199,10 @@ r.get('/wework/summary', async (c) => {
   });
 });
 
+/** Nhóm trạng thái loại trừ nhau dùng cho biểu đồ: quá hạn tách khỏi cần làm / đang làm. */
+const BUCKET_SQL = `CASE WHEN t.status IN ('todo','doing') AND t.due_date IS NOT NULL AND date(t.due_date) < date(?) THEN 'overdue'
+  ELSE t.status END`;
+
 r.get('/wework/reports', async (c) => {
   const q = c.req.query();
   const vis = taskVisibilitySql(c.get('user'));
@@ -206,28 +210,197 @@ r.get('/wework/reports', async (c) => {
   const params = [...vis.params];
   const pid = toInt(q.project_id);
   if (pid) { where.push('t.project_id = ?'); params.push(pid); }
+  const uidFilter = toInt(q.user_id);
+  if (uidFilter) { where.push('t.assignee_id = ?'); params.push(uidFilter); }
   if (q.from) { where.push('date(t.created_at) >= date(?)'); params.push(q.from); }
   if (q.to) { where.push('date(t.created_at) <= date(?)'); params.push(q.to); }
   const w = where.join(' AND ');
   const td = today();
+  // Xu hướng: số ngày theo bộ lọc (mặc định 30, tối đa 180)
+  const days = Math.min(180, Math.max(7, toInt(q.days, 30)));
+  const bucketCols = `SUM(CASE WHEN ${BUCKET_SQL} = 'done' THEN 1 ELSE 0 END) AS done,
+        SUM(CASE WHEN ${BUCKET_SQL} = 'doing' THEN 1 ELSE 0 END) AS doing,
+        SUM(CASE WHEN ${BUCKET_SQL} = 'review' THEN 1 ELSE 0 END) AS review,
+        SUM(CASE WHEN ${BUCKET_SQL} = 'overdue' THEN 1 ELSE 0 END) AS overdue,
+        SUM(CASE WHEN ${BUCKET_SQL} = 'failed' THEN 1 ELSE 0 END) AS failed,
+        SUM(CASE WHEN ${BUCKET_SQL} = 'todo' THEN 1 ELSE 0 END) AS todo`;
+  const bucketParams = Array(6).fill(td);
+  const [summary, byMember, byProject, doneTrend, createdTrend, byPriority] = await Promise.all([
+    get(`SELECT COUNT(*) AS total, ${bucketCols},
+        SUM(CASE WHEN t.status = 'done' AND t.due_date IS NOT NULL AND date(t.completed_at) > date(t.due_date) THEN 1 ELSE 0 END) AS late,
+        SUM(CASE WHEN t.status = 'done' AND (t.due_date IS NULL OR date(t.completed_at) <= date(t.due_date)) THEN 1 ELSE 0 END) AS on_time
+      FROM tasks t WHERE ${w}`, ...bucketParams, ...params),
+    all(`SELECT u.id, u.name, u.color, COUNT(t.id) AS total, ${bucketCols}
+      FROM tasks t JOIN users u ON u.id = t.assignee_id WHERE ${w} GROUP BY u.id ORDER BY total DESC LIMIT 30`, ...bucketParams, ...params),
+    all(`SELECT p.id, p.name, p.color, p.kind, COUNT(t.id) AS total, ${bucketCols}
+      FROM tasks t JOIN projects p ON p.id = t.project_id WHERE ${w} GROUP BY p.id ORDER BY total DESC LIMIT 30`, ...bucketParams, ...params),
+    all(`SELECT date(t.completed_at) AS day, COUNT(*) AS c FROM tasks t
+      WHERE ${w} AND t.status = 'done' AND date(t.completed_at) > date(?, ?) GROUP BY day ORDER BY day`, ...params, td, `-${days} day`),
+    all(`SELECT date(t.created_at) AS day, COUNT(*) AS c FROM tasks t
+      WHERE ${w} AND date(t.created_at) > date(?, ?) GROUP BY day ORDER BY day`, ...params, td, `-${days} day`),
+    all(`SELECT t.priority, COUNT(*) AS c FROM tasks t WHERE ${w} AND t.status IN ('todo','doing','review') GROUP BY t.priority`, ...params),
+  ]);
+  const n = (x) => Number(x) || 0;
+  const norm = (row) => ({ ...row, total: n(row.total), done: n(row.done), doing: n(row.doing), review: n(row.review),
+    overdue: n(row.overdue), failed: n(row.failed), todo: n(row.todo) });
+  const s = norm(summary);
   return c.json({
-    by_status: await all(`SELECT t.status, COUNT(*) AS c FROM tasks t WHERE ${w} GROUP BY t.status`, ...params),
-    overdue: (await get(`SELECT COUNT(*) AS c FROM tasks t WHERE ${w} AND t.status IN ('todo','doing') AND date(t.due_date) < date(?)`, ...params, td)).c,
-    late: (await get(`SELECT COUNT(*) AS c FROM tasks t WHERE ${w} AND t.status = 'done' AND date(t.completed_at) > date(t.due_date)`, ...params)).c,
-    by_member: await all(`SELECT u.id, u.name, u.color, COUNT(t.id) AS total,
-        SUM(CASE WHEN t.status = 'done' THEN 1 ELSE 0 END) AS done,
-        SUM(CASE WHEN t.status IN ('todo','doing') THEN 1 ELSE 0 END) AS active,
-        SUM(CASE WHEN t.status IN ('todo','doing') AND date(t.due_date) < date(?) THEN 1 ELSE 0 END) AS overdue,
-        SUM(CASE WHEN t.status = 'failed' THEN 1 ELSE 0 END) AS failed
-      FROM tasks t JOIN users u ON u.id = t.assignee_id WHERE ${w} GROUP BY u.id ORDER BY total DESC`, td, ...params),
-    by_project: await all(`SELECT p.id, p.name, p.color, COUNT(t.id) AS total,
-        SUM(CASE WHEN t.status = 'done' THEN 1 ELSE 0 END) AS done,
-        SUM(CASE WHEN t.status IN ('todo','doing') AND date(t.due_date) < date(?) THEN 1 ELSE 0 END) AS overdue
-      FROM tasks t JOIN projects p ON p.id = t.project_id WHERE ${w} GROUP BY p.id ORDER BY total DESC`, td, ...params),
-    done_trend: await all(`SELECT date(t.completed_at) AS day, COUNT(*) AS c FROM tasks t
-      WHERE ${w} AND t.status = 'done' AND date(t.completed_at) >= date(?, '-29 day') GROUP BY day ORDER BY day`, ...params, td),
-    created_trend: await all(`SELECT date(t.created_at) AS day, COUNT(*) AS c FROM tasks t
-      WHERE ${w} AND date(t.created_at) >= date(?, '-29 day') GROUP BY day ORDER BY day`, ...params, td),
+    today: td,
+    days,
+    summary: { ...s, late: n(summary.late), on_time: n(summary.on_time) },
+    by_member: byMember.map(norm),
+    by_project: byProject.map(norm),
+    by_priority: byPriority,
+    done_trend: doneTrend,
+    created_trend: createdTrend,
+    // tương thích ngược (trang dự án cũ)
+    by_status: ['todo', 'doing', 'review', 'done', 'failed'].map((k) => ({ status: k, c: k === 'todo' || k === 'doing' ? s[k] + 0 : s[k] })),
+    overdue: s.overdue,
+    late: n(summary.late),
+  });
+});
+
+/**
+ * Báo cáo tổng hợp (theo bố cục Base Wework): lấy công việc một lần rồi tổng hợp trong JS
+ * để giữ số truy vấn thấp (Cloudflare D1 giới hạn truy vấn / request).
+ * Nhóm trạng thái: on_time (HT đúng hạn) · late (HT muộn) · doing (đang xử lý) · review (chờ đánh giá) · overdue · failed.
+ */
+const BASIS = { created: 't.created_at', due: 't.due_date', start: 't.start_date', completed: 't.completed_at' };
+const BUCKETS = ['on_time', 'late', 'doing', 'review', 'overdue', 'failed'];
+
+function taskBucket(t, td) {
+  if (t.status === 'done') return t.due_date && t.completed_at && t.completed_at.slice(0, 10) > t.due_date.slice(0, 10) ? 'late' : 'on_time';
+  if (t.status === 'failed') return 'failed';
+  if (t.status === 'review') return 'review';
+  return t.due_date && t.due_date.slice(0, 10) < td ? 'overdue' : 'doing';
+}
+const emptyCounts = () => Object.fromEntries([...BUCKETS.map((b) => [b, 0]), ['total', 0]]);
+
+r.get('/wework/reports/overview', async (c) => {
+  const user = c.get('user');
+  const q = c.req.query();
+  const td = today();
+  const vis = taskVisibilitySql(user);
+  const basis = BASIS[q.basis] ? q.basis : 'created';
+  const col = BASIS[basis];
+  const iso = (v) => (/^\d{4}-\d{2}-\d{2}$/.test(v || '') ? v : null);
+  const to = iso(q.to) || td;
+  const from = iso(q.from) || new Date(new Date(`${to}T00:00:00Z`).getTime() - 29 * 864e5).toISOString().slice(0, 10);
+  const where = [vis.sql, `${col} IS NOT NULL`, `date(${col}) BETWEEN date(?) AND date(?)`];
+  const params = [...vis.params, from, to];
+  const pid = toInt(q.project_id);
+  if (pid) { where.push('t.project_id = ?'); params.push(pid); }
+  if (q.subtasks === '0') where.push('t.parent_id IS NULL');
+  if (q.status === 'active') where.push("t.status IN ('todo','doing','review')");
+  if (q.status === 'done') where.push("t.status = 'done'");
+
+  const [tasks, projects, people, goals, comments] = await Promise.all([
+    all(`SELECT t.id, t.status, t.priority, t.due_date, t.start_date, t.completed_at, t.created_at, t.assignee_id, t.creator_id,
+        t.project_id, date(${col}) AS basis_day FROM tasks t WHERE ${where.join(' AND ')} LIMIT 20000`, ...params),
+    all("SELECT id, name, color, kind, status FROM projects WHERE is_template = 0"),
+    all("SELECT u.id, u.name, u.color, u.role, u.department_id, d.name AS department_name FROM users u LEFT JOIN departments d ON d.id = u.department_id WHERE u.active = 1"),
+    all(`SELECT g.id, g.title, g.progress, g.due_date, g.user_id, u.name AS user_name, u.color AS user_color, d.name AS department_name
+      FROM goals g JOIN users u ON u.id = g.user_id LEFT JOIN departments d ON d.id = u.department_id ORDER BY g.progress DESC, g.id LIMIT 100`),
+    get(`SELECT COUNT(*) AS n FROM task_comments tc JOIN tasks t ON t.id = tc.task_id WHERE ${where.join(' AND ')}`, ...params),
+  ]);
+
+  const byUser = Object.fromEntries(people.map((u) => [u.id, u]));
+  const summary = emptyCounts();
+  const assigned = {};
+  const created = {};
+  const unassigned = {};
+  const byProject = {};
+  const eisen = { important: 0, both: 0, none: 0, urgent: 0 };
+  let noDue = 0;
+  let reviewOverdue = 0;
+  const add = (map, key, b) => { (map[key] ||= emptyCounts())[b]++; map[key].total++; };
+  for (const t of tasks) {
+    const b = taskBucket(t, td);
+    t.bucket = b;
+    summary[b]++; summary.total++;
+    if (t.assignee_id) add(assigned, t.assignee_id, b);
+    if (t.creator_id) add(created, t.creator_id, b);
+    if (t.creator_id && !t.assignee_id) unassigned[t.creator_id] = (unassigned[t.creator_id] || 0) + 1;
+    if (t.project_id) add(byProject, t.project_id, b);
+    if (!t.due_date) noDue++;
+    if (b === 'review' && t.due_date && t.due_date.slice(0, 10) < td) reviewOverdue++;
+    eisen[t.priority === 'urgent' ? 'urgent' : t.priority === 'important' ? 'important' : 'none']++;
+  }
+  const withUser = (map) => Object.entries(map).map(([id, v]) => ({ id: Number(id), name: byUser[id]?.name || 'Tài khoản đã xoá', color: byUser[id]?.color, ...v }))
+    .sort((a, b) => b.total - a.total);
+  const assignedRows = withUser(assigned);
+  const open = (x) => x.doing + x.review + x.overdue;
+
+  // Theo ngày: luỹ kế theo nhóm trạng thái hiện tại (tối đa 92 ngày)
+  const dayList = [];
+  for (let d = new Date(`${from}T00:00:00Z`); d <= new Date(`${to}T00:00:00Z`) && dayList.length < 92; d = new Date(d.getTime() + 864e5)) dayList.push(d.toISOString().slice(0, 10));
+  const perDay = {};
+  for (const t of tasks) (perDay[t.basis_day] ||= emptyCounts())[t.bucket]++;
+  const running = emptyCounts();
+  const daily = dayList.map((day) => {
+    for (const b of BUCKETS) running[b] += perDay[day]?.[b] || 0;
+    const row = { day };
+    for (const b of BUCKETS) row[b] = running[b];
+    row.total = BUCKETS.reduce((s, b) => s + running[b], 0);
+    return row;
+  });
+  // Theo tuần (thứ 2 → chủ nhật)
+  const weekOf = (day) => { const d = new Date(`${day}T00:00:00Z`); const dow = (d.getUTCDay() + 6) % 7; return new Date(d.getTime() - dow * 864e5).toISOString().slice(0, 10); };
+  const weeks = {};
+  for (const day of dayList) weeks[weekOf(day)] ||= emptyCounts();
+  for (const t of tasks) { const w = weeks[weekOf(t.basis_day)]; if (w) { w[t.bucket]++; w.total++; } }
+
+  const projRows = projects.filter((p) => byProject[p.id]).map((p) => {
+    const v = byProject[p.id];
+    const ratio = open(v) ? v.overdue / open(v) : 0;
+    const health = p.status === 'closed' ? 'closed' : ratio >= 0.5 && v.overdue >= 2 ? 'risk' : ratio >= 0.2 ? 'late' : 'on_track';
+    return { id: p.id, name: p.name, color: p.color, kind: p.kind, status: p.status, health, ...v };
+  }).sort((a, b) => b.total - a.total);
+  const health = { on_track: 0, late: 0, risk: 0, closed: 0 };
+  for (const p of projRows) health[p.health]++;
+
+  const weeksCount = Math.max(1, dayList.length / 7);
+  const activeAssignees = assignedRows.length || 1;
+  const goalByDept = {};
+  for (const g of goals) goalByDept[g.department_name || 'Chưa có phòng ban'] = (goalByDept[g.department_name || 'Chưa có phòng ban'] || 0) + 1;
+  const staff = people.filter((u) => u.role !== 'guest');
+
+  return c.json({
+    from, to, basis, today: td, scanned: tasks.length,
+    cards: {
+      projects: { total: projects.filter((p) => p.kind === 'project').length, active: projects.filter((p) => p.kind === 'project' && p.status !== 'closed').length },
+      departments: { total: projects.filter((p) => p.kind === 'department').length, active: projects.filter((p) => p.kind === 'department' && p.status !== 'closed').length },
+      tasks: { total: summary.total, open: open(summary), done: summary.on_time + summary.late },
+      goals: { total: goals.length, active: goals.filter((g) => g.progress < 100).length, done: goals.filter((g) => g.progress >= 100).length },
+      members: { total: people.length, staff: staff.length, guests: people.length - staff.length },
+    },
+    summary,
+    excellent: assignedRows.filter((m) => m.on_time + m.late > 0)
+      .map((m) => ({ ...m, rate: Math.round(((m.on_time + m.late) / m.total) * 1000) / 10 }))
+      .sort((a, b) => b.rate - a.rate || b.on_time - a.on_time).slice(0, 5),
+    not_on_time: { overdue: summary.overdue, open: open(summary), late: summary.late, done: summary.on_time + summary.late, no_due: noDue },
+    eisenhower: eisen,
+    review: { total: summary.review, overdue: reviewOverdue,
+      projects_with_review: new Set(tasks.filter((t) => t.bucket === 'review' && t.project_id).map((t) => t.project_id)).size, projects_total: projRows.length },
+    daily,
+    weekly: Object.entries(weeks).sort().map(([week, v]) => ({ week, ...v })),
+    assigned: assignedRows,
+    created: withUser(created),
+    most_open: [...assignedRows].filter((m) => open(m) > 0).sort((a, b) => open(b) - open(a)).slice(0, 10).map((m) => ({ ...m, open: open(m) })),
+    most_late: [...assignedRows].filter((m) => m.overdue + m.late > 0).sort((a, b) => b.overdue + b.late - (a.overdue + a.late)).slice(0, 10),
+    most_created: withUser(created).slice(0, 10),
+    most_unassigned: Object.entries(unassigned).map(([id, n]) => ({ id: Number(id), name: byUser[id]?.name, color: byUser[id]?.color, n })).sort((a, b) => b.n - a.n).slice(0, 10),
+    projects: projRows,
+    project_health: health,
+    department_chart: projRows.filter((p) => p.kind === 'department').slice(0, 8),
+    goals: goals.map(({ user_id, ...g }) => g),
+    goals_by_department: Object.entries(goalByDept).map(([name, n]) => ({ name, n })).sort((a, b) => b.n - a.n),
+    stats: {
+      per_week: Math.round((summary.total / weeksCount) * 10) / 10,
+      per_week_per_person: Math.round((summary.total / weeksCount / activeAssignees) * 10) / 10,
+      per_project: projRows.length ? Math.round((projRows.reduce((s, p) => s + p.total, 0) / projRows.length) * 10) / 10 : 0,
+      comments: comments.n,
+    },
   });
 });
 

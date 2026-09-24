@@ -129,17 +129,47 @@ r.get('/request/reports', async (c) => {
   const params = [...v.params];
   if (q.from) { where.push('date(q.created_at) >= date(?)'); params.push(q.from); }
   if (q.to) { where.push('date(q.created_at) <= date(?)'); params.push(q.to); }
+  const gid = toInt(q.group_id);
+  if (gid) { where.push('q.group_id = ?'); params.push(gid); }
   const w = where.join(' AND ');
-  return c.json({
-    by_status: await all(`SELECT q.status, COUNT(*) AS c FROM requests q WHERE ${w} GROUP BY q.status`, ...params),
-    by_group: await all(`SELECT g.id, g.name, COUNT(*) AS total,
-        SUM(q.status = 'approved') AS approved, SUM(q.status = 'rejected') AS rejected, SUM(q.status = 'pending') AS pending,
+  const days = Math.min(180, Math.max(7, toInt(q.days, 30)));
+  const cols = `SUM(q.status = 'approved') AS approved, SUM(q.status = 'rejected') AS rejected, SUM(q.status = 'pending') AS pending,
+        SUM(q.status = 'returned') AS returned, SUM(q.status = 'cancelled') AS cancelled`;
+  const [summary, byGroup, byApprover, createdTrend, doneTrend] = await Promise.all([
+    get(`SELECT COUNT(*) AS total, ${cols},
+        SUM(q.status = 'pending' AND q.deadline_at IS NOT NULL AND q.deadline_at < datetime('now')) AS overdue,
+        ROUND(AVG(CASE WHEN q.completed_at IS NOT NULL THEN (julianday(q.completed_at) - julianday(q.created_at)) * 24 END), 1) AS avg_hours,
+        SUM(q.completed_at IS NOT NULL AND q.deadline_at IS NOT NULL AND q.completed_at <= q.deadline_at) AS within_sla,
+        SUM(q.completed_at IS NOT NULL AND q.deadline_at IS NOT NULL) AS with_sla
+      FROM requests q WHERE ${w}`, ...params),
+    all(`SELECT g.id, g.name, g.category, COUNT(*) AS total, ${cols},
         ROUND(AVG(CASE WHEN q.completed_at IS NOT NULL THEN (julianday(q.completed_at) - julianday(q.created_at)) * 24 END), 1) AS avg_hours
-      FROM requests q JOIN request_groups g ON g.id = q.group_id WHERE ${w} GROUP BY g.id ORDER BY total DESC`, ...params),
-    by_approver: await all(`SELECT u.id, u.name, u.color, COUNT(*) AS total, SUM(a.status = 'pending' AND q.status = 'pending') AS waiting,
-        SUM(a.status IN ('approved','rejected','returned')) AS handled
+      FROM requests q JOIN request_groups g ON g.id = q.group_id WHERE ${w} GROUP BY g.id ORDER BY total DESC LIMIT 30`, ...params),
+    all(`SELECT u.id, u.name, u.color, COUNT(*) AS total, SUM(a.status = 'pending' AND q.status = 'pending') AS waiting,
+        SUM(a.status IN ('approved','rejected','returned')) AS handled, SUM(a.status = 'approved') AS approved,
+        SUM(a.status = 'rejected') AS rejected, SUM(a.status = 'returned') AS returned,
+        ROUND(AVG(CASE WHEN a.acted_at IS NOT NULL THEN (julianday(a.acted_at) - julianday(q.created_at)) * 24 END), 1) AS avg_hours
       FROM request_approvers a JOIN requests q ON q.id = a.request_id JOIN users u ON u.id = a.user_id
       WHERE ${w} GROUP BY u.id ORDER BY waiting DESC, total DESC LIMIT 20`, ...params),
+    all(`SELECT date(q.created_at) AS day, COUNT(*) AS c FROM requests q WHERE ${w} AND date(q.created_at) > date('now', ?)
+      GROUP BY day ORDER BY day`, ...params, `-${days} day`),
+    all(`SELECT date(q.completed_at) AS day, COUNT(*) AS c FROM requests q WHERE ${w} AND q.completed_at IS NOT NULL
+      AND date(q.completed_at) > date('now', ?) GROUP BY day ORDER BY day`, ...params, `-${days} day`),
+  ]);
+  const n = (x) => Number(x) || 0;
+  const norm = (r) => ({ ...r, total: n(r.total), approved: n(r.approved), rejected: n(r.rejected), pending: n(r.pending),
+    returned: n(r.returned), cancelled: n(r.cancelled) });
+  const sm = norm(summary);
+  return c.json({
+    days,
+    summary: { ...sm, overdue: n(summary.overdue), avg_hours: summary.avg_hours, within_sla: n(summary.within_sla), with_sla: n(summary.with_sla) },
+    by_group: byGroup.map(norm),
+    by_approver: byApprover.map((u) => ({ ...u, total: n(u.total), waiting: n(u.waiting), handled: n(u.handled),
+      approved: n(u.approved), rejected: n(u.rejected), returned: n(u.returned) })),
+    created_trend: createdTrend,
+    done_trend: doneTrend,
+    // tương thích ngược
+    by_status: ['pending', 'approved', 'rejected', 'returned', 'cancelled'].map((k) => ({ status: k, c: sm[k] })),
   });
 });
 
