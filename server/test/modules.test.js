@@ -813,3 +813,20 @@ test('request staged approval flow: direct manager → related departments → f
   const plan2 = (await kd.get(`/request-groups/${g.id}/plan`)).data;
   assert.deepEqual(plan2.steps.map((s) => s.stage), ['dept', 'final']);
 });
+
+test('wework bulk actions: only admins / business owners, never department heads or staff', async () => {
+  const admin = await login('admin');
+  const owner = await login('giamdoc');
+  const head = await login('truongkd');
+  const staff = await login('demo');
+  const tasks = (await admin.get('/tasks?limit=5')).data.items;
+  assert.ok(tasks.length > 0);
+  const ids = tasks.map((t) => t.id);
+  for (const u of [head, staff]) {
+    const r = await u.post('/tasks/bulk', { ids, action: 'follow' });
+    assert.equal(r.status, 403);
+  }
+  assert.equal((await admin.post('/tasks/bulk', { ids, action: 'follow' })).status, 200);
+  const r = await owner.post('/tasks/bulk', { ids: [], action: 'follow' });
+  assert.equal(r.status, 200);
+});

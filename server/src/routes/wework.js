@@ -844,8 +844,10 @@ r.delete('/tasks/:id', async (c) => {
   return c.json({ ok: true });
 });
 
+/** Tác vụ hàng loạt: chỉ Quản trị cấp cao / Chủ doanh nghiệp (trưởng phòng, nhân viên không được dùng). */
 r.post('/tasks/bulk', async (c) => {
   const user = c.get('user');
+  if (user.role !== 'admin') throw forbidden('Chỉ Quản trị cấp cao hoặc Chủ doanh nghiệp mới được thao tác hàng loạt công việc');
   const b = await jsonBody(c);
   let affected = 0;
   const data = b.action === 'update' ? parseTaskBody(b.data || {}, true) : null;

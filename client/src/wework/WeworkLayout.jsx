@@ -159,7 +159,7 @@ export default function WeworkLayout() {
                   <button className="ww-link" onClick={() => setProjectForm({ kind: 'project' })}><PlusSquare size={16} /> Tạo dự án mới</button>
                   <button className="ww-link" onClick={() => setProjectForm({ kind: 'department' })}><PlusSquare size={16} /> Tạo phòng ban mới</button>
                   {link('/wework/templates', 'Tạo từ mẫu', Copy)}
-                  {link('/wework/bulk', 'Tác vụ hàng loạt', ListChecks)}
+                  {user.role === 'admin' && link('/wework/bulk', 'Tác vụ hàng loạt', ListChecks)}
                   {user.role === 'admin' && <Link to="/admin" className="ww-link"><Settings size={16} /> Cài đặt hệ thống</Link>}
                   {link('/wework/guide', 'Video hướng dẫn', PlayCircle)}
                 </>
