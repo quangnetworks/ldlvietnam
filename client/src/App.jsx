@@ -16,7 +16,35 @@ import ReportsPage from './wework/ReportsPage.jsx';
 import BulkPage from './wework/BulkPage.jsx';
 import TaskPage from './wework/TaskPage.jsx';
 import GuidePage from './wework/GuidePage.jsx';
-import AdminPage from './admin/AdminPage.jsx';
+import Home from './pages/Home.jsx';
+import AccountLayout from './account/AccountLayout.jsx';
+import { ProfileView, ProfileEdit, PasswordPage, ColorPage, LoginHistory } from './account/ProfilePages.jsx';
+import {
+  MembersPage as AccountMembers, GroupsPage, AppsPage, CompanyPage, AuditPage, NotificationsPage, DepartmentsPage, BulkPasswordPage,
+} from './account/AdminPages.jsx';
+import RequestLayout from './request/RequestLayout.jsx';
+import RequestList from './request/RequestList.jsx';
+import RequestForm from './request/RequestForm.jsx';
+import RequestDetail from './request/RequestDetail.jsx';
+import { GroupsAdmin, GroupEditor, TemplatesPage, GroupHistory, RequestReports, RequestGuide } from './request/GroupsAdmin.jsx';
+import { useApp as useAppCtx } from './context.jsx';
+
+/** Guard a module route by the user's app access (Account → Ứng dụng). */
+function RequireApp({ app, children }) {
+  const { apps } = useAppCtx();
+  if (!apps.includes(app)) {
+    return (
+      <div className="center-screen">
+        <div className="login-card" style={{ textAlign: 'center' }}>
+          <h2>Chưa được cấp quyền</h2>
+          <p className="muted">Bạn chưa được cấp quyền sử dụng ứng dụng này. Vui lòng liên hệ quản trị viên.</p>
+          <a className="btn btn-primary" href="/">Về trang chủ</a>
+        </div>
+      </div>
+    );
+  }
+  return children;
+}
 
 export default function App() {
   const { user, loading } = useApp();
@@ -29,15 +57,15 @@ export default function App() {
   return (
     <Routes>
       <Route path="/login" element={<Navigate to={location.state?.from || '/'} replace />} />
-      <Route path="/" element={<Navigate to="/office" replace />} />
-      <Route path="/office" element={<OfficeLayout />}>
+      <Route path="/" element={<Home />} />
+      <Route path="/office" element={<RequireApp app="office"><OfficeLayout /></RequireApp>}>
         <Route index element={<DocList />} />
         <Route path="new" element={<DocForm />} />
         <Route path="doc/:id" element={<DocDetail />} />
         <Route path="doc/:id/edit" element={<DocForm />} />
         <Route path="settings" element={<OfficeSettings />} />
       </Route>
-      <Route path="/wework" element={<WeworkLayout />}>
+      <Route path="/wework" element={<RequireApp app="wework"><WeworkLayout /></RequireApp>}>
         <Route index element={<TasksHome />} />
         <Route path="my" element={<TasksHome mode="my" />} />
         <Route path="task/:id" element={<TaskPage />} />
@@ -45,12 +73,42 @@ export default function App() {
         <Route path="departments" element={<ProjectsPage kind="department" />} />
         <Route path="templates" element={<ProjectsPage kind="template" />} />
         <Route path="project/:id" element={<ProjectPage />} />
-        <Route path="members" element={<MembersPage />} />
+        <Route path="members" element={<AccountMembers />} />
         <Route path="reports" element={<ReportsPage />} />
         <Route path="bulk" element={<BulkPage />} />
         <Route path="guide" element={<GuidePage />} />
       </Route>
-      <Route path="/admin" element={<AdminPage />} />
+      <Route path="/account" element={<AccountLayout />}>
+        <Route index element={<ProfileView />} />
+        <Route path="u/:id" element={<ProfileView />} />
+        <Route path="edit" element={<ProfileEdit />} />
+        <Route path="password" element={<PasswordPage />} />
+        <Route path="color" element={<ColorPage />} />
+        <Route path="logins" element={<LoginHistory />} />
+        <Route path="notifications" element={<NotificationsPage />} />
+        <Route path="members" element={<AccountMembers />} />
+        <Route path="groups" element={<GroupsPage />} />
+        <Route path="apps" element={<AppsPage />} />
+        <Route path="company" element={<CompanyPage />} />
+        <Route path="departments" element={<DepartmentsPage />} />
+        <Route path="audit" element={<AuditPage />} />
+        <Route path="bulk-password" element={<BulkPasswordPage />} />
+      </Route>
+      <Route path="/request" element={<RequireApp app="request"><RequestLayout /></RequireApp>}>
+        <Route index element={<RequestList />} />
+        <Route path="new" element={<RequestForm />} />
+        <Route path="reports" element={<RequestReports />} />
+        <Route path="guide" element={<RequestGuide />} />
+        <Route path="settings" element={<GroupsAdmin />} />
+        <Route path="settings/bulk" element={<GroupsAdmin bulk />} />
+        <Route path="settings/all-requests" element={<RequestList adminAll />} />
+        <Route path="settings/history" element={<GroupHistory />} />
+        <Route path="settings/templates" element={<TemplatesPage />} />
+        <Route path="settings/group/:id" element={<GroupEditor />} />
+        <Route path=":id" element={<RequestDetail />} />
+        <Route path=":id/edit" element={<RequestForm />} />
+      </Route>
+      <Route path="/admin" element={<Navigate to="/account/members" replace />} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );

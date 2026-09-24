@@ -93,7 +93,7 @@ export default function DocDetail() {
               <Send size={15} /> {doc.approvers.length ? 'Gửi duyệt' : 'Ban hành'}
             </button>
           )}
-          {doc.can_manage && doc.need_numbering && !doc.code && doc.status !== 'draft' && (
+          {doc.can_number && doc.need_numbering && !doc.code && doc.status !== 'draft' && (
             <button className="btn" onClick={assignNumber}><Hash size={15} /> Cấp số</button>
           )}
           {doc.can_manage && ['issued', 'archived'].includes(doc.status) && (

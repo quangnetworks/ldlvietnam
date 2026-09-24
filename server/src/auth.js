@@ -50,7 +50,7 @@ export async function signToken(c, user) {
 }
 
 export const PUBLIC_USER_FIELDS =
-  'u.id, u.username, u.name, u.email, u.phone, u.title, u.department_id, u.manager_id, u.role, u.color, u.active';
+  'u.id, u.username, u.name, u.email, u.phone, u.title, u.department_id, u.manager_id, u.role, u.color, u.active, u.birthday, u.address, u.bio, u.profile, u.last_login_at, u.created_at';
 
 export function loadUser(id) {
   return get(

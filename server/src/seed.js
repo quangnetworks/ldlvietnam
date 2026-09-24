@@ -224,12 +224,49 @@ export async function buildSeed() {
   addTask({ project: tpl.id, list: tpl.lists[2], title: 'Tổ chức sự kiện ra mắt', creator: users.admin, assignee: users.admin });
 
   add('INSERT INTO goals(user_id, title, progress, due_date) VALUES (?,?,?,?)', users.nv1, 'Đạt doanh số 2 tỷ Quý 4', 35, dateOffset(90));
+
+  // ---------- Account: quyền ứng dụng, nhóm người dùng, hồ sơ
+  add("INSERT OR IGNORE INTO apps(key, enabled) VALUES ('office', 1), ('wework', 1), ('request', 1)");
+  add('INSERT OR IGNORE INTO app_access(app_key, user_id) SELECT a.key, u.id FROM apps a CROSS JOIN users u');
+  add("INSERT INTO user_groups(id, name, description) VALUES (1, 'Ban lãnh đạo', 'Giám đốc và các trưởng phòng'), (2, 'Văn thư - Hành chính', 'Tiếp nhận, cấp số và lưu trữ văn bản')");
+  for (const k of ['gd', 'hr', 'kd', 'mkt', 'kt']) add('INSERT INTO user_group_members(group_id, user_id) VALUES (1, ?)', users[k]);
+  for (const k of ['hr', 'nv4']) add('INSERT INTO user_group_members(group_id, user_id) VALUES (2, ?)', users[k]);
+  add('UPDATE users SET birthday = ?, phone = ?, profile = ? WHERE id = ?', '1995-06-15', '0901 234 567', JSON.stringify({
+    education: [{ title: 'Cử nhân Quản trị kinh doanh', place: 'Đại học Kinh tế Quốc dân', from: '2013', to: '2017' }],
+    experience: [{ title: 'Nhân viên kinh doanh', place: 'Công ty LDL Việt Nam', from: '2020', to: '' }],
+    awards: [{ title: 'Nhân viên xuất sắc năm 2025', place: 'Công ty LDL Việt Nam', from: '2025' }],
+  }), users.nv1);
+
+  // ---------- Request: người duyệt mặc định & đề xuất mẫu
+  const grp = (name) => `(SELECT id FROM request_groups WHERE name = '${name}')`;
+  add(`INSERT OR IGNORE INTO request_group_approvers(group_id, user_id, step) SELECT ${grp('Đề nghị tạm ứng')}, ?, 1 WHERE ${grp('Đề nghị tạm ứng')} IS NOT NULL`, users.kt);
+  add(`INSERT OR IGNORE INTO request_group_approvers(group_id, user_id, step) SELECT ${grp('Đề nghị tạm ứng')}, ?, 2 WHERE ${grp('Đề nghị tạm ứng')} IS NOT NULL`, users.gd);
+  add(`INSERT OR IGNORE INTO request_group_approvers(group_id, user_id, step) SELECT ${grp('Đề nghị thanh toán')}, ?, 1 WHERE ${grp('Đề nghị thanh toán')} IS NOT NULL`, users.kt);
+  add(`INSERT OR IGNORE INTO request_group_approvers(group_id, user_id, step) SELECT ${grp('Đề xuất cấp văn phòng phẩm')}, ?, 1 WHERE ${grp('Đề xuất cấp văn phòng phẩm')} IS NOT NULL`, users.hr);
+  add(`INSERT OR IGNORE INTO request_group_approvers(group_id, user_id, step) SELECT ${grp('Đề xuất cấp văn phòng phẩm')}, ?, 1 WHERE ${grp('Đề xuất cấp văn phòng phẩm')} IS NOT NULL`, users.nv4);
+  add(`INSERT INTO requests(id, group_id, title, content, data, flow, creator_id, status, deadline_at, created_at, updated_at)
+    SELECT 1, ${grp('Đề nghị tạm ứng')}, 'Tạm ứng chi phí khảo sát NPP miền Trung', 'Chi phí đi lại, lưu trú 3 ngày khảo sát thị trường Đà Nẵng.',
+      ?, 'sequential', ?, 'pending', ?, ?, ? WHERE ${grp('Đề nghị tạm ứng')} IS NOT NULL`,
+  JSON.stringify({ amount: 8500000, purpose: 'Khảo sát và làm việc với NPP khu vực Đà Nẵng, Quảng Nam', refund_date: dateOffset(14) }),
+  users.nv1, datetimeOffset(1), datetimeOffset(-1), datetimeOffset(-1));
+  add("INSERT OR IGNORE INTO request_approvers(request_id, user_id, step, status) SELECT 1, ?, 1, 'pending' WHERE EXISTS (SELECT 1 FROM requests WHERE id = 1)", users.kt);
+  add("INSERT OR IGNORE INTO request_approvers(request_id, user_id, step, status) SELECT 1, ?, 2, 'pending' WHERE EXISTS (SELECT 1 FROM requests WHERE id = 1)", users.gd);
+  add(`INSERT INTO requests(id, group_id, title, data, flow, creator_id, status, completed_at, created_at, updated_at)
+    SELECT 2, ${grp('Đề xuất nghỉ phép')}, 'Nghỉ phép năm 2 ngày', ?, 'sequential', ?, 'approved', ?, ?, ? WHERE ${grp('Đề xuất nghỉ phép')} IS NOT NULL`,
+  JSON.stringify({ from: dateOffset(-8), to: dateOffset(-7), kind: 'Nghỉ phép năm', reason: 'Việc gia đình' }),
+  users.nv2, datetimeOffset(-9), datetimeOffset(-10), datetimeOffset(-9));
+  add("INSERT OR IGNORE INTO request_approvers(request_id, user_id, step, status, comment, acted_at) SELECT 2, ?, 1, 'approved', 'Đồng ý', ? WHERE EXISTS (SELECT 1 FROM requests WHERE id = 2)", users.kd, datetimeOffset(-9));
+  log('request', 1, users.nv1, 'created', 'Tạo đề xuất', datetimeOffset(-1));
+  log('request', 2, users.nv2, 'created', 'Tạo đề xuất', datetimeOffset(-10));
+  log('request', 2, users.kd, 'approved', 'Đã chấp thuận: Đồng ý', datetimeOffset(-9));
   add("INSERT INTO notifications(user_id, actor_id, app, type, title, link) VALUES (?,?, 'wework', 'assigned', ?, '/wework')",
     users.nv1, users.mkt, 'Nguyễn Minh Trang đã giao cho bạn công việc "Thiết kế bộ nhận diện chiến dịch"');
   return S;
 }
 
-const TABLES = ['notifications', 'activity_logs', 'custom_filters', 'goals', 'task_attachments', 'task_comments', 'task_checklist',
+const TABLES = ['request_attachments', 'request_comments', 'request_stars', 'request_followers', 'request_approvers', 'requests',
+  'request_group_stars', 'request_group_followers', 'request_group_approvers', 'notes', 'user_prefs', 'login_logs', 'app_access',
+  'user_group_members', 'user_groups', 'notifications', 'activity_logs', 'custom_filters', 'goals', 'task_attachments', 'task_comments', 'task_checklist',
   'task_stars', 'task_followers', 'tasks', 'task_lists', 'project_members', 'projects', 'document_comments', 'document_views',
   'document_stars', 'document_follows', 'document_recipients', 'document_approvers', 'document_attachments', 'documents',
   'doc_categories', 'doc_folders', 'doc_types', 'users', 'departments'];

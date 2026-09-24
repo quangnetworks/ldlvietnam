@@ -5,6 +5,7 @@ import {
   COOKIE, TOKEN_TTL, signToken, loadUser, requireAdmin, PUBLIC_USER_FIELDS, hashPassword, verifyPassword,
 } from '../auth.js';
 import { badRequest, notFound, toInt, jsonBody } from '../util.js';
+import { userApps, grantApps, audit, recordLogin, MODULES } from '../platform.js';
 
 const r = new Hono();
 
@@ -14,8 +15,10 @@ r.post('/auth/login', async (c) => {
   if (!username || !password) throw badRequest('Vui lòng nhập tên đăng nhập và mật khẩu');
   const u = await get('SELECT * FROM users WHERE lower(username) = lower(?) OR lower(email) = lower(?)', username, username);
   if (!u || !u.active || !(await verifyPassword(password, u.password_hash))) {
+    await recordLogin(c, u && u.active ? u : null, String(username).slice(0, 100), false);
     return c.json({ error: 'Tên đăng nhập hoặc mật khẩu không đúng' }, 401);
   }
+  await recordLogin(c, u, u.username, true);
   const token = await signToken(c, u);
   setCookie(c, COOKIE, token, {
     httpOnly: true, sameSite: 'Lax', path: '/', maxAge: TOKEN_TTL, secure: new URL(c.req.url).protocol === 'https:',
@@ -30,15 +33,32 @@ r.post('/auth/logout', (c) => {
 
 // Every route below requires a signed-in user (enforced in app.js)
 
-r.get('/auth/me', async (c) => c.json({ user: c.get('user'), company: await getSetting('company_name', 'Công ty') }));
+r.get('/auth/me', async (c) => c.json({
+  user: c.get('user'),
+  company: await getSetting('company_name', 'Công ty'),
+  apps: await userApps(c.get('user')),
+}));
+
+/** Normalise the free-form profile sections (học vấn, kinh nghiệm, giải thưởng). */
+export function cleanProfile(p) {
+  if (p === undefined) return undefined;
+  const obj = typeof p === 'string' ? JSON.parse(p || '{}') : p || {};
+  const list = (v) => (Array.isArray(v) ? v : []).slice(0, 50).map((x) => ({
+    title: String(x?.title || '').slice(0, 200), place: String(x?.place || '').slice(0, 200),
+    from: String(x?.from || '').slice(0, 20), to: String(x?.to || '').slice(0, 20), note: String(x?.note || '').slice(0, 1000),
+  })).filter((x) => x.title);
+  return JSON.stringify({ education: list(obj.education), experience: list(obj.experience), awards: list(obj.awards) });
+}
 
 r.put('/auth/me', async (c) => {
-  const { name, email, phone, title, color } = await jsonBody(c);
+  const { name, email, phone, title, color, birthday, address, bio, profile } = await jsonBody(c);
   if (name !== undefined && !String(name).trim()) throw badRequest('Tên không được để trống');
   await run(
     `UPDATE users SET name = COALESCE(?, name), email = COALESCE(?, email), phone = COALESCE(?, phone),
-     title = COALESCE(?, title), color = COALESCE(?, color) WHERE id = ?`,
-    name ?? null, email ?? null, phone ?? null, title ?? null, color ?? null, c.get('user').id
+     title = COALESCE(?, title), color = COALESCE(?, color), birthday = COALESCE(?, birthday),
+     address = COALESCE(?, address), bio = COALESCE(?, bio), profile = COALESCE(?, profile) WHERE id = ?`,
+    name ?? null, email ?? null, phone ?? null, title ?? null, color ?? null, birthday ?? null,
+    address ?? null, bio ?? null, cleanProfile(profile) ?? null, c.get('user').id
   );
   return c.json({ user: await loadUser(c.get('user').id) });
 });
@@ -56,7 +76,10 @@ r.put('/auth/password', async (c) => {
 r.get('/settings', async (c) => c.json({ company_name: await getSetting('company_name', 'Công ty') }));
 r.put('/settings', requireAdmin, async (c) => {
   const b = await jsonBody(c);
-  if (b.company_name) await setSetting('company_name', String(b.company_name).trim());
+  if (b.company_name) {
+    await setSetting('company_name', String(b.company_name).trim());
+    await audit(c.get('user').id, 'company', `Đổi tên công ty: ${String(b.company_name).trim()}`);
+  }
   return c.json({ company_name: await getSetting('company_name') });
 });
 
@@ -103,6 +126,9 @@ r.post('/users', requireAdmin, async (c) => {
     b.username.trim(), await hashPassword(b.password), b.name.trim(), b.email || null, b.phone || null,
     b.title || null, toInt(b.department_id), toInt(b.manager_id), b.role || 'member', b.color || null
   );
+  await run('UPDATE users SET birthday = ?, address = ? WHERE id = ?', b.birthday || null, b.address || null, lastId);
+  await grantApps(lastId, Array.isArray(b.apps) ? b.apps : null);
+  await audit(c.get('user').id, 'user.create', `Tạo tài khoản @${b.username.trim()}`);
   return c.json(await loadUser(lastId), 201);
 });
 
@@ -120,7 +146,17 @@ r.put('/users/:id', requireAdmin, async (c) => {
       toInt(b.manager_id), b.role || null, b.color || null, id
     );
   }
-  if (b.active !== undefined) await run('UPDATE users SET active = ? WHERE id = ?', b.active ? 1 : 0, id);
+  if (b.birthday !== undefined || b.address !== undefined) {
+    await run('UPDATE users SET birthday = COALESCE(?, birthday), address = COALESCE(?, address) WHERE id = ?',
+      b.birthday ?? null, b.address ?? null, id);
+  }
+  if (Array.isArray(b.apps)) await grantApps(id, b.apps.filter((k) => MODULES[k]));
+  if (b.active !== undefined) {
+    if (id === c.get('user').id && !b.active) throw badRequest('Không thể vô hiệu hóa chính mình');
+    await run('UPDATE users SET active = ? WHERE id = ?', b.active ? 1 : 0, id);
+  }
+  const target = await get('SELECT username FROM users WHERE id = ?', id);
+  await audit(c.get('user').id, 'user.update', b.active === true ? `Kích hoạt lại @${target.username}` : `Cập nhật tài khoản @${target.username}`);
   if (b.password) {
     if (String(b.password).length < 6) throw badRequest('Mật khẩu phải có ít nhất 6 ký tự');
     await run('UPDATE users SET password_hash = ? WHERE id = ?', await hashPassword(b.password), id);
@@ -132,6 +168,8 @@ r.delete('/users/:id', requireAdmin, async (c) => {
   const id = toInt(c.req.param('id'));
   if (id === c.get('user').id) throw badRequest('Không thể vô hiệu hóa chính mình');
   await run('UPDATE users SET active = 0 WHERE id = ?', id);
+  const target = await get('SELECT username FROM users WHERE id = ?', id);
+  await audit(c.get('user').id, 'user.disable', `Vô hiệu hoá @${target?.username}`);
   return c.json({ ok: true });
 });
 

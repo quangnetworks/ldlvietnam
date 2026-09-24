@@ -1,23 +1,20 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Bell, Grid3x3, FileText, CheckSquare, Settings, LogOut, User, KeyRound, CheckCheck } from 'lucide-react';
+import { Bell, Grid3x3, FileText, CheckSquare, Settings, LogOut, User, KeyRound, CheckCheck, GitPullRequestArrow } from 'lucide-react';
 import { api } from '../api.js';
 import { useApp } from '../context.jsx';
 import { Avatar, Dropdown, MenuItem } from './ui.jsx';
 import { timeAgo, cx } from '../utils.js';
 import { ProfileModal } from '../admin/Profile.jsx';
-
-export const APPS = [
-  { key: 'office', name: 'Base Office', desc: 'Văn bản', path: '/office', icon: FileText, color: '#2d7ff9' },
-  { key: 'wework', name: 'Base Wework', desc: 'Công việc và dự án', path: '/wework', icon: CheckSquare, color: '#20c997' },
-  { key: 'admin', name: 'Quản trị', desc: 'Nhân sự & phòng ban', path: '/admin', icon: Settings, color: '#7048e8' },
-];
+import { ECOSYSTEM, canOpen, AppIcon } from '../apps.jsx';
 
 export function AppSwitcher({ dark }) {
+  const { apps } = useApp();
+  const list = ECOSYSTEM.filter((a) => canOpen(a, apps));
   return (
     <Dropdown
       align="right"
-      width={320}
+      width={340}
       trigger={(open, toggle) => (
         <button className={cx('icon-btn', dark && 'on-dark')} onClick={toggle} title="Tất cả ứng dụng" aria-label="Tất cả ứng dụng">
           <Grid3x3 size={18} />
@@ -25,17 +22,20 @@ export function AppSwitcher({ dark }) {
       )}
     >
       <div className="app-grid">
-        {APPS.map((a) => (
+        {list.map((a) => (
           <Link key={a.key} to={a.path} className="app-tile" data-close>
-            <span className="app-icon" style={{ background: a.color }}><a.icon size={20} color="#fff" /></span>
+            <AppIcon app={a} size={40} />
             <b>{a.name}</b>
             <small>{a.desc}</small>
           </Link>
         ))}
       </div>
+      <Link to="/" className="menu-item center-link" data-close>Xem toàn bộ hệ sinh thái →</Link>
     </Dropdown>
   );
 }
+
+const APP_LABEL = { office: 'Base Office', wework: 'Base Wework', request: 'Base Request' };
 
 export function NotificationBell({ app, dark }) {
   const [data, setData] = useState({ items: [], unread: 0 });
@@ -87,7 +87,7 @@ export function NotificationBell({ app, dark }) {
                 <Avatar name={n.actor_name || 'Hệ thống'} color={n.actor_color} size={32} />
                 <span className="grow">
                   <span className="notif-title">{n.title}</span>
-                  <small className="muted">{n.app === 'office' ? 'Base Office' : 'Base Wework'} · {timeAgo(n.created_at)}</small>
+                  <small className="muted">{APP_LABEL[n.app] || 'Hệ thống'} · {timeAgo(n.created_at)}</small>
                 </span>
               </button>
             ))}
@@ -122,9 +122,9 @@ export function UserMenu({ dark, showName = true }) {
             <small className="muted block">@{user.username} · {user.title || user.department_name}</small>
           </div>
         </div>
-        <MenuItem icon={User} onClick={() => setProfile('info')}>Tài khoản</MenuItem>
+        <MenuItem icon={User} onClick={() => navigate('/account')}>Tài khoản</MenuItem>
         <MenuItem icon={KeyRound} onClick={() => setProfile('password')}>Đổi mật khẩu</MenuItem>
-        {user.role === 'admin' && <MenuItem icon={Settings} onClick={() => navigate('/admin')}>Quản trị hệ thống</MenuItem>}
+        {user.role === 'admin' && <MenuItem icon={Settings} onClick={() => navigate('/account/members')}>Quản trị hệ thống</MenuItem>}
         <MenuItem icon={LogOut} danger onClick={logout}>Đăng xuất</MenuItem>
       </Dropdown>
       {profile && <ProfileModal tab={profile} onClose={() => setProfile(null)} />}
@@ -144,6 +144,7 @@ export function QuickCreate({ dark }) {
     >
       <MenuItem icon={FileText} onClick={() => navigate('/office/new')}>Tạo văn bản</MenuItem>
       <MenuItem icon={CheckSquare} onClick={() => navigate('/wework?create=1')}>Tạo công việc</MenuItem>
+      <MenuItem icon={GitPullRequestArrow} onClick={() => navigate('/request/new')}>Tạo đề xuất</MenuItem>
     </Dropdown>
   );
 }

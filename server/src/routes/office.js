@@ -1,5 +1,6 @@
 import { Hono } from 'hono';
-import { all, get, run, batch, logActivity, notify } from '../db.js';
+import { all, get, run, batch, logActivity, notify, getSetting, setSetting } from '../db.js';
+import { audit } from '../platform.js';
 import { requireAdmin } from '../auth.js';
 import {
   badRequest, notFound, forbidden, toInt, idList, paginate, today, jsonBody, formBody, storeFiles, removeFile, sendFile,
@@ -182,13 +183,79 @@ async function attachmentsFor(ids) {
   return map;
 }
 
+// ---------------------------------------------------------------- settings (Cài đặt Office)
+const DEFAULT_SETTINGS = {
+  create_mode: 'all', // all | restricted
+  creator_users: [], creator_groups: [], creator_departments: [],
+  clerks: [], // văn thư: được cấp số văn bản
+  code_format: '{seq}/{year}/{prefix}-LDL',
+  seq_digits: 3,
+  default_expire_days: null,
+};
+
+export async function officeSettings() {
+  const raw = await getSetting('office_settings');
+  let v = {};
+  try { v = raw ? JSON.parse(raw) : {}; } catch { v = {}; }
+  return { ...DEFAULT_SETTINGS, ...v };
+}
+
+async function canCreateDoc(user, st) {
+  if (user.role === 'admin' || st.create_mode !== 'restricted') return true;
+  if (st.creator_users.includes(user.id) || st.clerks.includes(user.id)) return true;
+  if (user.department_id && st.creator_departments.includes(user.department_id)) return true;
+  if (st.creator_groups.length) {
+    const hit = await get(`SELECT 1 FROM user_group_members WHERE user_id = ? AND group_id IN (${st.creator_groups.map(() => '?').join(',')})`,
+      user.id, ...st.creator_groups);
+    if (hit) return true;
+  }
+  return false;
+}
+const isClerk = (user, st) => user.role === 'admin' || st.clerks.includes(user.id);
+
+r.get('/office/settings', async (c) => c.json(await officeSettings()));
+r.put('/office/settings', requireAdmin, async (c) => {
+  const b = await jsonBody(c);
+  const fmt = String(b.code_format || DEFAULT_SETTINGS.code_format).trim().slice(0, 80);
+  if (!fmt.includes('{seq}')) throw badRequest('Mẫu số hiệu phải chứa {seq}');
+  const days = toInt(b.default_expire_days);
+  const next = {
+    create_mode: b.create_mode === 'restricted' ? 'restricted' : 'all',
+    creator_users: idList(b.creator_users), creator_groups: idList(b.creator_groups), creator_departments: idList(b.creator_departments),
+    clerks: idList(b.clerks), code_format: fmt, seq_digits: Math.min(6, Math.max(1, toInt(b.seq_digits, 3))),
+    default_expire_days: days && days > 0 ? days : null,
+  };
+  await setSetting('office_settings', JSON.stringify(next));
+  await audit(c.get('user').id, 'office.settings', 'Cập nhật cài đặt Base Office');
+  return c.json(next);
+});
+
+/** Build the next document number from the configured template. */
+async function nextCode(d, st) {
+  const type = d.type_id ? await get('SELECT * FROM doc_types WHERE id = ?', d.type_id) : null;
+  const dep = d.department_id ? await get('SELECT code, name FROM departments WHERE id = ?', d.department_id) : null;
+  const year = String(new Date().getFullYear());
+  const n = (await get(`SELECT COUNT(*) AS c FROM documents WHERE code IS NOT NULL AND code <> '' AND strftime('%Y', COALESCE(issued_at, created_at)) = ?
+    AND IFNULL(type_id, 0) = IFNULL(?, 0)`, year, d.type_id ?? null)).c + 1;
+  return st.code_format
+    .replaceAll('{seq}', String(n).padStart(st.seq_digits, '0'))
+    .replaceAll('{year}', year)
+    .replaceAll('{month}', String(new Date().getMonth() + 1).padStart(2, '0'))
+    .replaceAll('{prefix}', type?.prefix || 'VB')
+    .replaceAll('{dept}', dep?.code || '');
+}
+
 // ---------------------------------------------------------------- meta
 r.get('/office/meta', async (c) => {
   const u = c.get('user');
   const vis = visibilitySql(u);
   const count = async (extra, ...p) =>
     (await get(`SELECT COUNT(*) AS c FROM documents d WHERE ${vis.sql} AND d.deleted_at IS NULL AND ${extra}`, ...vis.params, ...p)).c;
+  const st = await officeSettings();
   return c.json({
+    can_create: await canCreateDoc(u, st),
+    is_clerk: isClerk(u, st),
+    code_format: st.code_format,
     types: await all('SELECT * FROM doc_types ORDER BY name COLLATE NOCASE'),
     folders: await all('SELECT * FROM doc_folders ORDER BY name COLLATE NOCASE'),
     categories: await all('SELECT * FROM doc_categories ORDER BY name COLLATE NOCASE'),
@@ -224,7 +291,7 @@ r.get('/documents/export', async (c) => {
   const u = c.get('user');
   const { where, params, order } = buildListQuery(u, c.req.query());
   const items = (await all(`${DOC_SELECT} WHERE ${where} ORDER BY ${order} LIMIT 5000`, u.id, u.id, u.id, ...params)).map(decorate);
-  const esc = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`;
+  const esc = (v) => `"${String(v ?? '').replace(/^[=+\-@\t\r]/, "'$&").replace(/"/g, '""')}"`;
   const header = ['Số hiệu', 'Tiêu đề', 'Trích yếu', 'Nhóm', 'Loại văn bản', 'Trạng thái', 'Người ban hành',
     'Phòng ban', 'Ngày ban hành', 'Ngày hiệu lực', 'Ngày hết hạn', 'Lượt xem'];
   const lines = [header.map(esc).join(',')];
@@ -257,6 +324,7 @@ async function fullDoc(id, user) {
   d.can_approve = d.status === 'pending' && d.approvers.some((a) => a.user_id === user.id && a.status === 'pending' && a.step === pendingStep);
   d.can_edit = canEdit(user, d) && (['draft', 'rejected'].includes(d.status) || user.role === 'admin');
   d.can_manage = canEdit(user, d);
+  d.can_number = d.creator_id === user.id || isClerk(user, await officeSettings());
   return d;
 }
 
@@ -401,7 +469,14 @@ async function resubmit(id, user) {
 
 r.post('/documents', async (c) => {
   const user = c.get('user');
+  const st = await officeSettings();
+  if (!(await canCreateDoc(user, st))) throw forbidden('Bạn chưa được cấp quyền tạo văn bản (Cài đặt Office)');
   const { fields, files } = await formBody(c);
+  if (!fields.expire_date && st.default_expire_days) {
+    const d = new Date(fields.effective_date || Date.now());
+    d.setDate(d.getDate() + st.default_expire_days);
+    fields.expire_date = d.toISOString().slice(0, 10);
+  }
   const p = parseDocBody(fields);
   const asDraft = truthy(fields.draft);
   const { lastId: id } = await run(
@@ -505,13 +580,12 @@ r.post('/documents/:id/number', async (c) => {
   const user = c.get('user');
   const id = toInt(c.req.param('id'));
   const d = await loadDocOr404(id);
-  if (user.role !== 'admin' && d.creator_id !== user.id) throw forbidden();
+  const st = await officeSettings();
+  if (!isClerk(user, st) && d.creator_id !== user.id) throw forbidden('Chỉ văn thư hoặc người tạo được cấp số văn bản');
   let code = String((await jsonBody(c)).code || '').trim();
-  if (!code) {
-    const type = d.type_id ? await get('SELECT * FROM doc_types WHERE id = ?', d.type_id) : null;
-    const year = String(new Date().getFullYear());
-    const n = (await get("SELECT COUNT(*) AS c FROM documents WHERE code IS NOT NULL AND code <> '' AND strftime('%Y', created_at) = ?", year)).c + 1;
-    code = `${String(n).padStart(3, '0')}/${year}/${type?.prefix || 'VB'}`;
+  if (!code) code = await nextCode(d, st);
+  if (await get("SELECT 1 FROM documents WHERE code = ? AND id <> ? AND deleted_at IS NULL", code, id)) {
+    throw badRequest(`Số hiệu "${code}" đã được dùng cho văn bản khác`);
   }
   await run("UPDATE documents SET code = ?, updated_at = datetime('now') WHERE id = ?", code, id);
   await logActivity('document', id, user.id, 'numbered', `Cấp số văn bản: ${code}`);

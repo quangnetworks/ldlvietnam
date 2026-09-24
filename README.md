@@ -4,6 +4,24 @@ Webapp nội bộ gồm 2 phân hệ, giao diện và chức năng mô phỏng *
 
 ## Chức năng
 
+### Trang chủ (Home) — `/`
+- Màn hình khởi động toàn hệ sinh thái: lưới ứng dụng theo nhóm Work+ / HRM+ / Info+ / Finance+ / Platform, tìm kiếm ứng dụng.
+- Ứng dụng chưa được cấp quyền hiển thị khoá; ứng dụng chưa phát triển có nhãn "Sắp ra mắt".
+- Đồng hồ, lời chào, việc cần làm (đề xuất / văn bản chờ duyệt, công việc quá hạn), sinh nhật, thông báo toàn công ty, ghi chú cá nhân, đổi hình nền.
+
+### Tài khoản (Account) — `/account` — nền tảng cho mọi phân hệ
+- Hồ sơ cá nhân: thông tin liên hệ, quản lý trực tiếp, người báo cáo trực tiếp, nhóm, học vấn, kinh nghiệm, giải thưởng; đổi mật khẩu, màu hiển thị, lịch sử đăng nhập.
+- Thành viên: tìm kiếm, tab Tất cả / Quản trị hệ thống / Vô hiệu hoá / Lịch sử đăng nhập; tạo, sửa, vô hiệu hoá, đặt lại mật khẩu; **nhập / xuất Excel (CSV)**.
+- Nhóm người dùng, phòng ban; **Quản lý ứng dụng**: bật/tắt từng ứng dụng và phân quyền sử dụng theo tài khoản (được kiểm tra ở cả API).
+- Chỉnh sửa công ty, lịch sử hệ thống (audit), đổi mật khẩu hàng loạt.
+
+### Đề xuất (Request) — `/request`
+- Nhóm đề xuất theo danh mục, **biểu mẫu tuỳ chỉnh** (văn bản, đoạn văn, số, số tiền, ngày, danh sách chọn, ô tích, nhân sự).
+- Quy trình **duyệt lần lượt** hoặc **chỉ cần một người duyệt**, người duyệt mặc định + người tạo tự chọn thêm, người theo dõi mặc định, **SLA**.
+- Tab Tất cả / Đến lượt duyệt / Quá hạn / Chờ xử lý / Đã chấp thuận / Đã từ chối / Đã trả lại / Đã đánh dấu / Đã lưu nháp; Gửi đến tôi / Tôi gửi đi / Đang theo dõi.
+- Chấp thuận, từ chối, trả lại (kèm lý do), gửi lại, huỷ; bình luận, tệp đính kèm, lịch sử, thông báo.
+- Quản lý nhóm đề xuất: bật/tạm đóng, tác vụ hàng loạt, tạo từ mẫu, lịch sử chỉnh sửa; báo cáo theo nhóm và người duyệt.
+
 ### Văn bản (Office) — `/office`
 - Danh sách văn bản dạng **danh sách** hoặc **bảng**; tab *Tất cả / Thông báo / Văn bản đến / Văn bản đi / Văn bản nội bộ*.
 - Sidebar: Trang chủ, Đang theo dõi, Chờ tôi duyệt, Yêu thích, Tạo bởi tôi, Duyệt cấp số văn bản, Văn bản của hệ thống,
@@ -26,7 +44,7 @@ Webapp nội bộ gồm 2 phân hệ, giao diện và chức năng mô phỏng *
 
 ### Chung
 - Đăng nhập, thông báo thời gian thực (polling), chuyển ứng dụng, tài khoản & đổi mật khẩu.
-- **Quản trị** (`/admin`): người dùng, phân quyền, quản lý trực tiếp, phòng ban, tên công ty; tùy chỉnh loại văn bản / kho / thư mục.
+- **Cài đặt Office**: quyền tạo văn bản (tất cả / người / nhóm / phòng ban), văn thư cấp số, mẫu số hiệu `{seq}/{year}/{prefix}-LDL`, hạn hiệu lực mặc định; loại văn bản / kho / thư mục.
 
 ## Công nghệ
 - **Backend**: [Hono](https://hono.dev) — cùng một mã nguồn chạy trên **Cloudflare Workers** (D1 + R2) hoặc **Node.js ≥ 22.5** (SQLite tích hợp `node:sqlite` + thư mục tệp).

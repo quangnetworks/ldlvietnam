@@ -275,8 +275,8 @@ export default function DocList() {
         </div>
         <div className="page-actions">
           <a className="btn" href={api.url('/documents/export', query)}><FileOutput size={16} /> Xuất văn bản</a>
-          <button className="btn" onClick={() => setShowScan(true)}><ScanLine size={16} /> Quét văn bản</button>
-          <Link className="btn btn-success" to="/office/new"><FilePlus2 size={16} /> Tạo văn bản</Link>
+          {meta?.can_create !== false && <button className="btn" onClick={() => setShowScan(true)}><ScanLine size={16} /> Quét văn bản</button>}
+          {meta?.can_create !== false && <Link className="btn btn-success" to="/office/new"><FilePlus2 size={16} /> Tạo văn bản</Link>}
         </div>
       </div>
       <Tabs tabs={TABS} value={params.get('tab') || ''} onChange={(v) => setParam({ tab: v })} className="page-tabs" />

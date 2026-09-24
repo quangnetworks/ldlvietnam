@@ -4,6 +4,9 @@ import { HttpError } from './util.js';
 import coreRoutes from './routes/core.js';
 import officeRoutes from './routes/office.js';
 import weworkRoutes from './routes/wework.js';
+import accountRoutes from './routes/account.js';
+import requestRoutes from './routes/request.js';
+import { requireModule } from './platform.js';
 
 const PUBLIC_API = new Set(['/api/health', '/api/auth/login', '/api/auth/logout']);
 
@@ -13,12 +16,14 @@ export function createApp() {
 
   app.use('/api/*', async (c, next) => {
     if (PUBLIC_API.has(c.req.path)) return next();
-    return requireAuth(c, next);
+    return requireAuth(c, () => requireModule(c, next));
   });
   app.get('/api/health', (c) => c.json({ ok: true }));
   app.route('/api', coreRoutes);
   app.route('/api', officeRoutes);
   app.route('/api', weworkRoutes);
+  app.route('/api', accountRoutes);
+  app.route('/api', requestRoutes);
   app.all('/api/*', (c) => c.json({ error: 'API không tồn tại' }, 404));
 
   app.onError((err, c) => {

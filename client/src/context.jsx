@@ -14,6 +14,7 @@ export function useToast() {
 export function AppProvider({ children }) {
   const [user, setUser] = useState(null);
   const [company, setCompany] = useState('');
+  const [apps, setApps] = useState([]);
   const [loading, setLoading] = useState(true);
   const [users, setUsers] = useState([]);
   const [departments, setDepartments] = useState([]);
@@ -29,6 +30,7 @@ export function AppProvider({ children }) {
       const r = await api.get('/auth/me');
       setUser(r.user);
       setCompany(r.company);
+      setApps(r.apps || []);
       await loadDirectory();
     } catch {
       setUser(null);
@@ -53,9 +55,9 @@ export function AppProvider({ children }) {
   };
 
   const value = useMemo(
-    () => ({ user, setUser, company, setCompany, loading, login, logout, users, departments, loadDirectory, refreshMe }),
+    () => ({ user, setUser, company, setCompany, apps, loading, login, logout, users, departments, loadDirectory, refreshMe }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [user, company, loading, users, departments]
+    [user, company, apps, loading, users, departments]
   );
   return (
     <AppCtx.Provider value={value}>
