@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Star, Check, X, Repeat, MessageSquare, ListChecks, GitBranch, Play, Award } from 'lucide-react';
+import { Star, Check, X, Repeat, MessageSquare, ListChecks, GitBranch, Play, Award, CornerDownRight, FolderTree, ChevronRight } from 'lucide-react';
 import { api } from '../api.js';
 import { Avatar } from '../components/ui.jsx';
 import { TASK_STATUS, PRIORITY, RECURRING, fmtDate, stripHtml, cx } from '../utils.js';
@@ -41,7 +41,70 @@ export function TaskTags({ t, showProject = true }) {
   );
 }
 
-export function TaskRow({ t, onOpen, onChanged, selectable, selected, onSelect, showProject = true }) {
+/**
+ * Sắp xếp để công việc con nằm ngay dưới công việc cha (nếu cha cũng có trong danh sách).
+ * Trả về [{ t, depth, orphan }] — orphan: công việc con mà cha không nằm trong danh sách đang xem.
+ */
+export function nestTasks(items) {
+  const ids = new Set(items.map((t) => t.id));
+  const children = new Map();
+  for (const t of items) {
+    if (t.parent_id && ids.has(t.parent_id)) {
+      if (!children.has(t.parent_id)) children.set(t.parent_id, []);
+      children.get(t.parent_id).push(t);
+    }
+  }
+  const out = [];
+  const walk = (t, depth) => {
+    out.push({ t, depth, orphan: depth === 0 && !!t.parent_id, childrenShown: children.has(t.id) });
+    for (const c of children.get(t.id) || []) if (depth < 6) walk(c, depth + 1);
+  };
+  for (const t of items) if (!t.parent_id || !ids.has(t.parent_id)) walk(t, 0);
+  return out;
+}
+
+/** Nhãn phân biệt cấp: "Công việc cha · 2/3 việc con" hoặc "↳ Việc con của …". */
+export function LevelTag({ t, orphan }) {
+  if (t.parent_id) {
+    return <span className="lvl-tag child" title={t.parent_title ? `Công việc con của: ${t.parent_title}` : 'Công việc con'}>
+      <CornerDownRight size={11} /> Việc con{orphan && t.parent_title ? <> của <b className="ellipsis">{t.parent_title}</b></> : ''}
+    </span>;
+  }
+  if (t.subtask_count > 0) {
+    return <span className="lvl-tag parent" title="Công việc cha"><FolderTree size={11} /> Việc cha · {t.subtask_done}/{t.subtask_count} việc con</span>;
+  }
+  return null;
+}
+
+export function TaskRow(props) {
+  const { t, depth = 0, childrenShown = false, onOpen, onChanged } = props;
+  const [open, setOpen] = useState(false);
+  const [kids, setKids] = useState(null);
+  const canExpand = t.subtask_count > 0 && !childrenShown && depth < 5;
+  const toggle = async (e) => {
+    e.stopPropagation();
+    if (!open && !kids) {
+      try { setKids((await api.get('/tasks', { parent_id: t.id, sort: 'position', limit: 100 })).items); } catch { setKids([]); }
+    }
+    setOpen(!open);
+  };
+  const reloadKids = async () => {
+    if (open) { try { setKids((await api.get('/tasks', { parent_id: t.id, sort: 'position', limit: 100 })).items); } catch { /* bỏ qua */ } }
+    onChanged?.();
+  };
+  return (
+    <>
+      <TaskRowInner {...props} expander={canExpand ? (
+        <button type="button" className={cx('expander', open && 'open')} onClick={toggle} title={open ? 'Thu gọn việc con' : `Xem ${t.subtask_count} việc con`} aria-expanded={open}>
+          <ChevronRight size={15} />
+        </button>
+      ) : depth === 0 ? <span className="expander-space" /> : null} />
+      {open && kids?.map((k) => <TaskRow key={k.id} {...props} t={k} depth={depth + 1} orphan={false} childrenShown={false} onOpen={onOpen} onChanged={reloadKids} selectable={false} />)}
+    </>
+  );
+}
+
+function TaskRowInner({ t, onOpen, onChanged, selectable, selected, onSelect, showProject = true, depth = 0, orphan = false, expander }) {
   const setStatus = async (status) => {
     await api.put(`/tasks/${t.id}`, { status });
     onChanged?.();
@@ -53,19 +116,22 @@ export function TaskRow({ t, onOpen, onChanged, selectable, selected, onSelect, 
   };
   const desc = t.description ? stripHtml(t.description) : '';
   return (
-    <div className={cx('task-row', t.status === 'done' && 'is-done', selected && 'selected')} onClick={() => onOpen(t.id)}>
+    <div className={cx('task-row', t.status === 'done' && 'is-done', selected && 'selected', t.parent_id ? 'is-child' : t.subtask_count > 0 && 'is-parent', depth > 0 && 'nested')}
+      style={depth > 0 ? { '--depth': depth } : undefined} onClick={() => onOpen(t.id)}>
+      {depth > 0 && <span className="tree-line" aria-hidden />}
+      {expander}
       {selectable && (
         <input type="checkbox" checked={selected} onClick={(e) => e.stopPropagation()} onChange={() => onSelect(t.id)} aria-label="Chọn" />
       )}
       <StatusCircle task={t} onChange={setStatus} />
       <div className="task-body">
-        <div className="task-title">{t.parent_id ? <GitBranch size={13} className="muted" /> : null} {t.title}</div>
+        <div className="task-title">{t.title}</div>
         <div className="task-meta">
+          <LevelTag t={t} orphan={orphan || depth === 0} />
           <TaskTags t={t} showProject={showProject} />
           <span className="muted ellipsis">
             {desc && `${desc.slice(0, 120)} · `}Tạo bởi @{t.creator_username}
           </span>
-          {t.subtask_count > 0 && <span className="muted mini"><GitBranch size={12} /> {t.subtask_done}/{t.subtask_count}</span>}
           {t.checklist_count > 0 && <span className="muted mini"><ListChecks size={12} /> {t.checklist_done}/{t.checklist_count}</span>}
           {t.comment_count > 0 && <span className="muted mini"><MessageSquare size={12} /> {t.comment_count}</span>}
           {t.result_count > 0 && <span className="muted mini" title="Kết quả đã cập nhật"><Award size={12} /> {t.result_count}</span>}

@@ -124,6 +124,15 @@ async function checkAssign(user, assigneeId, projectId) {
   }
 }
 
+/**
+ * Người phối hợp / theo dõi (kể cả người ngoài phòng ban hay ngoài dự án) được xem, thảo luận, đính kèm tệp và cập nhật kết quả
+ * của riêng công việc đó mà không cần thêm vào dự án / phòng ban.
+ */
+async function canContribute(user, t) {
+  if (await canEditTask(user, t)) return true;
+  return !!(await get('SELECT 1 FROM task_followers WHERE task_id = ? AND user_id = ?', t.id, user.id));
+}
+
 async function canDeleteTask(user, t) {
   return isAdmin(user) || t.creator_id === user.id || (await projectRole(user, t.project_id)) === 'manager';
 }
@@ -571,6 +580,10 @@ async function fullTask(id, user) {
   t.parent = t.parent_id ? await get('SELECT id, title FROM tasks WHERE id = ?', t.parent_id) : null;
   t.goal = t.goal_id ? await get('SELECT g.id, g.title, g.progress, g.user_id, u.name AS owner_name FROM goals g LEFT JOIN users u ON u.id = g.user_id WHERE g.id = ?', t.goal_id) : null;
   t.can_edit = await canEditTask(user, t);
+  t.can_contribute = t.can_edit || t.following;
+  // người tham gia không thuộc dự án / phòng ban của công việc (được giao hoặc mời theo dõi riêng công việc này)
+  t.outside_project = !!t.project_id && !(await get('SELECT 1 FROM project_members WHERE project_id = ? AND user_id = ?', t.project_id, user.id))
+    && !(await get('SELECT 1 FROM projects WHERE id = ? AND owner_id = ?', t.project_id, user.id));
   // người chỉ được giao việc: không đổi thời gian, mô tả, dự án, lặp lại, không xoá
   t.can_manage = await isTaskOwner(user, t);
   t.can_delete = await canDeleteTask(user, t);
@@ -852,13 +865,18 @@ r.post('/tasks/:id/comments', async (c) => {
   if (!content) throw badRequest('Nội dung bình luận trống');
   const { lastId } = await run('INSERT INTO task_comments(task_id, user_id, content) VALUES (?,?,?)', t.id, user.id, content);
   const watchers = (await all('SELECT user_id FROM task_followers WHERE task_id = ?', t.id)).map((x) => x.user_id);
-  // @mention: @username
+  // @mention: @tên_đăng_nhập (ô bình luận gợi ý người dùng khi gõ @)
   const mentioned = [];
-  for (const m of content.matchAll(/@([\w.]+)/g)) {
-    const u = await get('SELECT id FROM users WHERE username = ?', m[1]);
-    if (u) mentioned.push(u.id);
+  for (const m of content.matchAll(/@([\w.-]+)/g)) {
+    const u = await get('SELECT id FROM users WHERE lower(username) = lower(?) AND active = 1', m[1].replace(/[.-]+$/, ''));
+    if (u && u.id !== user.id && !mentioned.includes(u.id)) mentioned.push(u.id);
   }
-  await notify([t.creator_id, t.assignee_id, ...watchers, ...mentioned], { actorId: user.id, app: APP, type: 'comment',
+  // người được nhắc tên được thêm vào người theo dõi để mở được công việc và nhận các cập nhật sau
+  await batch(mentioned.map((uid) => ['INSERT OR IGNORE INTO task_followers(task_id, user_id) VALUES (?,?)', [t.id, uid]]));
+  const snippet = content.replace(/\s+/g, ' ').slice(0, 80);
+  await notify(mentioned, { actorId: user.id, app: APP, type: 'mention',
+    title: `${user.name} đã nhắc đến bạn trong "${t.title}": ${snippet}`, link: `/wework/task/${t.id}` });
+  await notify([t.creator_id, t.assignee_id, ...watchers].filter((x) => !mentioned.includes(x)), { actorId: user.id, app: APP, type: 'comment',
     title: `${user.name} đã bình luận trong "${t.title}"`, link: `/wework/task/${t.id}` });
   await run("UPDATE tasks SET updated_at = datetime('now') WHERE id = ?", t.id);
   return c.json(await get(`${TASK_COMMENT_SELECT} WHERE c.id = ?`, lastId), 201);
@@ -967,7 +985,7 @@ r.get('/tasks/:id/results', async (c) => {
 r.post('/tasks/:id/results', async (c) => {
   const user = c.get('user');
   const t = await viewableTask(c);
-  if (!(await canEditTask(user, t))) throw forbidden('Chỉ người thực hiện, người giao việc hoặc quản lý dự án mới cập nhật được kết quả');
+  if (!(await canContribute(user, t))) throw forbidden('Chỉ người thực hiện, người phối hợp / theo dõi, người giao việc hoặc quản lý dự án mới cập nhật được kết quả');
   const { fields, files } = await formBody(c);
   const content = blankHtml(fields.content) ? null : String(fields.content);
   const links = parseLinks(fields.links);

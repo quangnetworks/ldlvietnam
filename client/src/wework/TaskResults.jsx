@@ -132,7 +132,7 @@ export default function TaskResults({ task, onChanged }) {
   return (
     <section className="td-section res">
       <div className="td-section-head"><b><Award size={15} className="text-blue" /> Kết quả công việc ({list.length})</b>
-        {task.can_edit && !adding && <button className="link-btn" onClick={() => setAdding(true)}><Plus size={14} /> Cập nhật kết quả</button>}
+        {(task.can_edit || task.can_contribute) && !adding && <button className="link-btn" onClick={() => setAdding(true)}><Plus size={14} /> Cập nhật kết quả</button>}
       </div>
       {adding && <ResultForm taskId={task.id} onDone={() => { setAdding(false); changed(); }} onCancel={() => setAdding(false)} />}
       {results && !list.length && !adding && (

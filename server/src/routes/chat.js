@@ -92,13 +92,12 @@ r.post('/chat/direct', async (c) => {
   const user = c.get('user');
   const other = toInt((await jsonBody(c)).user_id);
   if (!other || other === user.id || !(await get('SELECT 1 FROM users WHERE id = ? AND active = 1', other))) throw badRequest('Người nhận không hợp lệ');
-  const existing = await get(`SELECT c.id FROM chat_channels c WHERE c.kind = 'direct'
-    AND EXISTS (SELECT 1 FROM chat_members a WHERE a.channel_id = c.id AND a.user_id = ?)
-    AND EXISTS (SELECT 1 FROM chat_members b WHERE b.channel_id = c.id AND b.user_id = ?)`, user.id, other);
-  if (existing) return c.json({ id: existing.id });
-  const { lastId } = await run("INSERT INTO chat_channels(kind, created_by) VALUES ('direct', ?)", user.id);
-  await batch([user.id, other].map((uid) => ['INSERT INTO chat_members(channel_id, user_id) VALUES (?,?)', [lastId, uid]]));
-  return c.json({ id: lastId }, 201);
+  // khoá duy nhất theo cặp người dùng: bấm liên tục / hai người cùng mở vẫn chỉ ra một cuộc trò chuyện
+  const key = `${Math.min(user.id, other)}-${Math.max(user.id, other)}`;
+  await run("INSERT OR IGNORE INTO chat_channels(kind, created_by, direct_key) VALUES ('direct', ?, ?)", user.id, key);
+  const ch = await get("SELECT id FROM chat_channels WHERE kind = 'direct' AND direct_key = ?", key);
+  await batch([user.id, other].map((uid) => ['INSERT OR IGNORE INTO chat_members(channel_id, user_id) VALUES (?,?)', [ch.id, uid]]));
+  return c.json({ id: ch.id });
 });
 
 r.get('/chat/channels/:id', async (c) => {

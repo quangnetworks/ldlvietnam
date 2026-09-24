@@ -559,3 +559,46 @@ test('project members: add people or whole departments, change role, remove; mul
   const upd = await mkt.put(`/projects/${p.id}`, { department_ids: [kd.id] });
   assert.deepEqual(upd.data.departments.map((d) => d.id), [kd.id]);
 });
+
+test('task comments: @mention notifies the person and lets them open the task', async () => {
+  const kd = await login('truongkd');
+  const demo = await login('demo');
+  const hr = await login('chilan');
+  const { data: t } = await kd.post('/tasks', { title: 'Chuẩn bị hồ sơ thầu', assignee_id: demo.user.id });
+  assert.equal((await hr.get(`/tasks/${t.id}`)).status, 403);
+  await kd.post(`/tasks/${t.id}/comments`, { content: 'Nhờ @chilan kiểm tra giúp hồ sơ nhân sự.' });
+  const notes = (await hr.get('/notifications')).data;
+  const n = (notes.items || notes).find((x) => x.type === 'mention');
+  assert.ok(n && n.link === `/wework/task/${t.id}` && /nhắc đến bạn/.test(n.title));
+  assert.equal((await hr.get(`/tasks/${t.id}`)).status, 200);
+  // người thực hiện vẫn nhận thông báo bình luận thường
+  assert.ok(((await demo.get('/notifications')).data.items || []).some((x) => x.type === 'comment' && x.link === `/wework/task/${t.id}`));
+});
+
+test('chat: opening a direct conversation repeatedly never duplicates it', async () => {
+  const demo = await login('demo');
+  const mkt = await login('minhtrang');
+  const ids = await Promise.all([1, 2, 3, 4].map(() => demo.post('/chat/direct', { user_id: mkt.user.id })));
+  assert.equal(new Set(ids.map((r) => r.data.id)).size, 1);
+  assert.equal((await mkt.post('/chat/direct', { user_id: demo.user.id })).data.id, ids[0].data.id);
+  assert.equal((await demo.get('/chat/channels')).data.filter((c) => c.kind === 'direct' && c.peer?.id === mkt.user.id).length, 1);
+});
+
+test('department / project tasks: outside people join a single task without joining the project', async () => {
+  const mkt = await login('minhtrang');   // chủ Project MKT
+  const hr = await login('chilan');       // phòng HCNS, không thuộc Project MKT
+  const projects = (await mkt.get('/projects')).data;
+  const p = projects.find((x) => x.name === 'Project MKT');
+  assert.equal((await hr.get(`/projects/${p.id}`)).status, 403);
+  // mời theo dõi / phối hợp một công việc của dự án
+  const { data: t } = await mkt.post('/tasks', { title: 'Tuyển CTV cho sự kiện', project_id: p.id, followers: [hr.user.id] });
+  const seen = await hr.get(`/tasks/${t.id}`);
+  assert.equal(seen.status, 200);
+  assert.equal(seen.data.can_contribute, true);
+  assert.equal(seen.data.outside_project, true);
+  assert.equal((await hr.post(`/tasks/${t.id}/comments`, { content: 'Đã có danh sách ứng viên' })).status, 201);
+  assert.equal((await hr.post(`/tasks/${t.id}/results`, { content: '<p>12 CTV đã xác nhận</p>' })).status, 201);
+  // vẫn không xem được các công việc khác / toàn bộ dự án
+  assert.equal((await hr.get(`/projects/${p.id}`)).status, 403);
+  assert.ok(!(await hr.get(`/tasks?project_id=${p.id}&scope=all`)).data.items.some((x) => x.id !== t.id));
+});

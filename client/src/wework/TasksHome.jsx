@@ -7,7 +7,7 @@ import { Avatar, FilterSelect, Dropdown, MenuItem, Spinner, Empty, Progress, Mod
 import { useDebounced } from '../components/shell.jsx';
 import { weekLabel, fmtDate, cx } from '../utils.js';
 import { useWework } from './WeworkLayout.jsx';
-import { TaskRow } from './taskParts.jsx';
+import { TaskRow, nestTasks } from './taskParts.jsx';
 import TaskCalendar from './Calendar.jsx';
 import GoalModal from './GoalModal.jsx';
 
@@ -288,7 +288,7 @@ export default function TasksHome({ mode }) {
                 {groups.map((g) => (
                   <div key={g.label} className="task-group">
                     <div className="group-label">{g.label}</div>
-                    {g.items.map((t) => <TaskRow key={t.id} t={t} onOpen={openTask} onChanged={reload} />)}
+                    {nestTasks(g.items).map(({ t, depth, orphan, childrenShown }) => <TaskRow key={t.id} t={t} depth={depth} orphan={orphan} childrenShown={childrenShown} onOpen={openTask} onChanged={reload} />)}
                   </div>
                 ))}
               </div>

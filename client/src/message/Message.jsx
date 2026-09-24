@@ -17,9 +17,13 @@ export function isSendKey(e) {
 
 /** Thêm tin nhắn vào danh sách, không trùng id (tin vừa gửi có thể về lại qua lượt cập nhật định kỳ). */
 export function mergeMessages(list, rows) {
-  const ids = new Set((list || []).map((x) => x.id));
+  const cur = list || [];
+  const ids = new Set(cur.map((x) => x.id));
   const fresh = rows.filter((x) => !ids.has(x.id));
-  return fresh.length ? [...(list || []), ...fresh].sort((a, b) => a.id - b.id) : list || [];
+  if (!fresh.length) return cur;
+  // tin đang gửi (id tạm) luôn nằm cuối danh sách
+  const sent = [...cur.filter((x) => typeof x.id === 'number'), ...fresh].sort((a, b) => a.id - b.id);
+  return [...sent, ...cur.filter((x) => typeof x.id !== 'number')];
 }
 
 const HISTORY_OPTS = [
@@ -28,7 +32,9 @@ const HISTORY_OPTS = [
   { value: 'none', label: 'Không xem tin nhắn cũ — chỉ từ lúc được thêm' },
 ];
 
-const POLL_MS = 6000;
+// Cuộc trò chuyện đang mở: hỏi tin mới mỗi 2,5 giây (nhẹ — chỉ lấy tin sau id cuối); danh sách kênh: 10 giây
+const POLL_MS = 2500;
+const LIST_POLL_MS = 10000;
 
 export function hhmm(v) {
   const d = parseDate(v);
@@ -58,12 +64,15 @@ function NewChannel({ onClose }) {
   const toast = useToast();
   const navigate = useNavigate();
   const [f, setF] = useState({ name: '', description: '', kind: 'public', members: [] });
+  const [busy, setBusy] = useState(false);
   const save = async () => {
-    try { const ch = await api.post('/chat/channels', f); onClose(true); navigate(`/message/${ch.id}`); } catch (e) { toast(e.message, 'error'); }
+    if (busy) return;
+    setBusy(true);
+    try { const ch = await api.post('/chat/channels', f); onClose(true); navigate(`/message/${ch.id}`); } catch (e) { toast(e.message, 'error'); setBusy(false); }
   };
   return (
     <Modal title="Tạo kênh mới" onClose={() => onClose(false)} width={520}
-      footer={<><button className="btn" onClick={() => onClose(false)}>Huỷ</button><button className="btn btn-primary" disabled={!f.name.trim()} onClick={save}>Tạo kênh</button></>}>
+      footer={<><button className="btn" onClick={() => onClose(false)}>Huỷ</button><button className="btn btn-primary" disabled={!f.name.trim() || busy} onClick={save}>{busy ? 'Đang tạo…' : 'Tạo kênh'}</button></>}>
       <Field label="Tên kênh" required><input className="input" autoFocus value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} placeholder="vd: du-an-mien-bac" /></Field>
       <Field label="Mô tả"><input className="input" value={f.description} onChange={(e) => setF({ ...f, description: e.target.value })} /></Field>
       <label className="check"><input type="radio" checked={f.kind === 'public'} onChange={() => setF({ ...f, kind: 'public' })} /> Công khai — mọi nhân viên đều xem và tham gia được</label>
@@ -79,15 +88,19 @@ function NewDirect({ onClose }) {
   const toast = useToast();
   const [q, setQ] = useState('');
   const list = users.filter((u) => u.id !== user.id && u.name.toLowerCase().includes(q.toLowerCase()));
+  const [busy, setBusy] = useState(null);
+  // bấm liên tục chỉ gửi một yêu cầu (máy chủ cũng đảm bảo mỗi cặp người chỉ có một cuộc trò chuyện)
   const start = async (u) => {
-    try { const r = await api.post('/chat/direct', { user_id: u.id }); onClose(true); navigate(`/message/${r.id}`); } catch (e) { toast(e.message, 'error'); }
+    if (busy) return;
+    setBusy(u.id);
+    try { const r = await api.post('/chat/direct', { user_id: u.id }); onClose(true); navigate(`/message/${r.id}`); } catch (e) { toast(e.message, 'error'); setBusy(null); }
   };
   return (
     <Modal title="Nhắn tin trực tiếp" onClose={() => onClose(false)} width={440}>
       <input className="input" autoFocus placeholder="Tìm đồng nghiệp" value={q} onChange={(e) => setQ(e.target.value)} />
       <div className="move-list mt">
         {list.map((u) => (
-          <button key={u.id} className="drive-row plain" onClick={() => start(u)}><Avatar name={u.name} color={u.color} size={28} /><span className="grow">{u.name}<small className="muted block">{u.title}</small></span></button>
+          <button key={u.id} className="drive-row plain" disabled={!!busy} onClick={() => start(u)}><Avatar name={u.name} color={u.color} size={28} /><span className="grow">{u.name}<small className="muted block">{u.title}</small></span></button>
         ))}
       </div>
     </Modal>
@@ -160,9 +173,13 @@ function Conversation({ channelId, onActivity }) {
     }).catch((e) => setError(e.message));
   }, [channelId, loadChannel, markRead]);
 
+  const loaded = msgs !== null;
   useEffect(() => {
-    const t = setInterval(async () => {
-      if (document.hidden || msgs === null) return;
+    if (!loaded) return undefined;
+    let busy = false;
+    const poll = async () => {
+      if (document.hidden || busy) return;
+      busy = true; // không chồng nhiều lượt hỏi khi mạng chậm
       try {
         const rows = await api.get(`/chat/channels/${channelId}/messages`, { after_id: lastId.current || undefined, limit: 100 });
         if (rows.length) {
@@ -172,10 +189,13 @@ function Conversation({ channelId, onActivity }) {
           lastId.current = Math.max(lastId.current, rows[rows.length - 1].id);
           markRead(lastId.current);
         }
-      } catch { /* bỏ qua lỗi mạng tạm thời */ }
-    }, POLL_MS);
-    return () => clearInterval(t);
-  }, [channelId, markRead, msgs]);
+      } catch { /* bỏ qua lỗi mạng tạm thời */ } finally { busy = false; }
+    };
+    const t = setInterval(poll, POLL_MS);
+    const onVisible = () => { if (!document.hidden) poll(); };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => { clearInterval(t); document.removeEventListener('visibilitychange', onVisible); };
+  }, [channelId, markRead, loaded]);
 
   useEffect(() => {
     const el = listRef.current;
@@ -200,14 +220,19 @@ function Conversation({ channelId, onActivity }) {
     sendingRef.current = true;
     const body = toFormData({ content: text }, file ? [file] : []);
     const prev = { text, file };
+    // hiện tin ngay (đang gửi…), thay bằng tin thật khi máy chủ trả về
+    const tmpId = `tmp-${Date.now()}`;
+    stick.current = true;
+    setMsgs((x) => [...(x || []), { id: tmpId, pending: true, user_id: user.id, user_name: user.name, user_color: user.color,
+      content: text.trim() || null, original_name: file?.name || null, created_at: new Date().toISOString() }]);
     setText(''); setFile(null);
     try {
       const m = await api.post(`/chat/channels/${channelId}/messages`, body);
-      stick.current = true;
-      setMsgs((x) => mergeMessages(x, [m]));
+      setMsgs((x) => mergeMessages((x || []).filter((y) => y.id !== tmpId), [m]));
       lastId.current = Math.max(lastId.current, m.id);
       onActivity();
     } catch (err) {
+      setMsgs((x) => (x || []).filter((y) => y.id !== tmpId));
       setText(prev.text); setFile(prev.file);
       toast(err.message, 'error');
     } finally {
@@ -260,7 +285,7 @@ function Conversation({ channelId, onActivity }) {
           return (
             <div key={m.id}>
               {showDay && <div className="chat-day"><span>{day}</span></div>}
-              <div className={cx('chat-msg', grouped && 'grouped')}>
+              <div className={cx('chat-msg', grouped && 'grouped', m.pending && 'pending')}>
                 <div className="chat-avatar">{!grouped && <Avatar name={m.user_name || 'Hệ thống'} color={m.user_color} size={34} />}</div>
                 <div className="grow">
                   {!grouped && <div className="chat-meta"><b>{m.user_name || 'Hệ thống'}</b> <small className="muted">{hhmm(m.created_at)}</small></div>}
@@ -273,7 +298,8 @@ function Conversation({ channelId, onActivity }) {
                   ) : (
                     <>
                       {m.content && <div className="chat-text"><RichText text={m.content} />{m.edited_at && <small className="muted"> (đã sửa)</small>}</div>}
-                      {m.original_name && (
+                      {m.original_name && m.pending && <span className="chat-file"><Paperclip size={14} /> {m.original_name} <small className="muted">đang tải lên…</small></span>}
+                      {m.original_name && !m.pending && (
                         m.mime?.startsWith('image/')
                           ? <button type="button" className="chat-img-btn" onClick={() => openFile(m)} title="Xem ảnh"><img className="chat-img" src={api.url(`/chat/messages/${m.id}/file`, { inline: 1 })} alt={m.original_name} loading="lazy" /></button>
                           : <button type="button" className="chat-file as-btn" onClick={() => openFile(m)} title="Xem trước tệp"><Paperclip size={14} /> {m.original_name} <small className="muted">{fileSize(m.size)}</small></button>
@@ -281,7 +307,8 @@ function Conversation({ channelId, onActivity }) {
                     </>
                   )}
                 </div>
-                {mine && !m.deleted_at && editing?.id !== m.id && (
+                {m.pending && <small className="muted chat-sending">Đang gửi…</small>}
+                {mine && !m.deleted_at && !m.pending && editing?.id !== m.id && (
                   <div className="chat-actions">
                     {m.content && <button className="icon-btn" title="Sửa" onClick={() => setEditing({ id: m.id, content: m.content })}><Pencil size={13} /></button>}
                     <button className="icon-btn" title="Xoá" onClick={() => del(m)}><Trash2 size={13} /></button>
@@ -322,8 +349,19 @@ export default function MessagePage() {
   const [results, setResults] = useState(null);
   const navigate = useNavigate();
 
-  const loadChannels = useCallback(() => api.get('/chat/channels').then(setChannels).catch(() => {}), []);
-  useEffect(() => { loadChannels(); const t = setInterval(() => { if (!document.hidden) loadChannels(); }, POLL_MS * 2); return () => clearInterval(t); }, [loadChannels]);
+  // gộp các lần làm mới danh sách kênh dồn dập (đọc tin, gửi tin, cập nhật định kỳ) — tối đa 1 lần / 1,5 giây
+  const lastLoad = useRef(0);
+  const pendingLoad = useRef(null);
+  const loadChannels = useCallback(() => {
+    const wait = 1500 - (Date.now() - lastLoad.current);
+    if (wait > 0) {
+      if (!pendingLoad.current) pendingLoad.current = setTimeout(() => { pendingLoad.current = null; loadChannels(); }, wait);
+      return Promise.resolve();
+    }
+    lastLoad.current = Date.now();
+    return api.get('/chat/channels').then(setChannels).catch(() => {});
+  }, []);
+  useEffect(() => { loadChannels(); const t = setInterval(() => { if (!document.hidden) loadChannels(); }, LIST_POLL_MS); return () => clearInterval(t); }, [loadChannels]);
   useEffect(() => { if (!dq.trim()) { setResults(null); return; } api.get('/chat/search', { q: dq }).then(setResults); }, [dq]);
   useEffect(() => {
     if (!channelId && channels?.length && window.innerWidth > 800) navigate(`/message/${channels.find((c) => c.kind !== 'direct')?.id || channels[0].id}`, { replace: true });

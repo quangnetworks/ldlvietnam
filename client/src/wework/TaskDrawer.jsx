@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
   X, Star, Eye, Trash2, Link2, Paperclip, Plus, CheckSquare, GitBranch, Calendar, User, Flag, Repeat, FolderKanban,
@@ -6,12 +6,13 @@ import {
 } from 'lucide-react';
 import { api, toFormData } from '../api.js';
 import { useApp, useFetch, useToast } from '../context.jsx';
-import { Drawer, Spinner, Avatar, UserPicker, SafeHtml, RichEditor, FileChip, Tabs, Progress, Empty } from '../components/ui.jsx';
+import { Drawer, Spinner, Avatar, UserPicker, SafeHtml, RichEditor, FileChip, Progress, Empty } from '../components/ui.jsx';
 import { TASK_STATUS, RECURRING, fmtDateTime, timeAgo, cx } from '../utils.js';
 import { useWework } from './WeworkLayout.jsx';
 import { StatusCircle, TaskTags, useAssignable, createTaskList } from './taskParts.jsx';
 import TaskResults from './TaskResults.jsx';
 import FileViewer from '../components/FileViewer.jsx';
+import { MentionTextarea, MentionText } from '../components/Mention.jsx';
 
 export function TaskDetail({ id, onClose, onChanged, standalone }) {
   const { users } = useApp();
@@ -23,11 +24,12 @@ export function TaskDetail({ id, onClose, onChanged, standalone }) {
   const [editDesc, setEditDesc] = useState(false);
   const [desc, setDesc] = useState('');
   const [newItem, setNewItem] = useState('');
-  const [tab, setTab] = useState('comments');
   const [comment, setComment] = useState('');
   const [comments, reloadComments] = useFetch(() => api.get(`/tasks/${id}/comments`), [id]);
   const [activity, reloadActivity] = useFetch(() => api.get(`/tasks/${id}/activity`), [id]);
   const [viewing, setViewing] = useState(null);
+  const [sendingComment, setSendingComment] = useState(false);
+  const sendingRef = useRef(false);
   const assignable = useAssignable(users, t?.project_id, [t?.assignee_id]);
   const [goals, reloadGoals] = useFetch(() => api.get('/goals'), []);
 
@@ -65,12 +67,17 @@ export function TaskDetail({ id, onClose, onChanged, standalone }) {
     reload();
   };
   const sendComment = async (e) => {
-    e.preventDefault();
-    if (!comment.trim()) return;
-    await api.post(`/tasks/${id}/comments`, { content: comment });
-    setComment('');
-    reloadComments();
-    onChanged?.();
+    e?.preventDefault();
+    if (!comment.trim() || sendingRef.current) return;
+    sendingRef.current = true;
+    setSendingComment(true);
+    try {
+      await api.post(`/tasks/${id}/comments`, { content: comment });
+      setComment('');
+      reloadComments();
+      reloadActivity();
+      onChanged?.();
+    } catch (err) { toast(err.message, 'error'); } finally { sendingRef.current = false; setSendingComment(false); }
   };
   const upload = async (files) => {
     if (!files.length) return;
@@ -113,9 +120,16 @@ export function TaskDetail({ id, onClose, onChanged, standalone }) {
         {!standalone && <button className="icon-btn" onClick={onClose} aria-label="Đóng"><X size={20} /></button>}
       </div>
 
+      <div className="td-body">
       <div className="td-scroll">
-        {t.parent && (
-          <button className="link-btn small" onClick={() => openTask(t.parent.id)}><GitBranch size={13} /> {t.parent.title}</button>
+        {t.parent ? (
+          <button type="button" className="td-parent" onClick={() => openTask(t.parent.id)} title="Mở công việc cha">
+            <span className="lvl-tag child"><GitBranch size={11} /> Công việc con</span>
+            <span className="muted">thuộc</span> <b className="ellipsis">{t.parent.title}</b>
+          </button>
+        ) : t.subtasks.length > 0 && (
+          <div className="td-parent is-parent"><span className="lvl-tag parent"><GitBranch size={11} /> Công việc cha</span>
+            <span className="muted">{t.subtasks.filter((x) => x.status === 'done').length}/{t.subtasks.length} việc con hoàn thành</span></div>
         )}
         <textarea className="td-title" rows={1} value={title} readOnly={ro} onChange={(e) => setTitle(e.target.value)}
           onBlur={() => title.trim() && title !== t.title && update({ title })}
@@ -126,8 +140,8 @@ export function TaskDetail({ id, onClose, onChanged, standalone }) {
           <div className="td-field"><span><User size={14} /> Người thực hiện</span>
             {ro ? <b>{t.assignee_name}</b> : <UserPicker users={assignable} value={t.assignee_id} onChange={(v) => update({ assignee_id: v })} placeholder="Chưa giao" />}
           </div>
-          <div className="td-field"><span><Eye size={14} /> Người theo dõi</span>
-            <UserPicker users={users} multiple value={t.followers.map((f) => f.id)} onChange={(v) => update({ followers: v })} placeholder="Thêm người theo dõi" />
+          <div className="td-field"><span><Eye size={14} /> Người theo dõi / phối hợp</span>
+            <UserPicker users={users} multiple value={t.followers.map((f) => f.id)} onChange={(v) => update({ followers: v })} placeholder="Mời người theo dõi / phối hợp (kể cả ngoài phòng ban)" />
           </div>
           <div className="td-field"><span><Calendar size={14} /> Ngày bắt đầu</span>
             <input type="date" className="input" disabled={locked} title={lockHint} value={t.start_date?.slice(0, 10) || ''} onChange={(e) => update({ start_date: e.target.value })} />
@@ -185,6 +199,7 @@ export function TaskDetail({ id, onClose, onChanged, standalone }) {
             </select>
           </div>
         </div>
+        {t.outside_project && <div className="td-outside small">👥 Bạn tham gia riêng công việc này của <b>{t.project_name}</b> (không cần là thành viên): xem, thảo luận, đính kèm tệp và cập nhật kết quả.</div>}
         {lockHint && <div className="td-lock small">🔒 Bạn là người được giao việc: cập nhật trạng thái, kết quả, checklist, tệp và thảo luận; thời gian, mô tả, dự án và lặp lại do người giao việc quản lý.</div>}
         <div className="small muted">Tạo bởi <b>{t.creator_name}</b> · {fmtDateTime(t.created_at)} · cập nhật {timeAgo(t.updated_at)}
           {t.project_id && <> · <Link to={`/wework/project/${t.project_id}`} onClick={onClose}>{t.project_name}</Link></>}
@@ -226,7 +241,7 @@ export function TaskDetail({ id, onClose, onChanged, standalone }) {
         </section>
 
         <section className="td-section">
-          <div className="td-section-head"><b>Công việc con ({t.subtasks.length})</b>
+          <div className="td-section-head"><b><GitBranch size={15} /> Công việc con ({t.subtasks.length})</b>
             <button className="link-btn" onClick={() => openCreate({ parent_id: t.id, project_id: t.project_id, assignee_id: t.assignee_id, openAfter: false })}>
               <Plus size={14} /> Thêm công việc con
             </button>
@@ -263,40 +278,42 @@ export function TaskDetail({ id, onClose, onChanged, standalone }) {
         </section>
 
         <section className="td-section">
-          <Tabs value={tab} onChange={setTab} tabs={[
-            { value: 'comments', label: 'Thảo luận', count: comments?.length },
-            { value: 'activity', label: 'Lịch sử' },
-          ]} />
-          {tab === 'comments' ? (
-            <>
-              <div className="comments">
-                {comments?.map((c) => (
-                  <div key={c.id} className="comment">
-                    <Avatar name={c.user_name} color={c.user_color} size={30} />
-                    <div className="grow">
-                      <div><b>{c.user_name}</b> <small className="muted">{timeAgo(c.created_at)}</small></div>
-                      <div className="pre">{c.content}</div>
-                    </div>
-                  </div>
-                ))}
-                {comments && !comments.length && <Empty icon={MessageSquare} title="Chưa có thảo luận" />}
+          <div className="td-section-head"><b><MessageSquare size={15} /> Thảo luận ({comments?.length || 0})</b></div>
+          <div className="comments">
+            {comments?.map((c) => (
+              <div key={c.id} className="comment">
+                <Avatar name={c.user_name} color={c.user_color} uid={c.user_id} size={30} />
+                <div className="grow">
+                  <div><b>{c.user_name}</b> <small className="muted">{timeAgo(c.created_at)}</small></div>
+                  <div className="pre comment-text"><MentionText text={c.content} /></div>
+                </div>
               </div>
-              <form className="comment-form" onSubmit={sendComment}>
-                <textarea className="input" rows={2} value={comment} onChange={(e) => setComment(e.target.value)}
-                  placeholder="Viết bình luận... (gõ @tên_đăng_nhập để nhắc tới)"
-                  onKeyDown={(e) => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) sendComment(e); }} />
-                <button className="btn btn-primary" disabled={!comment.trim()}>Gửi</button>
-              </form>
-            </>
-          ) : (
-            <ul className="timeline">
-              {activity?.map((a) => (
-                <li key={a.id}><History size={13} /> <b>{a.user_name}</b> — {a.detail || a.action}
-                  <small className="muted block">{fmtDateTime(a.created_at)}</small></li>
-              ))}
-            </ul>
-          )}
+            ))}
+            {comments && !comments.length && <Empty icon={MessageSquare} title="Chưa có thảo luận" />}
+          </div>
+          <form className="comment-form" onSubmit={sendComment}>
+            <MentionTextarea className="input" rows={2} value={comment} onChange={setComment} onSubmit={() => sendComment()}
+              placeholder="Viết bình luận… gõ @ để nhắc tên đồng nghiệp (họ nhận thông báo và xem được công việc) · Ctrl+Enter để gửi" />
+            <button className="btn btn-primary" disabled={!comment.trim() || sendingComment}>Gửi</button>
+          </form>
         </section>
+      </div>
+
+      <aside className="td-aside" aria-label="Lịch sử công việc">
+        <div className="td-aside-head"><History size={15} /> <b>Lịch sử</b>{activity && <small className="muted">{activity.length}</small>}</div>
+        <ul className="timeline td-timeline">
+          {activity?.map((a) => (
+            <li key={a.id}>
+              <Avatar name={a.user_name || 'Hệ thống'} color={a.user_color} uid={a.user_id} size={22} />
+              <div className="grow">
+                <div><b>{a.user_name || 'Hệ thống'}</b> <span className="muted">{a.detail || a.action}</span></div>
+                <small className="muted">{fmtDateTime(a.created_at)}</small>
+              </div>
+            </li>
+          ))}
+          {activity && !activity.length && <li className="muted small">Chưa có hoạt động</li>}
+        </ul>
+      </aside>
       </div>
     </div>
   );
@@ -304,7 +321,7 @@ export function TaskDetail({ id, onClose, onChanged, standalone }) {
 
 export default function TaskDrawer({ id, onClose, onChanged }) {
   return (
-    <Drawer onClose={onClose}>
+    <Drawer onClose={onClose} width={1140}>
       <TaskDetail id={id} onClose={onClose} onChanged={onChanged} />
     </Drawer>
   );

@@ -8,7 +8,7 @@ import { useApp, useFetch, useToast } from '../context.jsx';
 import { Avatar, AvatarStack, Spinner, Empty, Dropdown, MenuItem, UserPicker, Modal, Progress, FilterSelect } from '../components/ui.jsx';
 import { TASK_STATUS, fmtDate, fmtDateTime, cx } from '../utils.js';
 import { useWework } from './WeworkLayout.jsx';
-import { TaskRow, TaskTags } from './taskParts.jsx';
+import { TaskRow, TaskTags, nestTasks } from './taskParts.jsx';
 import TaskCalendar, { Timeline } from './Calendar.jsx';
 import ProjectFormModal from './ProjectFormModal.jsx';
 import { ReportView } from './ReportsPage.jsx';
@@ -314,7 +314,7 @@ export default function ProjectPage() {
                   </div>
                   {!collapsed[key] && (
                     <>
-                      {listTasks.map((t) => <TaskRow key={t.id} t={t} onOpen={openTask} onChanged={bump} showProject={false} />)}
+                      {nestTasks(listTasks).map(({ t, depth, orphan, childrenShown }) => <TaskRow key={t.id} t={t} depth={depth} orphan={orphan} childrenShown={childrenShown} onOpen={openTask} onChanged={bump} showProject={false} />)}
                       <QuickAdd projectId={project.id} listId={c.id} onAdded={bump} />
                     </>
                   )}

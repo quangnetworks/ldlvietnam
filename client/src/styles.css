@@ -1662,3 +1662,50 @@ button.rpt-task:hover { background: var(--hover); }
 .members-add-row .grow { min-width: 220px; }
 .members-role { width: auto; min-width: 120px; }
 .badge-blue { background: var(--tint-blue); color: var(--blue-2); }
+
+/* ---------- Chi tiết công việc: lịch sử ở cột phải ---------- */
+.td-body { flex: 1; min-height: 0; display: flex; }
+.td-body > .td-scroll { flex: 1; min-width: 0; }
+.td-aside { width: 320px; flex: none; border-left: 1px solid var(--line); background: var(--bg-3); overflow-y: auto; padding: 14px 16px 30px; }
+.td-aside-head { display: flex; align-items: center; gap: 6px; margin-bottom: 10px; position: sticky; top: -14px; background: var(--bg-3); padding: 4px 0; z-index: 1; }
+.td-aside-head small { margin-left: auto; }
+.td-timeline { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 12px; }
+.td-timeline li { display: flex; gap: 8px; font-size: 12.5px; line-height: 1.45; }
+.task-page .td-body { min-height: 70vh; }
+.td-section-head b { display: inline-flex; align-items: center; gap: 6px; }
+@media (max-width: 1000px) {
+  .td-body { flex-direction: column; overflow-y: auto; }
+  .td-body > .td-scroll { overflow: visible; flex: none; }
+  .td-aside { width: auto; border-left: 0; border-top: 1px solid var(--line); overflow: visible; }
+}
+/* Nhắc tên */
+.mention-box { position: relative; flex: 1; min-width: 0; display: flex; }
+.mention-box textarea { flex: 1; }
+.mention-menu { position: absolute; left: 0; right: 0; bottom: calc(100% + 4px); z-index: 80; background: var(--bg); border-radius: 12px; box-shadow: var(--shadow); padding: 4px; max-height: 280px; overflow: auto; }
+.mention-item { display: flex; align-items: center; gap: 8px; width: 100%; padding: 6px 8px; border: 0; background: none; border-radius: 8px; font: inherit; font-size: 13px; color: var(--text); text-align: left; cursor: pointer; }
+.mention-item.active { background: var(--tint-blue); }
+.comment-text .mention, .mention { background: var(--tint-blue); color: var(--blue-2); border-radius: 4px; padding: 0 3px; font-weight: 500; }
+
+/* ---------- Phân biệt công việc cha / công việc con ---------- */
+.lvl-tag { display: inline-flex; align-items: center; gap: 3px; font-size: 11px; font-weight: 500; padding: 1px 7px; border-radius: 999px; white-space: nowrap; max-width: 260px; flex: none; }
+.lvl-tag b { font-weight: 600; min-width: 0; }
+.lvl-tag.parent { background: var(--tint-purple); color: var(--purple); }
+.lvl-tag.child { background: var(--bg-3); color: var(--text-2); border: 1px solid var(--line-2); }
+.task-row.is-parent .task-title { font-weight: 600; }
+.task-row.nested { position: relative; padding-left: calc(14px + var(--depth) * 26px); background: color-mix(in srgb, var(--bg-3) 60%, var(--bg)); }
+.task-row.nested .tree-line { position: absolute; left: calc(var(--depth) * 26px - 6px); top: 0; bottom: 50%; width: 12px; border-left: 2px solid var(--line-2); border-bottom: 2px solid var(--line-2); border-bottom-left-radius: 8px; }
+.task-row.is-child .task-title { font-size: 13.5px; }
+.mt-row.is-child td { background: color-mix(in srgb, var(--bg-3) 55%, var(--bg)); }
+.mt-row.is-child .mt-name-col { background: color-mix(in srgb, var(--bg-3) 55%, var(--bg)); }
+.mt-tree { color: var(--muted); flex: none; }
+.mt-parent-title { font-weight: 600; }
+.td-parent { display: flex; align-items: center; gap: 6px; width: 100%; padding: 8px 12px; margin-bottom: 8px; border: 1px dashed var(--line-2); border-radius: 10px; background: var(--bg-3); font: inherit; font-size: 13px; color: var(--text); text-align: left; cursor: pointer; min-width: 0; }
+.td-parent:hover { border-color: var(--blue-2); }
+.td-parent.is-parent { cursor: default; border-style: solid; }
+.td-outside { background: var(--tint-blue); color: var(--text-2); border-radius: 10px; padding: 8px 12px; margin: 4px 0 8px; }
+.chat-msg.pending { opacity: 0.6; }
+.chat-sending { align-self: flex-end; font-size: 11px; }
+.expander, .expander-space { width: 22px; height: 22px; flex: none; }
+.expander { border: 0; background: none; border-radius: 6px; display: grid; place-items: center; color: var(--muted); cursor: pointer; transition: transform 0.15s, background 0.15s; }
+.expander:hover { background: var(--hover); color: var(--text); }
+.expander.open { transform: rotate(90deg); color: var(--purple); }

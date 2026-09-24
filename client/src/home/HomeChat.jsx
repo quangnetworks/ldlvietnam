@@ -9,7 +9,7 @@ import EmojiPicker, { insertAtCursor } from '../components/EmojiPicker.jsx';
 import FileViewer from '../components/FileViewer.jsx';
 import { cx } from '../utils.js';
 
-const POLL_MS = 8000;
+const POLL_MS = 4000;
 
 /** Khung chat nhóm trên Home: kênh toàn công ty và kênh phòng ban. */
 export default function HomeChat() {
@@ -50,8 +50,11 @@ export default function HomeChat() {
       lastId.current = rows.length ? rows[rows.length - 1].id : 0;
       markRead(lastId.current);
     }).catch(() => alive && setMsgs([]));
+    let tick = 0;
+    let busy = false;
     const t = setInterval(async () => {
-      if (document.hidden) return;
+      if (document.hidden || busy) return;
+      busy = true;
       try {
         const rows = await api.get(`/chat/channels/${active}/messages`, lastId.current ? { after_id: lastId.current } : { limit: 30 });
         const fresh = rows.filter((x) => x.id > lastId.current);
@@ -60,8 +63,8 @@ export default function HomeChat() {
           lastId.current = Math.max(lastId.current, fresh[fresh.length - 1].id);
           markRead(lastId.current);
         }
-        if (alive) loadChannels();
-      } catch { /* bỏ qua lỗi mạng tạm thời */ }
+        if (alive && ++tick % 4 === 0) loadChannels(); // số tin chưa đọc của kênh khác: ~16 giây / lần
+      } catch { /* bỏ qua lỗi mạng tạm thời */ } finally { busy = false; }
     }, POLL_MS);
     return () => { alive = false; clearInterval(t); };
   }, [active, markRead, loadChannels]);

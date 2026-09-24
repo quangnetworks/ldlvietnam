@@ -52,7 +52,9 @@ Webapp nội bộ gồm 2 phân hệ, giao diện và chức năng mô phỏng *
 - Tab: Nhân viên của tôi, **Bộ lọc tùy chỉnh** (lưu bộ lọc), Đang theo dõi, **Lịch biểu**, **CV lặp lại**.
 - Panel phải: tỷ lệ hoàn thành, Mới được giao, Mới giao đi, Cảnh báo ưu tiên, **Mục tiêu** (gắn các công việc liên quan — tìm & gắn, bỏ gắn, tạo công việc mới cho mục tiêu; tiến độ tự tính theo % công việc đã hoàn thành hoặc nhập tay; chọn mục tiêu ngay trong công việc), bộ lọc tùy chỉnh, nhân viên của tôi.
 - Chi tiết công việc: người thực hiện, người theo dõi, ngày bắt đầu / thời hạn, ưu tiên (*Bình thường / Quan trọng / Khẩn cấp / Quan trọng & khẩn cấp* — đủ 4 ô ma trận Eisenhower), mục tiêu, lặp lại (ngày / tuần / tháng — tự tạo kỳ tiếp theo khi hoàn thành),
-  mô tả, **checklist**, **công việc con**, tệp đính kèm, thảo luận (nhắc tên bằng `@tên_đăng_nhập`), lịch sử.
+  mô tả, **checklist**, **công việc con**, tệp đính kèm, thảo luận (gõ **@** để chọn người cần nhắc tên — người được nhắc nhận thông báo riêng và tự được thêm vào người theo dõi), **lịch sử ở cột bên phải**.
+- **Cấp công việc cha / con**: nhãn *Việc cha · x/y việc con* và *Việc con (của …)*, việc con thụt lề dưới việc cha với đường nối, nút mở rộng để xem việc con ngay trong danh sách.
+- **Người ngoài dự án / phòng ban** được giao hoặc mời theo dõi / phối hợp một công việc: xem, thảo luận, đính kèm tệp, cập nhật kết quả của riêng công việc đó mà không cần thêm vào dự án / phòng ban.
 - **Dự án** (một dự án có thể phối hợp nhiều phòng ban) và **Phòng ban**: tạo mới / từ **mẫu**, lưu dự án thành mẫu, **thành viên & vai trò** (thêm từng người hoặc cả phòng ban, đổi vai trò quản lý / thành viên, xoá — quản lý dự án và quản trị viên), **nhóm công việc** (mọi thành viên tạo được ngay trong danh sách, Kanban, khi tạo / sửa công việc; quản lý dự án đổi tên / xoá);
   xem dạng **Danh sách**, **Kanban** (kéo thả), **Theo trạng thái**, **Lịch**, **Tiến độ (Gantt)**, Hoạt động, Báo cáo.
 - Thành viên, **Tác vụ hàng loạt**, tìm nhanh.
@@ -82,8 +84,8 @@ Webapp nội bộ gồm 2 phân hệ, giao diện và chức năng mô phỏng *
 ### LDL Message — `/message`
 - Kênh công khai / riêng tư, tin nhắn 1-1, số tin chưa đọc, gửi tệp / ảnh (**xem trước** mọi định dạng), **biểu tượng cảm xúc**, sửa / xoá tin nhắn của mình, nhắc tên `@tên_đăng_nhập` (có thông báo), tìm kiếm tin nhắn.
 - Thêm thành viên vào kênh riêng tư: chọn quyền **xem toàn bộ tin nhắn cũ / 7 ngày gần đây / không xem tin cũ**. Quản trị viên (hoặc người tạo) **xoá kênh** cùng toàn bộ tin nhắn và tệp.
-- Enter gửi / Shift+Enter xuống dòng; chống gửi trùng khi nhấn Enter liên tiếp hoặc đang gõ dấu tiếng Việt.
-- Cập nhật tin nhắn mới mỗi ~6 giây (polling, tạm dừng khi tab ẩn).
+- Enter gửi / Shift+Enter xuống dòng; chống gửi trùng khi nhấn Enter liên tiếp hoặc đang gõ dấu tiếng Việt; tin hiện ngay khi gửi; mỗi cặp người chỉ có một cuộc trò chuyện 1-1 (bấm liên tục không tạo trùng).
+- Cập nhật tin nhắn mới mỗi ~2,5 giây trong cuộc trò chuyện đang mở (polling nhẹ, tạm dừng khi tab ẩn).
 
 ### Chung
 - Đăng nhập, thông báo thời gian thực (polling), chuyển ứng dụng, tài khoản & đổi mật khẩu.

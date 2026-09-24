@@ -1,6 +1,6 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  ClipboardCheck, Plus, CalendarClock, Filter, FolderKanban, Layers, Settings2, ChevronDown, ChevronRight, ListTree, Search, Award,
+  ClipboardCheck, Plus, CalendarClock, Filter, FolderKanban, Layers, Settings2, ChevronDown, ChevronRight, ListTree, Search, Award, CornerDownRight, FolderTree,
 } from 'lucide-react';
 import { api } from '../api.js';
 import { useApp, useFetch, useToast } from '../context.jsx';
@@ -8,6 +8,7 @@ import { Avatar, Dropdown, MenuItem, Spinner } from '../components/ui.jsx';
 import { useDebounced } from '../components/shell.jsx';
 import { isoDate, parseDate, fmtDate, PRIORITY, cx } from '../utils.js';
 import { useWework } from './WeworkLayout.jsx';
+import { nestTasks } from './taskParts.jsx';
 
 /** "Công việc của tôi" dạng bảng (theo bố cục Base Wework): tab giao cho tôi / tôi giao đi / đang theo dõi, nhóm theo thời hạn. */
 const TABS = [
@@ -280,14 +281,16 @@ export default function MyTasksPage() {
                       </td>
                       <td colSpan={shown.length} />
                     </tr>
-                    {!isCollapsed && g.items.map((t) => (
-                      <tr key={t.id} className={cx('mt-row', t.status === 'done' && 'done')} onClick={() => openTask(t.id)}>
+                    {!isCollapsed && nestTasks(g.items).map(({ t, depth, orphan }) => (
+                      <tr key={t.id} className={cx('mt-row', t.status === 'done' && 'done', t.parent_id ? 'is-child' : t.subtask_count > 0 && 'is-parent')} onClick={() => openTask(t.id)}>
                         <td className="mt-name-col">
-                          <div className="mt-name">
+                          <div className="mt-name" style={{ paddingLeft: 4 + depth * 22 }}>
+                            {depth > 0 && <CornerDownRight size={14} className="mt-tree" aria-hidden />}
                             <input type="checkbox" checked={t.status === 'done'} onClick={(e) => e.stopPropagation()} onChange={() => toggleDone(t)}
                               title={t.status === 'done' ? 'Đánh dấu chưa hoàn thành' : 'Đánh dấu hoàn thành'} aria-label="Hoàn thành" />
-                            <span className="ellipsis grow" title={t.title}>{t.title}</span>
-                            {t.parent_id && <ListTree size={14} className="muted" title="Công việc con" />}
+                            <span className={cx('ellipsis grow', t.subtask_count > 0 && !t.parent_id && 'mt-parent-title')} title={t.title}>{t.title}</span>
+                            {t.parent_id && orphan && <span className="lvl-tag child" title={`Công việc con của: ${t.parent_title || ''}`}><ListTree size={11} /> Việc con</span>}
+                            {!t.parent_id && t.subtask_count > 0 && <span className="lvl-tag parent" title="Công việc cha"><FolderTree size={11} /> {t.subtask_done}/{t.subtask_count}</span>}
                           </div>
                         </td>
                         {shown.map((c) => <td key={c.key}>{cell(t, c.key)}</td>)}

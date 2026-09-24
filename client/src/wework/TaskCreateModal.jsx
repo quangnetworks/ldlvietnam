@@ -44,7 +44,9 @@ export default function TaskCreateModal({ defaults, onClose, onCreated }) {
     }
   };
   const allowed = useAssignable(users, form.project_id);
-  const assignable = members ? allowed.filter((u) => members.includes(u.id) || u.id === user.id) : allowed;
+  // không giới hạn trong thành viên dự án: người ngoài dự án / phòng ban được giao sẽ chỉ thấy riêng công việc này
+  const assignable = allowed;
+  const outside = (ids) => (members ? ids.filter((x) => !members.includes(x)).length : 0);
 
   return (
     <Modal title={defaults.parent_id ? 'Tạo công việc con' : 'Tạo công việc mới'} onClose={onClose} width={720}
@@ -88,7 +90,9 @@ export default function TaskCreateModal({ defaults, onClose, onCreated }) {
         <Field label="Người thực hiện" hint={assignable.length < users.length ? 'Chỉ hiện những người bạn được giao việc (nhân viên do bạn quản lý / thành viên dự án bạn quản lý)' : undefined}>
           <UserPicker users={assignable} value={form.assignee_id} onChange={set('assignee_id')} />
         </Field>
-        <Field label="Người theo dõi"><UserPicker users={users} multiple value={form.followers} onChange={set('followers')} placeholder="Thêm người theo dõi" /></Field>
+        <Field label="Người theo dõi / phối hợp" hint={outside([form.assignee_id, ...form.followers].filter(Boolean)) ? 'Có người ngoài dự án / phòng ban — họ chỉ xem, thảo luận và cập nhật kết quả của riêng công việc này' : 'Có thể mời người ngoài dự án / phòng ban'}>
+          <UserPicker users={users} multiple value={form.followers} onChange={set('followers')} placeholder="Thêm người theo dõi / phối hợp" />
+        </Field>
         <Field label="Ngày bắt đầu"><input type="date" className="input" value={form.start_date} onChange={set('start_date')} /></Field>
         <Field label="Thời hạn"><input type="date" className="input" value={form.due_date} onChange={set('due_date')} /></Field>
         <Field label="Mức độ ưu tiên">
