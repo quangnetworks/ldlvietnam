@@ -362,3 +362,90 @@ test('wework task results: text, links and files; viewer link and byte ranges', 
   assert.equal((await demo.put(`/tasks/${t.id}/results/${first.id}`, { content: '<p>Bổ sung</p>' })).data[0].content, '<p>Bổ sung</p>');
   assert.equal((await admin.del(`/tasks/${t.id}/results/${first.id}`)).data.length, 0);
 });
+
+test('office: a new policy supersedes the old one, reverting when it is withdrawn', async () => {
+  const admin = await login('admin');
+  const demo = await login('demo');
+  const fd = (o) => { const f = new FormData(); for (const [k, v] of Object.entries(o)) f.append(k, v); return f; };
+  const { data: oldDoc } = await admin.post('/documents', fd({ title: 'Chính sách công tác phí 2025', kind: 'notice' }));
+  assert.equal(oldDoc.status, 'issued');
+  // không thay thế được văn bản nháp
+  const { data: draft } = await admin.post('/documents', fd({ title: 'Nháp', draft: '1' }));
+  assert.equal((await admin.post('/documents', fd({ title: 'X', replaces_id: draft.id }))).status, 400);
+  const today = new Date().toISOString().slice(0, 10);
+  const { data: newDoc } = await admin.post('/documents', fd({ title: 'Chính sách công tác phí 2026', replaces_id: oldDoc.id, effective_date: today }));
+  assert.equal(newDoc.replaces.id, oldDoc.id);
+  const old = (await demo.get(`/documents/${oldDoc.id}`)).data;
+  assert.equal(old.is_superseded, true);
+  assert.equal(old.superseded_doc.id, newDoc.id);
+  assert.deepEqual(old.versions.map((v) => v.id), [oldDoc.id, newDoc.id]);
+  // rời khỏi danh sách đang áp dụng, sang mục "Đã bị thay thế"
+  assert.ok(!(await demo.get('/documents?box=home&limit=200')).data.items.some((d) => d.id === oldDoc.id));
+  assert.ok((await demo.get('/documents?box=superseded')).data.items.some((d) => d.id === oldDoc.id));
+  // một văn bản chỉ bị thay thế một lần
+  assert.equal((await admin.post('/documents', fd({ title: 'Y', replaces_id: oldDoc.id }))).status, 400);
+  // người đã xem văn bản cũ nhận thông báo
+  const notes = (await demo.get('/notifications')).data;
+  assert.ok((notes.items || notes).some((n) => n.type === 'superseded'));
+  // huỷ văn bản mới → văn bản cũ trở lại hiệu lực
+  await admin.del(`/documents/${newDoc.id}`);
+  assert.equal((await demo.get(`/documents/${oldDoc.id}`)).data.is_superseded, false);
+  // hiệu lực trong tương lai: đã lên lịch thay thế, văn bản cũ vẫn áp dụng
+  const { data: later } = await admin.post('/documents', fd({ title: 'Công tác phí 2027', replaces_id: oldDoc.id, effective_date: '2099-01-01' }));
+  const o2 = (await demo.get(`/documents/${oldDoc.id}`)).data;
+  assert.equal(o2.is_superseded, false);
+  assert.equal(o2.supersede_scheduled, true);
+  assert.equal(o2.superseded_doc.id, later.id);
+});
+
+test('chat: history visibility for added members, admin deletes channels', async () => {
+  const demo = await login('demo');
+  const mkt = await login('minhtrang');
+  const hr = await login('chilan');
+  const admin = await login('admin');
+  const { data: ch } = await demo.post('/chat/channels', { name: 'bi-mat', kind: 'private' });
+  await demo.post(`/chat/channels/${ch.id}/messages`, { content: 'tin cũ 1' });
+  await demo.post(`/chat/channels/${ch.id}/messages`, { content: 'tin cũ 2' });
+  await demo.put(`/chat/channels/${ch.id}`, { members: [demo.user.id, mkt.user.id], history: 'none' });
+  assert.equal((await mkt.get(`/chat/channels/${ch.id}/messages`)).data.length, 0);
+  assert.equal((await mkt.get('/chat/search?q=tin%20c%C5%A9')).data.length, 0);
+  assert.equal((await mkt.get('/chat/channels')).data.find((x) => x.id === ch.id).unread, 0);
+  await demo.post(`/chat/channels/${ch.id}/messages`, { content: 'tin mới' });
+  assert.deepEqual((await mkt.get(`/chat/channels/${ch.id}/messages`)).data.map((m) => m.content), ['tin mới']);
+  await demo.put(`/chat/channels/${ch.id}`, { members: [demo.user.id, mkt.user.id, hr.user.id], history: 'all' });
+  assert.equal((await hr.get(`/chat/channels/${ch.id}/messages`)).data.length, 3);
+  // người đã có không bị đổi quyền
+  assert.equal((await mkt.get(`/chat/channels/${ch.id}/messages`)).data.length, 1);
+  // xoá kênh: thành viên thường không được, quản trị viên được
+  assert.equal((await mkt.del(`/chat/channels/${ch.id}`)).status, 403);
+  assert.equal((await admin.del(`/chat/channels/${ch.id}`)).status, 200);
+  assert.equal((await demo.get(`/chat/channels/${ch.id}`)).status, 404);
+});
+
+test('request groups: forms and process guides for requesters', async () => {
+  const admin = await login('admin');
+  const demo = await login('demo');
+  const g = (await demo.get('/request-groups')).data[0];
+  const fd = new FormData();
+  fd.append('kind', 'form');
+  fd.append('files', new Blob(['mau'], { type: 'application/pdf' }), 'Mẫu đề xuất.pdf');
+  assert.equal((await demo.post(`/request-groups/${g.id}/files`, fd)).status, 403);
+  const up = await admin.post(`/request-groups/${g.id}/files`, fd);
+  assert.equal(up.status, 201);
+  const full = (await admin.get(`/request-groups/${g.id}`)).data;
+  await admin.put(`/request-groups/${g.id}`, { ...full, approvers: full.approvers.map((a) => a.user_id), followers: full.followers.map((f) => f.user_id), guide: '<p>Bước 1: tải mẫu</p>' });
+  const seen = (await demo.get(`/request-groups/${g.id}`)).data;
+  assert.equal(seen.files[0].original_name, 'Mẫu đề xuất.pdf');
+  assert.equal(seen.guide, '<p>Bước 1: tải mẫu</p>');
+  assert.equal((await demo.get(`/request-groups/${g.id}/files/${seen.files[0].id}`)).data, 'mau');
+  assert.ok((await demo.get('/request-groups')).data.find((x) => x.id === g.id).file_count >= 1);
+});
+
+test('home agenda lists important tasks to keep an eye on', async () => {
+  const demo = await login('demo');
+  await demo.post('/tasks', { title: 'Việc khẩn cần lưu ý', priority: 'urgent' });
+  const a = (await demo.get('/home/agenda')).data;
+  const item = a.important.find((i) => i.title === 'Việc khẩn cần lưu ý');
+  assert.equal(item.role, 'assignee');
+  assert.ok(a.important.every((i) => ['urgent', 'important'].includes(i.priority)));
+});

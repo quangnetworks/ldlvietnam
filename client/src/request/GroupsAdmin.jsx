@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react';
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
-import { Search, ChevronDown, Pencil, Plus, Trash2, ArrowUp, ArrowDown, User, Users, Copy } from 'lucide-react';
-import { api } from '../api.js';
+import { Search, ChevronDown, Pencil, Plus, Trash2, ArrowUp, ArrowDown, User, Users, Copy, BookOpen, Upload, FileText, Workflow } from 'lucide-react';
+import { api, toFormData } from '../api.js';
 import { useApp, useFetch, useToast } from '../context.jsx';
-import { Field, UserPicker, Spinner, Dropdown, MenuItem, Empty, Avatar, Modal } from '../components/ui.jsx';
+import { Field, UserPicker, Spinner, Dropdown, MenuItem, Empty, Avatar, Modal, RichEditor, FileChip } from '../components/ui.jsx';
+import FileViewer from '../components/FileViewer.jsx';
 import { useDebounced } from '../components/shell.jsx';
 import { fmtDateTime, cx } from '../utils.js';
 import { useRequestApp, groupByCategory } from './RequestLayout.jsx';
@@ -87,7 +88,7 @@ export function GroupsAdmin({ bulk = false }) {
                   <tr key={g.id}>
                     <td><input type="checkbox" checked={selected.includes(g.id)} onChange={() => sel(g.id)} /></td>
                     <td><Link to={`/request/settings/group/${g.id}`} className="rq-gname">{g.name}</Link>
-                      <small className="muted block">{g.description || 'Không có mô tả'} · {g.request_count} đề xuất</small></td>
+                      <small className="muted block">{g.description || 'Không có mô tả'} · {g.request_count} đề xuất{g.file_count ? ` · ${g.file_count} biểu mẫu / quy trình` : ''}</small></td>
                     <td><FlowLabel flow={g.flow} /></td>
                     <td>{g.sla_hours ? <b>{g.sla_hours} <span className="muted">(h)</span></b> : '—'}</td>
                     <td><label className="switch"><input type="checkbox" checked={g.active} onChange={() => toggleOne(g)} /><span /></label></td>
@@ -164,6 +165,8 @@ export function GroupEditor() {
   const [g, setG] = useState(null);
   const [err, setErr] = useState('');
   const [preview, setPreview] = useState({});
+  const [pending, setPending] = useState([]); // [{ file, kind }] tải lên sau khi lưu nhóm
+  const [viewing, setViewing] = useState(null);
   useEffect(() => {
     if (id && id !== 'new') {
       api.get(`/request-groups/${id}`).then((x) => setG({ ...x, approvers: x.approvers.map((a) => a.user_id), followers: x.followers.map((f) => f.user_id) }))
@@ -188,8 +191,11 @@ export function GroupEditor() {
     setErr('');
     try {
       const body = { ...g, fields: g.fields.map((f) => ({ ...f, options: f.type === 'select' ? (Array.isArray(f.options) ? f.options : String(f.options || '').split('\n')) : undefined })) };
-      if (id && id !== 'new') await api.put(`/request-groups/${id}`, body);
-      else await api.post('/request-groups', body);
+      const gid = id && id !== 'new' ? (await api.put(`/request-groups/${id}`, body), id) : (await api.post('/request-groups', body)).id;
+      for (const kind of ['form', 'process']) {
+        const list = pending.filter((p) => p.kind === kind).map((p) => p.file);
+        if (list.length) await api.post(`/request-groups/${gid}/files`, toFormData({ kind }, list));
+      }
       toast('Đã lưu nhóm đề xuất');
       reloadGroups();
       navigate('/request/settings');
@@ -243,6 +249,41 @@ export function GroupEditor() {
           </div>
         </div>
         <div>
+          <div className="card">
+            <h3 className="card-title"><BookOpen size={16} /> Biểu mẫu & quy trình hướng dẫn</h3>
+            <p className="muted small">Đính kèm biểu mẫu (mẫu đơn, bảng kê…) và tài liệu quy trình để người làm đề xuất đọc, xem trước, tải về và thực hiện theo.
+              Hiển thị ngay khi tạo đề xuất và trong trang chi tiết đề xuất.</p>
+            <Field label="Hướng dẫn thực hiện">
+              <RichEditor value={g.guide || ''} onChange={set('guide')} minHeight={100} placeholder="Ví dụ: Bước 1 — tải biểu mẫu, điền đầy đủ; Bước 2 — đính kèm chứng từ; Bước 3 — gửi trước 3 ngày…" />
+            </Field>
+            {[['form', 'Biểu mẫu', FileText], ['process', 'Quy trình / hướng dẫn', Workflow]].map(([kind, label, Icon]) => {
+              const saved = (g.files || []).filter((f) => f.kind === kind);
+              const staged = pending.filter((p) => p.kind === kind);
+              return (
+                <div key={kind} className="rq-guide-group">
+                  <div className="row between"><small className="muted rq-guide-label"><Icon size={13} /> {label}</small>
+                    <label className="link-btn small"><Upload size={13} /> Tải lên
+                      <input type="file" multiple hidden onChange={(e) => { setPending([...pending, ...[...e.target.files].map((file) => ({ file, kind }))]); e.target.value = ''; }} /></label>
+                  </div>
+                  <div className="attach-list">
+                    {saved.map((f) => (
+                      <FileChip key={f.id} file={f} onOpen={() => setViewing(g.files.indexOf(f))} onRemove={async () => {
+                        if (!window.confirm(`Xoá "${f.original_name}"?`)) return;
+                        try { setG({ ...g, files: await api.del(`/request-groups/${g.id}/files/${f.id}`) }); } catch (e) { toast(e.message, 'error'); }
+                      }} />
+                    ))}
+                    {staged.map((p) => <FileChip key={`${p.file.name}${pending.indexOf(p)}`} file={p.file} onRemove={() => setPending(pending.filter((x) => x !== p))} />)}
+                    {!saved.length && !staged.length && <small className="muted">Chưa có tệp</small>}
+                  </div>
+                </div>
+              );
+            })}
+            {pending.length > 0 && <small className="muted">{pending.length} tệp sẽ được tải lên khi bấm “Lưu nhóm đề xuất”.</small>}
+            {viewing != null && (
+              <FileViewer files={g.files} index={viewing} urlOf={(f) => api.url(`/request-groups/${g.id}/files/${f.id}`)} onClose={() => setViewing(null)}
+                publicUrlOf={async (f) => (await api.post(`/request-groups/${g.id}/files/${f.id}/link`)).url} />
+            )}
+          </div>
           <div className="card">
             <h3 className="card-title">Quy trình duyệt</h3>
             <div className="seg-choice">

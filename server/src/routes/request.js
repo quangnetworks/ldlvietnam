@@ -5,6 +5,7 @@ import {
   badRequest, notFound, forbidden, toInt, idList, paginate, jsonBody, formBody, storeFiles, removeFile, sendFile,
 } from '../util.js';
 import { fireRequestEvent } from './webhooks.js';
+import { publicFileLink } from '../files.js';
 
 const r = new Hono();
 const APP = 'request';
@@ -179,8 +180,11 @@ async function fullRequest(id, user) {
   const raw = await get('SELECT content, data FROM requests WHERE id = ?', id);
   q.content = raw.content;
   q.data = parseJson(raw.data, {});
-  const group = q.group_id ? await get('SELECT id, name, fields, custom_approvers, sla_hours FROM request_groups WHERE id = ?', q.group_id) : null;
+  const group = q.group_id ? await get('SELECT id, name, fields, custom_approvers, sla_hours, guide FROM request_groups WHERE id = ?', q.group_id) : null;
   q.fields = group ? parseJson(group.fields, []) : [];
+  // biểu mẫu / quy trình của nhóm đề xuất để người làm & người duyệt đối chiếu
+  q.group_guide = group?.guide || null;
+  q.group_files = group ? await groupFiles(group.id) : [];
   q.approvers = await all(`SELECT a.*, u.name, u.color, u.title FROM request_approvers a JOIN users u ON u.id = a.user_id
     WHERE a.request_id = ? ORDER BY a.step, u.name`, id);
   q.followers = await all('SELECT u.id, u.name, u.color FROM request_followers f JOIN users u ON u.id = f.user_id WHERE f.request_id = ? ORDER BY u.name', id);
@@ -452,6 +456,12 @@ r.post('/requests/:id/attachments', async (c) => {
   if (files.length) await logActivity('request', q.id, user.id, 'attached', `Đính kèm ${files.length} tệp`);
   return c.json((await fullRequest(q.id, user)).attachments, 201);
 });
+r.post('/requests/:id/attachments/:aid/link', async (c) => {
+  const q = await viewable(c);
+  const a = await get('SELECT id, original_name FROM request_attachments WHERE id = ? AND request_id = ?', toInt(c.req.param('aid')), q.id);
+  if (!a) throw notFound('Tệp không tồn tại');
+  return c.json(await publicFileLink(c, 'ra', a));
+});
 r.get('/requests/:id/attachments/:aid', async (c) => {
   const q = await viewable(c);
   const a = await get('SELECT * FROM request_attachments WHERE id = ? AND request_id = ?', toInt(c.req.param('aid')), q.id);
@@ -469,12 +479,13 @@ async function groupList(user, q) {
   else if (q.status === 'paused') where.push('g.active = 0');
   if (q.q) { where.push('(g.name LIKE ? OR g.category LIKE ?)'); params.push(`%${q.q}%`, `%${q.q}%`); }
   const rows = await all(`SELECT g.id, g.name, g.description, g.category, g.flow, g.sla_hours, g.active, g.custom_approvers, g.updated_at,
+      (SELECT COUNT(*) FROM request_group_files gf WHERE gf.group_id = g.id) AS file_count, g.guide IS NOT NULL AND g.guide <> '' AS has_guide,
       EXISTS (SELECT 1 FROM request_group_stars s WHERE s.group_id = g.id AND s.user_id = ?) AS starred,
       (SELECT COUNT(*) FROM request_group_approvers a WHERE a.group_id = g.id) AS approver_count,
       (SELECT COUNT(*) FROM requests q WHERE q.group_id = g.id) AS request_count
     FROM request_groups g ${where.length ? `WHERE ${where.join(' AND ')}` : ''} ORDER BY g.category COLLATE NOCASE, g.name COLLATE NOCASE`,
   user.id, ...params);
-  return rows.map((g) => ({ ...g, starred: !!g.starred, active: !!g.active, custom_approvers: !!g.custom_approvers }));
+  return rows.map((g) => ({ ...g, starred: !!g.starred, active: !!g.active, custom_approvers: !!g.custom_approvers, has_guide: !!g.has_guide }));
 }
 
 r.get('/request-groups', async (c) => c.json(await groupList(c.get('user'), c.req.query())));
@@ -492,8 +503,44 @@ r.get('/request-groups/:id', async (c) => {
   g.approvers = await all(`SELECT a.user_id, a.step, u.name, u.color, u.title FROM request_group_approvers a JOIN users u ON u.id = a.user_id
     WHERE a.group_id = ? ORDER BY a.step`, g.id);
   g.followers = await all(`SELECT f.user_id, u.name, u.color FROM request_group_followers f JOIN users u ON u.id = f.user_id WHERE f.group_id = ?`, g.id);
+  g.files = await groupFiles(g.id);
   return c.json(g);
 });
+
+// ---------------- biểu mẫu & quy trình của nhóm đề xuất (quản trị viên tải lên, mọi người xem / tải về)
+const GROUP_FILE_KINDS = ['form', 'process'];
+function groupFiles(groupId) {
+  return all(`SELECT f.id, f.kind, f.original_name, f.mime, f.size, f.created_at, u.name AS user_name FROM request_group_files f
+    LEFT JOIN users u ON u.id = f.user_id WHERE f.group_id = ? ORDER BY f.kind, f.id`, groupId);
+}
+async function groupFile(c) {
+  const f = await get('SELECT * FROM request_group_files WHERE id = ? AND group_id = ?', toInt(c.req.param('fid')), toInt(c.req.param('id')));
+  if (!f) throw notFound('Tệp không tồn tại');
+  return f;
+}
+r.post('/request-groups/:id/files', requireAdmin, async (c) => {
+  const id = toInt(c.req.param('id'));
+  const g = await get('SELECT id, name FROM request_groups WHERE id = ?', id);
+  if (!g) throw notFound('Nhóm đề xuất không tồn tại');
+  const { fields, files } = await formBody(c);
+  const kind = GROUP_FILE_KINDS.includes(fields.kind) ? fields.kind : 'form';
+  const stored = await storeFiles(files);
+  await batch(stored.map((f) => ['INSERT INTO request_group_files(group_id, kind, filename, original_name, mime, size, user_id) VALUES (?,?,?,?,?,?,?)',
+    [id, kind, f.filename, f.original_name, f.mime, f.size, c.get('user').id]]));
+  if (stored.length) {
+    await logActivity('request_group', id, c.get('user').id, 'files',
+      `Đính kèm ${stored.length} ${kind === 'form' ? 'biểu mẫu' : 'tài liệu quy trình'} cho "${g.name}"`);
+  }
+  return c.json(await groupFiles(id), 201);
+});
+r.delete('/request-groups/:id/files/:fid', requireAdmin, async (c) => {
+  const f = await groupFile(c);
+  await run('DELETE FROM request_group_files WHERE id = ?', f.id);
+  await removeFile(f.filename);
+  return c.json(await groupFiles(f.group_id));
+});
+r.get('/request-groups/:id/files/:fid', async (c) => sendFile(c, await groupFile(c), c.req.query('inline') === '1'));
+r.post('/request-groups/:id/files/:fid/link', async (c) => c.json(await publicFileLink(c, 'gf', await groupFile(c))));
 
 function parseGroup(b) {
   const name = String(b.name || '').trim();
@@ -511,7 +558,7 @@ function parseGroup(b) {
   for (const f of fields) { while (keys.has(f.key)) f.key += '_'; keys.add(f.key); }
   const sla = toInt(b.sla_hours);
   return {
-    name: name.slice(0, 200), description: b.description || null, category: String(b.category || '').trim() || 'Chung',
+    name: name.slice(0, 200), description: b.description || null, guide: b.guide && String(b.guide).replace(/<[^>]*>|&nbsp;/g, '').trim() ? String(b.guide) : null, category: String(b.category || '').trim() || 'Chung',
     fields: JSON.stringify(fields), flow: b.flow === 'any' ? 'any' : 'sequential',
     custom_approvers: b.custom_approvers === false ? 0 : 1, sla_hours: sla && sla > 0 ? sla : null,
     active: b.active === false ? 0 : 1, approvers: idList(b.approvers), followers: idList(b.followers),
@@ -529,8 +576,8 @@ async function saveGroupRelations(id, g) {
 
 r.post('/request-groups', requireAdmin, async (c) => {
   const g = parseGroup(await jsonBody(c));
-  const { lastId } = await run(`INSERT INTO request_groups(name, description, category, fields, flow, custom_approvers, sla_hours, active, created_by)
-    VALUES (?,?,?,?,?,?,?,?,?)`, g.name, g.description, g.category, g.fields, g.flow, g.custom_approvers, g.sla_hours, g.active, c.get('user').id);
+  const { lastId } = await run(`INSERT INTO request_groups(name, description, category, fields, flow, custom_approvers, sla_hours, active, created_by, guide)
+    VALUES (?,?,?,?,?,?,?,?,?,?)`, g.name, g.description, g.category, g.fields, g.flow, g.custom_approvers, g.sla_hours, g.active, c.get('user').id, g.guide);
   await saveGroupRelations(lastId, g);
   await logActivity('request_group', lastId, c.get('user').id, 'created', `Tạo nhóm đề xuất "${g.name}"`);
   return c.json({ id: lastId }, 201);
@@ -541,7 +588,7 @@ r.put('/request-groups/:id', requireAdmin, async (c) => {
   if (!(await get('SELECT 1 FROM request_groups WHERE id = ?', id))) throw notFound();
   const g = parseGroup(await jsonBody(c));
   await run(`UPDATE request_groups SET name = ?, description = ?, category = ?, fields = ?, flow = ?, custom_approvers = ?, sla_hours = ?,
-    active = ?, updated_at = datetime('now') WHERE id = ?`, g.name, g.description, g.category, g.fields, g.flow, g.custom_approvers, g.sla_hours, g.active, id);
+    active = ?, guide = ?, updated_at = datetime('now') WHERE id = ?`, g.name, g.description, g.category, g.fields, g.flow, g.custom_approvers, g.sla_hours, g.active, g.guide, id);
   await saveGroupRelations(id, g);
   await logActivity('request_group', id, c.get('user').id, 'updated', `Cập nhật nhóm đề xuất "${g.name}"`);
   return c.json({ id });
@@ -556,7 +603,9 @@ r.post('/request-groups/bulk', requireAdmin, async (c) => {
   if (b.action === 'enable' || b.action === 'disable') {
     await run(`UPDATE request_groups SET active = ?, updated_at = datetime('now') WHERE id IN (${ph})`, b.action === 'enable' ? 1 : 0, ...ids);
   } else if (b.action === 'delete') {
+    const files = await all(`SELECT filename FROM request_group_files WHERE group_id IN (${ph})`, ...ids);
     await run(`DELETE FROM request_groups WHERE id IN (${ph})`, ...ids);
+    for (const f of files) await removeFile(f.filename);
   } else if (b.action === 'category') {
     const cat = String(b.category || '').trim();
     if (!cat) throw badRequest('Tên danh mục trống');

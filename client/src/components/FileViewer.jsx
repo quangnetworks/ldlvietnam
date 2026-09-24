@@ -261,3 +261,44 @@ export default function FileViewer({ files, index = 0, urlOf, publicUrlOf, onClo
   );
 }
 
+
+/** Tệp xem trước được ngay trong trang (PDF, Word, Excel, ảnh, video, PowerPoint qua Office Online...). */
+export const canPreview = (f) => fileKind(f) !== 'other' || GOOGLE_VIEWER.includes(fileExt(f.original_name));
+
+/**
+ * Khung xem trước nhúng ngay trong trang nội dung (văn bản, đề xuất): chọn tệp bằng tab,
+ * mở toàn màn hình hoặc tải về. Ưu tiên PDF / Word / ảnh.
+ */
+export function InlinePreview({ files, urlOf, publicUrlOf, title = 'Xem trước', height = 620 }) {
+  const list = files.filter(canPreview);
+  const order = { pdf: 0, docx: 1, image: 2, office: 3, xlsx: 4, video: 5, csv: 6, text: 7, audio: 8 };
+  const sorted = [...list].sort((a, b) => (order[fileKind(a)] ?? 9) - (order[fileKind(b)] ?? 9));
+  const [cur, setCur] = useState(0);
+  const [full, setFull] = useState(false);
+  if (!sorted.length) return null;
+  const file = sorted[Math.min(cur, sorted.length - 1)];
+  const url = urlOf(file);
+  return (
+    <section className="fv-inline">
+      <header className="fv-inline-head">
+        <b>{title}</b>
+        <div className="fv-inline-tabs">
+          {sorted.map((f, i) => {
+            const ic = fileIcon(f.original_name);
+            return (
+              <button key={f.id ?? i} type="button" className={cx(i === cur && 'active')} onClick={() => setCur(i)} title={f.original_name}>
+                <span className="file-ic" style={{ background: ic.color }}>{ic.label}</span><span className="ellipsis">{f.original_name}</span>
+              </button>
+            );
+          })}
+        </div>
+        <button type="button" className="icon-btn sm" title="Xem toàn màn hình" onClick={() => setFull(true)}><ExternalLink size={15} /></button>
+        <a className="icon-btn sm" href={url} title="Tải về"><Download size={15} /></a>
+      </header>
+      <div className="fv-inline-body" style={{ height }}>
+        <Viewer key={file.id ?? cur} file={file} url={url} getPublicUrl={publicUrlOf ? () => publicUrlOf(file) : null} />
+      </div>
+      {full && <FileViewer files={sorted} index={cur} urlOf={urlOf} publicUrlOf={publicUrlOf} onClose={() => setFull(false)} />}
+    </section>
+  );
+}

@@ -8,6 +8,8 @@ import { fmtDateTime, timeAgo, cx } from '../utils.js';
 import { useRequestApp } from './RequestLayout.jsx';
 import { STATUS, fieldDisplay } from './fields.jsx';
 import { StatusSteps } from './RequestForm.jsx';
+import GroupGuide from './GroupGuide.jsx';
+import FileViewer, { InlinePreview } from '../components/FileViewer.jsx';
 
 const DECIDE = {
   approve: { title: 'Chấp thuận đề xuất', btn: 'Chấp thuận', cls: 'btn-success', need: false },
@@ -27,6 +29,7 @@ export default function RequestDetail() {
   const [reason, setReason] = useState('');
   const [comment, setComment] = useState('');
   const [tab, setTab] = useState('comments');
+  const [viewing, setViewing] = useState(null);
 
   if (error) return <div className="rq-page"><div className="alert alert-error">{error.message}</div></div>;
   if (loading && !q) return <div className="rq-page"><Spinner /></div>;
@@ -82,9 +85,16 @@ export default function RequestDetail() {
               {q.fields.map((f) => (<div key={f.key}><dt>{f.label}</dt><dd className="pre">{fieldDisplay(f, q.data[f.key], usersById)}</dd></div>))}
             </dl>
             {q.content && <><h3 className="card-title">Nội dung</h3><div className="pre">{q.content}</div></>}
+            <InlinePreview files={q.attachments} title="Xem trước tệp đính kèm" height={560}
+              urlOf={(f) => api.url(`/requests/${id}/attachments/${f.id}`)}
+              publicUrlOf={async (f) => (await api.post(`/requests/${id}/attachments/${f.id}/link`)).url} />
             <h3 className="card-title">Tệp đính kèm ({q.attachments.length})</h3>
+            {viewing != null && (
+              <FileViewer files={q.attachments} index={viewing} urlOf={(f) => api.url(`/requests/${id}/attachments/${f.id}`)} onClose={() => setViewing(null)}
+                publicUrlOf={async (f) => (await api.post(`/requests/${id}/attachments/${f.id}/link`)).url} />
+            )}
             <div className="attach-list">
-              {q.attachments.map((a) => <FileChip key={a.id} file={a} href={api.url(`/requests/${id}/attachments/${a.id}`, { inline: 1 })} />)}
+              {q.attachments.map((a, i) => <FileChip key={a.id} file={a} onOpen={() => setViewing(i)} />)}
               <label className="btn btn-sm" style={{ width: 'fit-content' }}><Paperclip size={14} /> Thêm tệp
                 <input type="file" multiple hidden onChange={(e) => { const fs = [...e.target.files]; e.target.value = ''; act(() => api.post(`/requests/${id}/attachments`, toFormData({}, fs)), 'Đã tải tệp lên'); }} /></label>
             </div>
@@ -124,6 +134,7 @@ export default function RequestDetail() {
             {q.deadline_at && q.status === 'pending' && <p className={cx('small', q.is_overdue ? 'text-red' : 'muted')}>Hạn xử lý: {fmtDateTime(q.deadline_at)}</p>}
             {q.completed_at && <p className="small muted">Hoàn tất: {fmtDateTime(q.completed_at)}</p>}
           </div>
+          <GroupGuide groupId={q.group_id} guide={q.group_guide} files={q.group_files} title="Biểu mẫu & quy trình" />
           <div className="card">
             <h3 className="card-title">Người theo dõi</h3>
             <div className="chips">{q.followers.map((f) => <span key={f.id} className="chip"><Avatar name={f.name} color={f.color} size={18} /> {f.name}</span>)}</div>

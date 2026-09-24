@@ -8,8 +8,12 @@ import { badRequest, notFound, toInt, jsonBody } from '../util.js';
 import { userApps, grantApps, audit, recordLogin, MODULES } from '../platform.js';
 import { verifyTotp, ipAllowed } from '../security.js';
 import { isExpired } from '../auth.js';
+import { servePublicFile } from '../files.js';
 
 const r = new Hono();
+
+// Liên kết tạm tới tệp cho trình xem trực tuyến (không cần đăng nhập — token là thông tin xác thực)
+r.get('/public/files/:token/:name?', servePublicFile);
 
 // ---------- Auth ----------
 r.post('/auth/login', async (c) => {

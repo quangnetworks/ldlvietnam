@@ -1,11 +1,32 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { Hash, Lock, Plus, Send, Paperclip, Search, Pencil, Trash2, Users, ArrowLeft, MessageCircle, X } from 'lucide-react';
+import { Hash, Lock, Plus, Send, Paperclip, Search, Pencil, Trash2, Users, ArrowLeft, MessageCircle, X, EyeOff } from 'lucide-react';
 import { api, toFormData } from '../api.js';
 import { useApp, useToast } from '../context.jsx';
 import { Avatar, Spinner, Modal, Field, UserPicker, Empty } from '../components/ui.jsx';
 import { AppSwitcher, NotificationBell, UserMenu, useDebounced } from '../components/shell.jsx';
 import { parseDate, fmtDate, fileSize, cx } from '../utils.js';
+import FileViewer from '../components/FileViewer.jsx';
+import EmojiPicker, { insertAtCursor } from '../components/EmojiPicker.jsx';
+
+/** Enter để gửi: bỏ qua khi đang gõ dấu tiếng Việt (IME), khi giữ phím, hoặc Shift+Enter xuống dòng. */
+export function isSendKey(e) {
+  return e.key === 'Enter' && !e.shiftKey && !e.altKey && !e.ctrlKey && !e.metaKey
+    && !e.nativeEvent?.isComposing && e.keyCode !== 229;
+}
+
+/** Thêm tin nhắn vào danh sách, không trùng id (tin vừa gửi có thể về lại qua lượt cập nhật định kỳ). */
+export function mergeMessages(list, rows) {
+  const ids = new Set((list || []).map((x) => x.id));
+  const fresh = rows.filter((x) => !ids.has(x.id));
+  return fresh.length ? [...(list || []), ...fresh].sort((a, b) => a.id - b.id) : list || [];
+}
+
+const HISTORY_OPTS = [
+  { value: 'all', label: 'Xem toàn bộ tin nhắn trước đó' },
+  { value: 'days7', label: 'Chỉ xem tin nhắn 7 ngày gần đây' },
+  { value: 'none', label: 'Không xem tin nhắn cũ — chỉ từ lúc được thêm' },
+];
 
 const POLL_MS = 6000;
 
@@ -77,17 +98,31 @@ function ChannelMembers({ channel, onClose, onSaved }) {
   const { users, user } = useApp();
   const toast = useToast();
   const [ids, setIds] = useState(channel.members.map((m) => m.id));
+  const [history, setHistory] = useState('all');
   const canEdit = channel.kind === 'private' && (channel.created_by === user.id || user.role === 'admin');
+  const added = ids.filter((x) => !channel.members.some((m) => m.id === x));
   const save = async () => {
-    try { await api.put(`/chat/channels/${channel.id}`, { members: ids }); toast('Đã cập nhật thành viên'); onSaved(); onClose(); } catch (e) { toast(e.message, 'error'); }
+    try { await api.put(`/chat/channels/${channel.id}`, { members: ids, history }); toast('Đã cập nhật thành viên'); onSaved(); onClose(); } catch (e) { toast(e.message, 'error'); }
   };
   return (
-    <Modal title={`Thành viên #${channel.name}`} onClose={onClose} width={480}
+    <Modal title={`Thành viên #${channel.name}`} onClose={onClose} width={500}
       footer={canEdit ? <><button className="btn" onClick={onClose}>Đóng</button><button className="btn btn-primary" onClick={save}>Lưu</button></> : null}>
       {canEdit ? <UserPicker users={users} multiple value={ids} onChange={setIds} /> : (
         channel.kind === 'public' ? <p className="muted">Kênh công khai — mọi nhân viên đều xem được. Thành viên đã tham gia trò chuyện:</p> : null
       )}
-      <div className="mt">{channel.members.map((m) => <div key={m.id} className="user-row"><Avatar name={m.name} color={m.color} size={26} /><span className="grow">{m.name}</span><small className="muted">@{m.username}</small></div>)}</div>
+      {canEdit && added.length > 0 && (
+        <div className="chat-history-opt" role="radiogroup" aria-label="Quyền xem tin nhắn cũ">
+          <b className="small">Quyền xem tin nhắn cũ cho {added.length} người mới thêm</b>
+          {HISTORY_OPTS.map((o) => (
+            <label key={o.value} className="check small"><input type="radio" name="history" checked={history === o.value} onChange={() => setHistory(o.value)} /> {o.label}</label>
+          ))}
+        </div>
+      )}
+      <div className="mt">{channel.members.map((m) => (
+        <div key={m.id} className="user-row"><Avatar name={m.name} color={m.color} size={26} /><span className="grow">{m.name}</span>
+          {m.history_from_id > 0 && <span className="chat-history-tag" title="Được thêm với quyền xem giới hạn"><EyeOff size={10} /> giới hạn lịch sử</span>}
+          <small className="muted">@{m.username}</small></div>
+      ))}</div>
     </Modal>
   );
 }
@@ -103,6 +138,10 @@ function Conversation({ channelId, onActivity }) {
   const [showMembers, setShowMembers] = useState(false);
   const [more, setMore] = useState(true);
   const [error, setError] = useState('');
+  const [viewing, setViewing] = useState(null);
+  const navigate = useNavigate();
+  const sendingRef = useRef(false);
+  const inputRef = useRef();
   const listRef = useRef();
   const fileRef = useRef();
   const lastId = useRef(0);
@@ -129,8 +168,8 @@ function Conversation({ channelId, onActivity }) {
         if (rows.length) {
           const el = listRef.current;
           stick.current = el ? el.scrollHeight - el.scrollTop - el.clientHeight < 80 : true;
-          setMsgs((m) => { const ids = new Set((m || []).map((x) => x.id)); return [...(m || []), ...rows.filter((x) => !ids.has(x.id))]; });
-          lastId.current = rows[rows.length - 1].id;
+          setMsgs((m) => mergeMessages(m, rows));
+          lastId.current = Math.max(lastId.current, rows[rows.length - 1].id);
           markRead(lastId.current);
         }
       } catch { /* bỏ qua lỗi mạng tạm thời */ }
@@ -156,15 +195,29 @@ function Conversation({ channelId, onActivity }) {
 
   const send = async (e) => {
     e?.preventDefault();
-    if (!text.trim() && !file) return;
+    // chặn gửi trùng: Enter lặp / bấm nhanh / gõ dấu tiếng Việt khi request trước chưa xong
+    if (sendingRef.current || (!text.trim() && !file)) return;
+    sendingRef.current = true;
+    const body = toFormData({ content: text }, file ? [file] : []);
+    const prev = { text, file };
+    setText(''); setFile(null);
     try {
-      const m = await api.post(`/chat/channels/${channelId}/messages`, toFormData({ content: text }, file ? [file] : []));
+      const m = await api.post(`/chat/channels/${channelId}/messages`, body);
       stick.current = true;
-      setMsgs((x) => [...(x || []), m]);
+      setMsgs((x) => mergeMessages(x, [m]));
       lastId.current = Math.max(lastId.current, m.id);
-      setText(''); setFile(null);
       onActivity();
-    } catch (err) { toast(err.message, 'error'); }
+    } catch (err) {
+      setText(prev.text); setFile(prev.file);
+      toast(err.message, 'error');
+    } finally {
+      sendingRef.current = false;
+      inputRef.current?.focus();
+    }
+  };
+  const deleteChannel = async () => {
+    if (!window.confirm(`Xoá kênh #${channel.name}? Toàn bộ tin nhắn và tệp trong kênh sẽ bị xoá vĩnh viễn.`)) return;
+    try { await api.del(`/chat/channels/${channelId}`); toast('Đã xoá kênh'); onActivity(); navigate('/message'); } catch (err) { toast(err.message, 'error'); }
   };
   const saveEdit = async () => {
     try {
@@ -181,6 +234,9 @@ function Conversation({ channelId, onActivity }) {
   if (!channel || !msgs) return <div className="chat-main"><Spinner /></div>;
   const peer = channel.kind === 'direct' ? channel.members.find((m) => m.id !== user.id) : null;
   const title = peer ? peer.name : channel.name;
+  const canDelete = ['public', 'private'].includes(channel.kind) && (user.role === 'admin' || channel.created_by === user.id) && !(channel.name === 'chung' && !channel.created_by);
+  const fileMsgs = msgs.filter((m) => m.original_name && !m.deleted_at);
+  const openFile = (m) => setViewing(fileMsgs.findIndex((x) => x.id === m.id));
   let lastDay = '';
   return (
     <div className="chat-main">
@@ -189,6 +245,7 @@ function Conversation({ channelId, onActivity }) {
         {peer ? <Avatar name={peer.name} color={peer.color} size={30} /> : channel.kind === 'department' ? <Users size={18} /> : channel.kind === 'private' ? <Lock size={18} /> : <Hash size={18} />}
         <div className="grow"><b>{title}</b>{channel.description && <small className="muted block ellipsis">{channel.description}</small>}{peer && <small className="muted block">@{peer.username}</small>}</div>
         {!peer && <button className="btn btn-sm" onClick={() => setShowMembers(true)}><Users size={14} /> {channel.members.length}</button>}
+        {canDelete && <button className="icon-btn" title={user.role === 'admin' ? 'Xoá kênh (quản trị viên)' : 'Xoá kênh'} onClick={deleteChannel}><Trash2 size={16} /></button>}
       </div>
       <div className="chat-list" ref={listRef}>
         {more && msgs.length > 0 && <div className="center"><button className="link-btn" onClick={loadOlder}>Xem tin nhắn cũ hơn</button></div>}
@@ -218,8 +275,8 @@ function Conversation({ channelId, onActivity }) {
                       {m.content && <div className="chat-text"><RichText text={m.content} />{m.edited_at && <small className="muted"> (đã sửa)</small>}</div>}
                       {m.original_name && (
                         m.mime?.startsWith('image/')
-                          ? <a href={api.url(`/chat/messages/${m.id}/file`, { inline: 1 })} target="_blank" rel="noopener noreferrer"><img className="chat-img" src={api.url(`/chat/messages/${m.id}/file`, { inline: 1 })} alt={m.original_name} /></a>
-                          : <a className="chat-file" href={api.url(`/chat/messages/${m.id}/file`)}><Paperclip size={14} /> {m.original_name} <small className="muted">{fileSize(m.size)}</small></a>
+                          ? <button type="button" className="chat-img-btn" onClick={() => openFile(m)} title="Xem ảnh"><img className="chat-img" src={api.url(`/chat/messages/${m.id}/file`, { inline: 1 })} alt={m.original_name} loading="lazy" /></button>
+                          : <button type="button" className="chat-file as-btn" onClick={() => openFile(m)} title="Xem trước tệp"><Paperclip size={14} /> {m.original_name} <small className="muted">{fileSize(m.size)}</small></button>
                       )}
                     </>
                   )}
@@ -240,12 +297,17 @@ function Conversation({ channelId, onActivity }) {
         <div className="row gap-sm">
           <button type="button" className="icon-btn" title="Đính kèm tệp" onClick={() => fileRef.current.click()}><Paperclip size={18} /></button>
           <input ref={fileRef} type="file" hidden onChange={(e) => { setFile(e.target.files[0] || null); e.target.value = ''; }} />
-          <textarea className="input grow" rows={1} value={text} placeholder={`Nhắn tin tới ${peer ? peer.name : `#${channel.name}`} · gõ @tên_tài_khoản để nhắc tên`}
-            onChange={(e) => setText(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) send(e); }} />
+          <EmojiPicker onPick={(em) => setText((t) => insertAtCursor(inputRef.current, t, em))} />
+          <textarea ref={inputRef} className="input grow" rows={1} value={text} placeholder={`Nhắn tin tới ${peer ? peer.name : `#${channel.name}`} · Enter để gửi, Shift+Enter xuống dòng`}
+            onChange={(e) => setText(e.target.value)} onKeyDown={(e) => { if (isSendKey(e)) { e.preventDefault(); if (!e.repeat) send(); } }} />
           <button className="btn btn-primary" disabled={!text.trim() && !file} aria-label="Gửi"><Send size={16} /></button>
         </div>
       </form>
       {showMembers && <ChannelMembers channel={channel} onClose={() => setShowMembers(false)} onSaved={loadChannel} />}
+      {viewing != null && viewing >= 0 && (
+        <FileViewer files={fileMsgs.map((m) => ({ ...m, id: m.id }))} index={viewing} urlOf={(f) => api.url(`/chat/messages/${f.id}/file`)} onClose={() => setViewing(null)}
+          publicUrlOf={async (f) => (await api.post(`/chat/messages/${f.id}/file/link`)).url} />
+      )}
     </div>
   );
 }

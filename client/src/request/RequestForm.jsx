@@ -5,6 +5,7 @@ import { api, toFormData } from '../api.js';
 import { useApp, useToast } from '../context.jsx';
 import { Field, UserPicker, FileChip, Spinner, Avatar } from '../components/ui.jsx';
 import { useRequestApp, groupByCategory } from './RequestLayout.jsx';
+import GroupGuide from './GroupGuide.jsx';
 import { FieldInput } from './fields.jsx';
 import { cx } from '../utils.js';
 
@@ -26,6 +27,7 @@ function GroupChooser({ onPick }) {
                 <b>{g.starred && <Star size={13} className="starred" fill="currentColor" />} {g.name}</b>
                 <small className="muted">{g.description || 'Không có mô tả'}</small>
                 <small className="muted">{g.flow === 'any' ? 'Chỉ cần một người duyệt' : 'Duyệt lần lượt'}{g.sla_hours ? ` · SLA ${g.sla_hours}h` : ''}</small>
+                {(g.file_count > 0 || g.has_guide) && <small className="rq-choose-guide">📎 Có biểu mẫu / quy trình hướng dẫn{g.file_count ? ` (${g.file_count} tệp)` : ''}</small>}
               </button>
             ))}
           </div>
@@ -114,6 +116,7 @@ export default function RequestForm() {
       <div className="form-layout">
         <div className="card">
           {group.description && <p className="muted">{group.description}</p>}
+          <GroupGuide groupId={group.id} guide={group.guide} files={group.files} className="rq-guide-inline" title="Đọc trước khi làm đề xuất: biểu mẫu & quy trình" />
           <div className="form-grid one">
             <Field label="Tên đề xuất" required><input className="input" value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} /></Field>
             {group.fields.map((f) => (

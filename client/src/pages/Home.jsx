@@ -7,6 +7,8 @@ import { NotificationBell, UserMenu, ThemeToggle } from '../components/shell.jsx
 import HomeAgenda from '../home/HomeAgenda.jsx';
 import { BRANDS, applyBrand, getBrandIndex } from '../theme.js';
 import HomeChat from '../home/HomeChat.jsx';
+import HomeWeather from '../home/HomeWeather.jsx';
+import HomeImportant from '../home/HomeImportant.jsx';
 import { Avatar, Drawer, Empty } from '../components/ui.jsx';
 import { ECOSYSTEM, CATEGORIES, canOpen, AppIcon } from '../apps.jsx';
 import { fmtDate, timeAgo, cx } from '../utils.js';
@@ -135,7 +137,10 @@ export default function Home() {
               <div className="home2-bday"><Cake size={15} /> Sinh nhật hôm nay: {summary.birthdays.map((b) => b.name).join(', ')} 🎉</div>
             )}
           </div>
-          <div className="home2-clock">{pad(now.getHours())}:{pad(now.getMinutes())}<small>:{pad(now.getSeconds())}</small></div>
+          <div className="home2-right">
+            <div className="home2-clock">{pad(now.getHours())}:{pad(now.getMinutes())}<small>:{pad(now.getSeconds())}</small></div>
+            <HomeWeather />
+          </div>
         </div>
         <div className="home2-stats">
           {stats.map((st) => {
@@ -148,7 +153,10 @@ export default function Home() {
       </header>
 
       <div className="home2-grid">
-        <div className="home2-col left"><HomeAgenda data={agenda} reload={reloadAgenda} loading={agendaLoading} /></div>
+        <div className="home2-col left">
+          {(apps || []).includes('wework') && <HomeImportant data={agenda} />}
+          <HomeAgenda data={agenda} reload={reloadAgenda} loading={agendaLoading} />
+        </div>
 
         <div className="home2-col mid">
           <section className="hcard">

@@ -2,8 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { Link, NavLink, Outlet, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import {
   LayoutGrid, Eye, FileCheck2, Settings2, Star, FilePen, Hash, Server, FileText, Folder, FolderOpen, ChevronDown,
-  Search, Save, CalendarX, XCircle, Archive, Trash2, Plus, Building2, Send, Menu,
-} from 'lucide-react';
+  Search, Save, CalendarX, XCircle, Archive, Trash2, Plus, Building2, Send, Menu, Replace } from 'lucide-react';
 import { api } from '../api.js';
 import { useApp } from '../context.jsx';
 import { AppSwitcher, NotificationBell, UserMenu, QuickCreate } from '../components/shell.jsx';
@@ -142,6 +141,7 @@ export default function OfficeLayout() {
           <Section title="TRẠNG THÁI">
             {boxLink('drafts', 'Đã lưu', Save, meta?.counts.drafts)}
             {boxLink('expired', 'Hết hạn', CalendarX)}
+            {boxLink('superseded', 'Đã bị thay thế', Replace)}
             {boxLink('rejected', 'Không thông qua', XCircle)}
             {boxLink('archived', 'Cất giữ', Archive)}
             {boxLink('trash', 'Đã tạm xóa', Trash2)}

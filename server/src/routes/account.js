@@ -307,6 +307,7 @@ r.get('/home/summary', async (c) => {
       AND (dr.user_id = ? OR dr.department_id = ?)))`, [user.id, user.department_id ?? -1]];
     out.announcements = await all(`SELECT d.id, d.title, d.code, d.issued_at, u.name AS issuer_name FROM documents d
       LEFT JOIN users u ON u.id = d.issuer_id WHERE d.status = 'issued' AND d.deleted_at IS NULL AND ${vis[0]}
+      AND NOT (d.superseded_by IS NOT NULL AND IFNULL(d.superseded_at, '') <= date('now'))
       ORDER BY d.issued_at DESC LIMIT 6`, ...vis[1]);
     out.counters.documents_to_approve = (await get(`SELECT COUNT(*) AS c FROM document_approvers da JOIN documents d ON d.id = da.document_id
       WHERE da.user_id = ? AND da.status = 'pending' AND d.status = 'pending' AND d.deleted_at IS NULL
@@ -417,7 +418,29 @@ r.get('/home/agenda', async (c) => {
   items.sort((a, b) => order[a.bucket] - order[b.bucket] || String(a.due || '9999').localeCompare(String(b.due || '9999')));
   const counts = { overdue: 0, today: 0, upcoming: 0, todo: 0 };
   for (const i of items) counts[i.bucket]++;
-  return c.json({ today, counts, items });
+
+  // Quan trọng cần lưu ý: công việc khẩn cấp / quan trọng chưa xong mà tôi thực hiện, đã giao hoặc đang theo dõi
+  const important = [];
+  if (apps.includes('wework')) {
+    const rows = await all(`SELECT t.id, t.title, t.status, t.priority, date(t.due_date) AS due, t.assignee_id, t.creator_id,
+        p.name AS project_name, a.name AS assignee_name, a.color AS assignee_color
+      FROM tasks t LEFT JOIN projects p ON p.id = t.project_id LEFT JOIN users a ON a.id = t.assignee_id
+      WHERE t.status IN ('todo','doing','review') AND t.priority IN ('urgent','important')
+        AND (t.assignee_id = ? OR t.creator_id = ? OR EXISTS (SELECT 1 FROM task_followers f WHERE f.task_id = t.id AND f.user_id = ?))
+      ORDER BY CASE t.priority WHEN 'urgent' THEN 0 ELSE 1 END, t.due_date IS NULL, t.due_date LIMIT 30`, user.id, user.id, user.id);
+    for (const t of rows) {
+      important.push({
+        key: `imp-${t.id}`, id: t.id, title: t.title, priority: t.priority, status: t.status, due: t.due, bucket: bucketOf(t.due),
+        project_name: t.project_name, assignee_name: t.assignee_name, assignee_color: t.assignee_color, assignee_id: t.assignee_id,
+        role: t.assignee_id === user.id ? 'assignee' : t.creator_id === user.id ? 'creator' : 'follower', link: `/wework/task/${t.id}`,
+      });
+    }
+    // quá hạn trước, rồi khẩn cấp, rồi theo thời hạn
+    const rank = { overdue: 0, today: 1, upcoming: 2, todo: 3 };
+    important.sort((a, b) => rank[a.bucket] - rank[b.bucket] || (a.priority === 'urgent' ? 0 : 1) - (b.priority === 'urgent' ? 0 : 1)
+      || String(a.due || '9999').localeCompare(String(b.due || '9999')));
+  }
+  return c.json({ today, counts, items, important });
 });
 
 /** Kênh chat nhóm trên Home: kênh toàn công ty + kênh phòng ban của người dùng. */

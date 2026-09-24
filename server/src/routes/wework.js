@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
 import { all, get, run, batch, logActivity, notify, getSetting, setSetting } from '../db.js';
-import { requireAdmin, signFileToken, verifyFileToken } from '../auth.js';
+import { requireAdmin } from '../auth.js';
+import { publicFileLink } from '../files.js';
 import { audit } from '../platform.js';
 import {
   badRequest, notFound, forbidden, toInt, idList, paginate, today, jsonBody, formBody, storeFiles, removeFile, sendFile,
@@ -836,18 +837,7 @@ r.post('/tasks/:id/attachments/:aid/link', async (c) => {
   const t = await viewableTask(c);
   const a = await get('SELECT id, original_name FROM task_attachments WHERE id = ? AND task_id = ?', toInt(c.req.param('aid')), t.id);
   if (!a) throw notFound('Tệp không tồn tại');
-  const token = await signFileToken(c, { ta: a.id });
-  const url = new URL(c.req.url);
-  const proto = c.req.header('x-forwarded-proto')?.split(',')[0] || url.protocol.replace(':', '');
-  const host = c.req.header('x-forwarded-host') || url.host;
-  return c.json({ url: `${proto}://${host}/api/public/files/${token}/${encodeURIComponent(a.original_name)}`, expires_in: 900 });
-});
-r.get('/public/files/:token/:name?', async (c) => {
-  const p = await verifyFileToken(c, c.req.param('token'));
-  if (!p?.ta) throw forbidden('Liên kết đã hết hạn hoặc không hợp lệ');
-  const a = await get('SELECT * FROM task_attachments WHERE id = ?', toInt(p.ta));
-  if (!a) throw notFound('Tệp không tồn tại');
-  return sendFile(c, a, true);
+  return c.json(await publicFileLink(c, 'ta', a));
 });
 
 // ---------------- kết quả công việc (văn bản, liên kết, tệp: office, ảnh, video...)

@@ -4,7 +4,9 @@ import { Send, Building2, Users, ExternalLink, MessagesSquare } from 'lucide-rea
 import { api, toFormData } from '../api.js';
 import { useApp, useToast } from '../context.jsx';
 import { Avatar, Spinner } from '../components/ui.jsx';
-import { hhmm, dayLabel, RichText } from '../message/Message.jsx';
+import { hhmm, dayLabel, RichText, isSendKey, mergeMessages } from '../message/Message.jsx';
+import EmojiPicker, { insertAtCursor } from '../components/EmojiPicker.jsx';
+import FileViewer from '../components/FileViewer.jsx';
 import { cx } from '../utils.js';
 
 const POLL_MS = 8000;
@@ -19,7 +21,10 @@ export default function HomeChat() {
   const [text, setText] = useState('');
   const [sending, setSending] = useState(false);
   const listRef = useRef();
+  const inputRef = useRef();
+  const sendingRef = useRef(false);
   const lastId = useRef(0);
+  const [viewing, setViewing] = useState(null);
 
   const loadChannels = useCallback(() => api.get('/home/chat').then((r) => {
     setChannels(r.channels);
@@ -51,8 +56,8 @@ export default function HomeChat() {
         const rows = await api.get(`/chat/channels/${active}/messages`, lastId.current ? { after_id: lastId.current } : { limit: 30 });
         const fresh = rows.filter((x) => x.id > lastId.current);
         if (alive && fresh.length) {
-          setMsgs((m) => [...(m || []), ...fresh]);
-          lastId.current = fresh[fresh.length - 1].id;
+          setMsgs((m) => mergeMessages(m, fresh));
+          lastId.current = Math.max(lastId.current, fresh[fresh.length - 1].id);
           markRead(lastId.current);
         }
         if (alive) loadChannels();
@@ -65,14 +70,17 @@ export default function HomeChat() {
 
   const send = async (e) => {
     e?.preventDefault();
-    if (!text.trim() || sending) return;
+    // khoá đồng bộ bằng ref: hai lần Enter liên tiếp (hoặc Enter khi gõ dấu) không gửi trùng
+    if (!text.trim() || sendingRef.current) return;
+    sendingRef.current = true;
     setSending(true);
+    const content = text;
+    setText('');
     try {
-      const m = await api.post(`/chat/channels/${active}/messages`, toFormData({ content: text }));
-      setMsgs((x) => [...(x || []), m]);
+      const m = await api.post(`/chat/channels/${active}/messages`, toFormData({ content }));
+      setMsgs((x) => mergeMessages(x, [m]));
       lastId.current = Math.max(lastId.current, m.id);
-      setText('');
-    } catch (err) { toast(err.message, 'error'); } finally { setSending(false); }
+    } catch (err) { setText(content); toast(err.message, 'error'); } finally { sendingRef.current = false; setSending(false); inputRef.current?.focus(); }
   };
 
   if (channels && !channels.length) return null;
@@ -110,7 +118,9 @@ export default function HomeChat() {
                   {m.deleted_at ? <i className="muted">Tin nhắn đã bị xoá</i> : (
                     <>
                       {m.content && <span className="hchat-text"><RichText text={m.content} /></span>}
-                      {m.original_name && <a className="hchat-file" href={api.url(`/chat/messages/${m.id}/file`)}>📎 {m.original_name}</a>}
+                      {m.original_name && (m.mime?.startsWith('image/')
+                        ? <button type="button" className="chat-img-btn" onClick={() => setViewing(m)}><img className="hchat-img" src={api.url(`/chat/messages/${m.id}/file`, { inline: 1 })} alt={m.original_name} loading="lazy" /></button>
+                        : <button type="button" className="hchat-file as-btn" onClick={() => setViewing(m)}>📎 {m.original_name}</button>)}
                     </>
                   )}
                   <small className="hchat-time">{hhmm(m.created_at)}</small>
@@ -121,10 +131,16 @@ export default function HomeChat() {
         })}
       </div>
       <form className="hchat-compose" onSubmit={send}>
-        <input className="input" value={text} onChange={(e) => setText(e.target.value)} maxLength={5000}
+        <EmojiPicker onPick={(em) => setText((t) => insertAtCursor(inputRef.current, t, em))} align="left" />
+        <input ref={inputRef} className="input" value={text} onChange={(e) => setText(e.target.value)} maxLength={5000}
+          onKeyDown={(e) => { if (e.key === 'Enter' && (!isSendKey(e) || e.repeat)) e.preventDefault(); }}
           placeholder={ch ? `Nhắn tới ${ch.kind === 'department' ? ch.name : 'toàn công ty'}…` : 'Nhắn tin…'} />
         <button className="btn btn-primary" disabled={!text.trim() || sending} aria-label="Gửi"><Send size={15} /></button>
       </form>
+      {viewing && (
+        <FileViewer files={[viewing]} urlOf={(f) => api.url(`/chat/messages/${f.id}/file`)} onClose={() => setViewing(null)}
+          publicUrlOf={async (f) => (await api.post(`/chat/messages/${f.id}/file/link`)).url} />
+      )}
     </section>
   );
 }

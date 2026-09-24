@@ -5,7 +5,8 @@ Webapp nội bộ gồm 2 phân hệ, giao diện và chức năng mô phỏng *
 ## Chức năng
 
 ### Trang chủ (Home) — `/`
-- Phần đầu trang: lời chào, đồng hồ, ô đếm nhanh việc **quá hạn / hôm nay / sắp tới / tin chưa đọc**, sinh nhật; đổi hình nền.
+- Phần đầu trang: lời chào, đồng hồ, **thời tiết tại vị trí hiện tại** (định vị của thiết bị → ước lượng theo mạng → mặc định Hà Nội; dự báo 4 ngày, lời nhắc mưa / nắng nóng), ô đếm nhanh việc **quá hạn / hôm nay / sắp tới / tin chưa đọc**, sinh nhật; đổi hình nền.
+- **Quan trọng cần lưu ý**: công việc khẩn cấp / quan trọng chưa xong mà bạn thực hiện, đã giao hoặc đang theo dõi — quá hạn lên đầu.
 - **Việc cần làm**: gom công việc Wework, đề xuất & văn bản chờ duyệt, đề xuất bị trả lại, công việc chờ đánh giá, nhắc chấm công, lịch nghỉ sắp tới — chia tab Quá hạn / Hôm nay / Sắp tới / Cần xử lý.
 - **Chat nhóm**: kênh toàn công ty và kênh phòng ban (tự tạo cho mỗi phòng ban, thành viên theo phòng ban của tài khoản).
 - Lưới ứng dụng theo nhóm Work+ / HRM+ / Info+ / Finance+ / Platform, tìm kiếm ứng dụng; thông báo toàn công ty; ghi chú cá nhân.
@@ -28,7 +29,8 @@ Webapp nội bộ gồm 2 phân hệ, giao diện và chức năng mô phỏng *
 - Nhóm đề xuất theo danh mục, **biểu mẫu tuỳ chỉnh** (văn bản, đoạn văn, số, số tiền, ngày, danh sách chọn, ô tích, nhân sự).
 - Quy trình **duyệt lần lượt** hoặc **chỉ cần một người duyệt**, người duyệt mặc định + người tạo tự chọn thêm, người theo dõi mặc định, **SLA**.
 - Tab Tất cả / Đến lượt duyệt / Quá hạn / Chờ xử lý / Đã chấp thuận / Đã từ chối / Đã trả lại / Đã đánh dấu / Đã lưu nháp; Gửi đến tôi / Tôi gửi đi / Đang theo dõi.
-- Chấp thuận, từ chối, trả lại (kèm lý do), gửi lại, huỷ; bình luận, tệp đính kèm, lịch sử, thông báo.
+- Chấp thuận, từ chối, trả lại (kèm lý do), gửi lại, huỷ; bình luận, tệp đính kèm (**xem trước ngay trong trang**), lịch sử, thông báo.
+- **Biểu mẫu & quy trình của nhóm đề xuất**: quản trị viên đính kèm biểu mẫu, tài liệu quy trình và hướng dẫn thực hiện; người làm đề xuất thấy ngay khi tạo đề xuất (xem trước / tải về), người duyệt đối chiếu trong trang chi tiết.
 - Quản lý nhóm đề xuất: bật/tạm đóng, tác vụ hàng loạt, tạo từ mẫu, lịch sử chỉnh sửa.
 - **Báo cáo đề xuất**: chỉ số tổng quan (chờ duyệt, chấp thuận, từ chối, quá SLA, thời gian xử lý TB), biểu đồ trạng thái, tỷ lệ đúng SLA, đề xuất mới theo ngày, theo nhóm đề xuất (xuất Excel) và theo người duyệt (thời gian phản hồi TB).
 
@@ -39,7 +41,8 @@ Webapp nội bộ gồm 2 phân hệ, giao diện và chức năng mô phỏng *
 - **Bộ lọc** (trạng thái, loại, người ban hành, phòng ban, khoảng ngày, sắp xếp), tìm kiếm toàn văn.
 - **Tạo văn bản**: soạn thảo nội dung, đính kèm nhiều tệp, số hiệu, ngày hiệu lực / hết hạn, người nhận (người / phòng ban hoặc toàn công ty), người theo dõi.
 - **Luồng duyệt nhiều bước** (tuần tự), duyệt / không thông qua kèm ý kiến, gửi lại sau khi sửa; **cấp số văn bản** (tự động hoặc nhập tay).
-- Chi tiết văn bản: tệp đính kèm (xem / tải), thảo luận, lịch sử hoạt động, danh sách người đã xem, in, sao chép liên kết.
+- **Văn bản thay thế chính sách cũ**: chọn văn bản cũ khi soạn (hoặc nút *Ban hành bản thay thế* trên văn bản cũ). Khi văn bản mới được ban hành và đến ngày hiệu lực, văn bản cũ tự chuyển sang *Đã bị thay thế* (rời danh sách đang áp dụng và thông báo toàn công ty), hiện biểu ngữ dẫn sang văn bản mới; người nhận / theo dõi / đã xem văn bản cũ được thông báo; có dòng thời gian *Các phiên bản*; huỷ văn bản mới thì văn bản cũ tự trở lại hiệu lực.
+- Chi tiết văn bản: tệp đính kèm (**xem trước PDF / Word / ảnh ngay trong trang**, xem / tải), thảo luận, lịch sử hoạt động, danh sách người đã xem, in, sao chép liên kết.
 - Đánh dấu yêu thích, theo dõi, cất giữ, tạm xóa / khôi phục / xóa vĩnh viễn, thao tác hàng loạt, **xuất CSV**, **quét văn bản** (tải bản scan → tạo văn bản đến nháp).
 
 ### Công việc & dự án (Wework) — `/wework`
@@ -75,7 +78,9 @@ Webapp nội bộ gồm 2 phân hệ, giao diện và chức năng mô phỏng *
 - Chia sẻ cho thành viên / phòng ban / nhóm với quyền Xem hoặc Chỉnh sửa (kế thừa theo thư mục cha).
 
 ### LDL Message — `/message`
-- Kênh công khai / riêng tư, tin nhắn 1-1, số tin chưa đọc, gửi tệp / ảnh, sửa / xoá tin nhắn của mình, nhắc tên `@tên_đăng_nhập` (có thông báo), tìm kiếm tin nhắn.
+- Kênh công khai / riêng tư, tin nhắn 1-1, số tin chưa đọc, gửi tệp / ảnh (**xem trước** mọi định dạng), **biểu tượng cảm xúc**, sửa / xoá tin nhắn của mình, nhắc tên `@tên_đăng_nhập` (có thông báo), tìm kiếm tin nhắn.
+- Thêm thành viên vào kênh riêng tư: chọn quyền **xem toàn bộ tin nhắn cũ / 7 ngày gần đây / không xem tin cũ**. Quản trị viên (hoặc người tạo) **xoá kênh** cùng toàn bộ tin nhắn và tệp.
+- Enter gửi / Shift+Enter xuống dòng; chống gửi trùng khi nhấn Enter liên tiếp hoặc đang gõ dấu tiếng Việt.
 - Cập nhật tin nhắn mới mỗi ~6 giây (polling, tạm dừng khi tab ẩn).
 
 ### Chung
