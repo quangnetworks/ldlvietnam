@@ -6,6 +6,7 @@ import {
 } from '../util.js';
 import { fireRequestEvent } from './webhooks.js';
 import { publicFileLink } from '../files.js';
+import { readComment, saveCommentFiles, withCommentFiles, commentFileOr404, commentSnippet, purgeCommentFiles } from '../comments.js';
 
 const r = new Hono();
 const APP = 'request';
@@ -442,6 +443,7 @@ r.delete('/requests/:id', async (c) => {
     throw forbidden('Chỉ xoá được đề xuất nháp hoặc đã huỷ');
   }
   const files = await all('SELECT filename FROM request_attachments WHERE request_id = ?', q.id);
+  await purgeCommentFiles('request', { entityIds: [q.id] });
   await run('DELETE FROM requests WHERE id = ?', q.id);
   for (const f of files) await removeFile(f.filename);
   return c.json({ ok: true });
@@ -462,26 +464,34 @@ r.post('/requests/:id/follow', toggle('request_followers'));
 const COMMENT_SELECT = `SELECT c.*, u.name AS user_name, u.color AS user_color FROM request_comments c LEFT JOIN users u ON u.id = c.user_id`;
 r.get('/requests/:id/comments', async (c) => {
   const q = await viewable(c);
-  return c.json(await all(`${COMMENT_SELECT} WHERE c.request_id = ? ORDER BY c.id`, q.id));
+  return c.json(await withCommentFiles('request', q.id, await all(`${COMMENT_SELECT} WHERE c.request_id = ? ORDER BY c.id`, q.id)));
 });
 r.post('/requests/:id/comments', async (c) => {
   const user = c.get('user');
   const q = await viewable(c);
-  const content = String((await jsonBody(c)).content || '').trim();
-  if (!content) throw badRequest('Nội dung bình luận trống');
-  const { lastId } = await run('INSERT INTO request_comments(request_id, user_id, content) VALUES (?,?,?)', q.id, user.id, content.slice(0, 5000));
+  const { content, files } = await readComment(c);
+  const { lastId } = await run('INSERT INTO request_comments(request_id, user_id, content) VALUES (?,?,?)', q.id, user.id, content);
+  await saveCommentFiles('request', q.id, lastId, user.id, files);
   const approvers = (await all('SELECT user_id FROM request_approvers WHERE request_id = ?', q.id)).map((x) => x.user_id);
   const watchers = (await all('SELECT user_id FROM request_followers WHERE request_id = ?', q.id)).map((x) => x.user_id);
   // @nhắc tên: người được nhắc thành người theo dõi (xem được đề xuất, nhận cập nhật sau) và nhận thông báo riêng
   const mentioned = await findMentions(content, user.id);
   await batch(mentioned.map((uid) => ['INSERT OR IGNORE INTO request_followers(request_id, user_id) VALUES (?,?)', [q.id, uid]]));
-  const snippet = content.replace(/\s+/g, ' ').slice(0, 80);
+  const snippet = commentSnippet(content, files);
   await notify(mentioned, { actorId: user.id, app: APP, type: 'mention',
     title: `${user.name} đã nhắc đến bạn trong đề xuất "${q.title}": ${snippet}`, link: `/request/${q.id}` });
   await notify([q.creator_id, ...approvers, ...watchers].filter((x) => !mentioned.includes(x)), { actorId: user.id, app: APP, type: 'comment',
     title: `${user.name} bình luận trong đề xuất "${q.title}"`, link: `/request/${q.id}` });
-  await fireRequestEvent(c, 'request.commented', q.id, { comment: content.slice(0, 1000) });
-  return c.json(await get(`${COMMENT_SELECT} WHERE c.id = ?`, lastId), 201);
+  await fireRequestEvent(c, 'request.commented', q.id, { comment: (content || snippet).slice(0, 1000) });
+  return c.json(await withCommentFiles('request', q.id, await get(`${COMMENT_SELECT} WHERE c.id = ?`, lastId)), 201);
+});
+r.get('/requests/:id/comment-files/:fid', async (c) => {
+  const q = await viewable(c);
+  return sendFile(c, await commentFileOr404('request', q.id, c.req.param('fid')), c.req.query('inline') === '1');
+});
+r.post('/requests/:id/comment-files/:fid/link', async (c) => {
+  const q = await viewable(c);
+  return c.json(await publicFileLink(c, 'cf', await commentFileOr404('request', q.id, c.req.param('fid'))));
 });
 r.get('/requests/:id/activity', async (c) => {
   const q = await viewable(c);

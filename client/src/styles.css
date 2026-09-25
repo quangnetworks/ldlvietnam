@@ -1916,3 +1916,28 @@ button.rpt-task:hover { background: var(--hover); }
   .home2-right .weather-mini { max-width: calc(100vw - 48px); }
   .home2-right .weather.glass-pop { right: 50%; transform: translateX(50%); }
 }
+
+/* Bình luận có đính kèm ảnh / tệp */
+.cmt-box { position: relative; }
+.cmt-input { flex: 1; min-width: 0; display: flex; flex-direction: column; border: 1px solid var(--line); border-radius: 10px; background: var(--bg-2, var(--bg)); }
+.cmt-input:focus-within { border-color: var(--blue); box-shadow: 0 0 0 3px var(--tint-blue); }
+.cmt-input > .input, .cmt-input .mention-box > .input { border: 0; box-shadow: none; background: transparent; resize: vertical; }
+.cmt-input .input:focus { box-shadow: none; }
+.cmt-tools { display: flex; align-items: center; gap: 2px; padding: 2px 6px 4px; }
+.cmt-tools small { margin-left: 6px; }
+.cmt-pending { display: flex; flex-wrap: wrap; gap: 6px; padding: 4px 8px; align-items: center; }
+.cmt-pending .file-chip { max-width: 100%; }
+.cmt-pending-thumb { position: relative; width: 64px; height: 64px; border-radius: 8px; overflow: hidden; border: 1px solid var(--line); flex: none; background: var(--bg-3); }
+.cmt-pending-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.cmt-pending-thumb .res-thumb-x { position: absolute; top: 3px; right: 3px; }
+.cmt-box.dragging .cmt-input { border-style: dashed; border-color: var(--blue); }
+.cmt-drop { position: absolute; inset: 0; display: grid; place-items: center; border-radius: 10px; background: color-mix(in srgb, var(--tint-blue) 85%, transparent);
+  color: var(--blue-2); font-weight: 600; pointer-events: none; z-index: 2; }
+.cmt-files { margin-top: 6px; display: flex; flex-direction: column; gap: 6px; }
+.cmt-thumbs { display: grid; grid-template-columns: repeat(auto-fill, minmax(84px, 110px)); gap: 6px; }
+.cmt-files .attach-list { margin: 0; }
+.cmt-pending-thumb .res-thumb-x { opacity: 1; border: 0; padding: 0; cursor: pointer; }
+.cmt-box .cmt-input textarea.input, .cmt-box .cmt-input textarea.input:focus { border: 0; box-shadow: none; background: transparent; outline: none; min-height: 44px; }
+.cmt-files .attach-list { display: flex; flex-direction: row; flex-wrap: wrap; gap: 6px; }
+.cmt-files .attach-list .file-chip { width: auto; max-width: 100%; }
+@media (max-width: 800px) { .cmt-thumbs { grid-template-columns: repeat(auto-fill, minmax(76px, 96px)); } }

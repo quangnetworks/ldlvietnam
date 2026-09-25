@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
   X, Star, Eye, Trash2, Link2, Paperclip, Plus, CheckSquare, GitBranch, Calendar, User, Flag, Repeat, FolderKanban,
@@ -12,7 +12,8 @@ import { useWework } from './WeworkLayout.jsx';
 import { StatusCircle, TaskTags, useAssignable, createTaskList } from './taskParts.jsx';
 import TaskResults from './TaskResults.jsx';
 import FileViewer from '../components/FileViewer.jsx';
-import { MentionTextarea, MentionText } from '../components/Mention.jsx';
+import CommentBox, { CommentFiles } from '../components/CommentBox.jsx';
+import { MentionText } from '../components/Mention.jsx';
 
 export function TaskDetail({ id, onClose, onChanged, standalone }) {
   const { users } = useApp();
@@ -24,12 +25,9 @@ export function TaskDetail({ id, onClose, onChanged, standalone }) {
   const [editDesc, setEditDesc] = useState(false);
   const [desc, setDesc] = useState('');
   const [newItem, setNewItem] = useState('');
-  const [comment, setComment] = useState('');
   const [comments, reloadComments] = useFetch(() => api.get(`/tasks/${id}/comments`), [id]);
   const [activity, reloadActivity] = useFetch(() => api.get(`/tasks/${id}/activity`), [id]);
   const [viewing, setViewing] = useState(null);
-  const [sendingComment, setSendingComment] = useState(false);
-  const sendingRef = useRef(false);
   const assignable = useAssignable(users, t?.project_id, [t?.assignee_id]);
   const [goals, reloadGoals] = useFetch(() => api.get('/goals'), []);
 
@@ -65,19 +63,6 @@ export function TaskDetail({ id, onClose, onChanged, standalone }) {
     await api.post(`/tasks/${id}/checklist`, { content: newItem });
     setNewItem('');
     reload();
-  };
-  const sendComment = async (e) => {
-    e?.preventDefault();
-    if (!comment.trim() || sendingRef.current) return;
-    sendingRef.current = true;
-    setSendingComment(true);
-    try {
-      await api.post(`/tasks/${id}/comments`, { content: comment });
-      setComment('');
-      reloadComments();
-      reloadActivity();
-      onChanged?.();
-    } catch (err) { toast(err.message, 'error'); } finally { sendingRef.current = false; setSendingComment(false); }
   };
   const upload = async (files) => {
     if (!files.length) return;
@@ -332,17 +317,15 @@ export function TaskDetail({ id, onClose, onChanged, standalone }) {
                 <Avatar name={c.user_name} color={c.user_color} uid={c.user_id} size={30} />
                 <div className="grow">
                   <div><b>{c.user_name}</b> <small className="muted">{timeAgo(c.created_at)}</small></div>
-                  <div className="pre comment-text"><MentionText text={c.content} /></div>
+                  {c.content && <div className="pre comment-text"><MentionText text={c.content} /></div>}
+                  <CommentFiles base={`/tasks/${id}`} files={c.files} />
                 </div>
               </div>
             ))}
             {comments && !comments.length && <Empty icon={MessageSquare} title="Chưa có thảo luận" />}
           </div>
-          <form className="comment-form" onSubmit={sendComment}>
-            <MentionTextarea className="input" rows={2} value={comment} onChange={setComment} onSubmit={() => sendComment()}
-              placeholder="Viết bình luận… gõ @ để nhắc tên đồng nghiệp (họ nhận thông báo và xem được công việc) · Ctrl+Enter để gửi" />
-            <button className="btn btn-primary" disabled={!comment.trim() || sendingComment}>Gửi</button>
-          </form>
+          <CommentBox base={`/tasks/${id}`} onSent={() => { reloadComments(); reloadActivity(); onChanged?.(); }}
+            placeholder="Viết bình luận… gõ @ để nhắc tên · Ctrl+Enter để gửi" />
         </section>
       </div>
 

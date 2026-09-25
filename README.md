@@ -85,6 +85,10 @@ Webapp nội bộ gồm 2 phân hệ, giao diện và chức năng mô phỏng *
 - Gõ **@** trong bình luận công việc (Wework), thảo luận văn bản (Office), thảo luận đề xuất (Request), tin nhắn LDL Message và ô chat nhanh ở Trang chủ → danh sách gợi ý (lọc theo tên / tên đăng nhập, không cần dấu; ↑ ↓ Enter hoặc chạm để chọn). Nội dung hiển thị thành **@Họ tên** nổi bật.
 - Người được nhắc nhận thông báo riêng "… đã nhắc đến bạn …" (kèm thông báo đẩy) và **được thêm vào người theo dõi** để mở được công việc / đề xuất / văn bản đó (kể cả văn bản đang dự thảo). Trong chat chỉ nhắc được người xem được kênh (thành viên kênh riêng tư, nhân sự phòng ban).
 
+### Đính kèm ảnh, tệp trong bình luận
+- Bình luận công việc (Wework), thảo luận đề xuất (Request) và thảo luận văn bản (Office) đều có nút **đính kèm ảnh / video** và **đính kèm tệp** (Word, Excel, PDF…); có thể **dán ảnh chụp màn hình (Ctrl+V)** hoặc **kéo thả** tệp vào ô bình luận. Xem trước và bỏ bớt trước khi gửi; được gửi chỉ ảnh / tệp mà không cần chữ (tối đa 10 tệp, mỗi tệp 50MB).
+- Ảnh / video hiện dạng hình thu nhỏ, tệp khác dạng thẻ; bấm để **xem ngay** bằng trình xem tích hợp (ảnh, video, PDF, Word, Excel…). Quyền xem tệp theo quyền xem công việc / đề xuất / văn bản; xoá bình luận hoặc xoá bản ghi thì tệp cũng được xoá.
+
 ### Bảo mật
 - **Bảo mật hai lớp (2FA)** theo chuẩn TOTP — quét mã QR bằng Google / Microsoft Authenticator; quản trị viên có thể đặt lại 2FA cho thành viên.
 - **Giới hạn truy cập theo dải IP** (IPv4, CIDR) — quản trị viên luôn được truy cập để tránh bị khoá ngoài.

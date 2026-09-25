@@ -10,7 +10,8 @@ import { useFetch, useToast } from '../context.jsx';
 import { Avatar, Spinner, SafeHtml, FileChip, Modal, Field, Tabs, Empty } from '../components/ui.jsx';
 import { DOC_KINDS, fmtDate, fmtDateTime, timeAgo, cx } from '../utils.js';
 import { StatusBadge } from './DocList.jsx';
-import { MentionTextarea, MentionText } from '../components/Mention.jsx';
+import { MentionText } from '../components/Mention.jsx';
+import CommentBox, { CommentFiles } from '../components/CommentBox.jsx';
 
 function ApproveModal({ decision, onClose, onSubmit }) {
   const [comment, setComment] = useState('');
@@ -37,7 +38,6 @@ export default function DocDetail() {
   const [doc, reload, loading, error] = useFetch(() => api.get(`/documents/${id}`), [id]);
   const [tab, setTab] = useState('comments');
   const [approve, setApprove] = useState(null);
-  const [comment, setComment] = useState('');
   const [comments, reloadComments] = useFetch(() => api.get(`/documents/${id}/comments`), [id]);
   const [activity, reloadActivity] = useFetch(() => api.get(`/documents/${id}/activity`), [id]);
   const [viewers] = useFetch(() => api.get(`/documents/${id}/viewers`), [id]);
@@ -57,13 +57,6 @@ export default function DocDetail() {
     } catch (e) {
       toast(e.message, 'error');
     }
-  };
-  const sendComment = async (e) => {
-    e.preventDefault();
-    if (!comment.trim()) return;
-    await api.post(`/documents/${id}/comments`, { content: comment });
-    setComment('');
-    reloadComments();
   };
   const assignNumber = () => {
     const code = window.prompt('Nhập số hiệu văn bản (để trống để hệ thống tự cấp số):', '');
@@ -194,17 +187,14 @@ export default function DocDetail() {
                       <Avatar name={c.user_name} color={c.user_color} size={32} />
                       <div className="grow">
                         <div><b>{c.user_name}</b> <small className="muted">{timeAgo(c.created_at)}</small></div>
-                        <div className="pre"><MentionText text={c.content} /></div>
+                        {c.content && <div className="pre"><MentionText text={c.content} /></div>}
+                        <CommentFiles base={`/documents/${id}`} files={c.files} />
                       </div>
                     </div>
                   ))}
                   {comments && !comments.length && <Empty icon={MessageSquare} title="Chưa có thảo luận" />}
                 </div>
-                <form className="comment-form" onSubmit={sendComment}>
-                  <MentionTextarea className="input" rows={2} value={comment} onChange={setComment} placeholder="Viết bình luận… gõ @ để nhắc tên đồng nghiệp"
-                    onSubmit={() => sendComment({ preventDefault() {} })} />
-                  <button className="btn btn-primary" disabled={!comment.trim()}>Gửi</button>
-                </form>
+                <CommentBox base={`/documents/${id}`} onSent={reloadComments} />
               </div>
             )}
             {tab === 'activity' && (

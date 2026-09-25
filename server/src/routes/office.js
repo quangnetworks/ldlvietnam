@@ -6,6 +6,7 @@ import {
   badRequest, notFound, forbidden, toInt, idList, paginate, today, jsonBody, formBody, storeFiles, removeFile, sendFile,
 } from '../util.js';
 import { publicFileLink } from '../files.js';
+import { readComment, saveCommentFiles, withCommentFiles, commentFileOr404, commentSnippet, purgeCommentFiles } from '../comments.js';
 
 const r = new Hono();
 
@@ -460,28 +461,36 @@ const COMMENT_SELECT = `SELECT c.*, u.name AS user_name, u.color AS user_color F
 
 r.get('/documents/:id/comments', async (c) => {
   const id = await requireViewable(c);
-  return c.json(await all(`${COMMENT_SELECT} WHERE c.document_id = ? ORDER BY c.id`, id));
+  return c.json(await withCommentFiles('document', id, await all(`${COMMENT_SELECT} WHERE c.document_id = ? ORDER BY c.id`, id)));
 });
 
 r.post('/documents/:id/comments', async (c) => {
   const id = await requireViewable(c);
   const user = c.get('user');
   const d = await loadDocOr404(id);
-  const content = String((await jsonBody(c)).content || '').trim();
-  if (!content) throw badRequest('Nội dung bình luận trống');
+  const { content, files } = await readComment(c);
   const { lastId } = await run('INSERT INTO document_comments(document_id, user_id, content) VALUES (?,?,?)', id, user.id, content);
+  await saveCommentFiles('document', id, lastId, user.id, files);
   const watchers = (await all('SELECT user_id FROM document_follows WHERE document_id = ?', id)).map((x) => x.user_id);
   // @nhắc tên: người được nhắc theo dõi văn bản (được xem để trao đổi) và nhận thông báo riêng
   const mentioned = await findMentions(content, user.id);
   await batch(mentioned.map((uid) => ['INSERT OR IGNORE INTO document_follows(document_id, user_id) VALUES (?,?)', [id, uid]]));
-  const snippet = content.replace(/\s+/g, ' ').slice(0, 80);
+  const snippet = commentSnippet(content, files);
   await notify(mentioned, { actorId: user.id, app: APP, type: 'mention',
     title: `${user.name} đã nhắc đến bạn trong văn bản "${d.title}": ${snippet}`, link: `/office/doc/${id}` });
   await notify([d.creator_id, ...watchers].filter((x) => !mentioned.includes(x)), {
     actorId: user.id, app: APP, type: 'comment',
     title: `${user.name} đã bình luận văn bản "${d.title}"`, link: `/office/doc/${id}`,
   });
-  return c.json(await get(`${COMMENT_SELECT} WHERE c.id = ?`, lastId), 201);
+  return c.json(await withCommentFiles('document', id, await get(`${COMMENT_SELECT} WHERE c.id = ?`, lastId)), 201);
+});
+r.get('/documents/:id/comment-files/:fid', async (c) => {
+  const id = await requireViewable(c);
+  return sendFile(c, await commentFileOr404('document', id, c.req.param('fid')), c.req.query('inline') === '1');
+});
+r.post('/documents/:id/comment-files/:fid/link', async (c) => {
+  const id = await requireViewable(c);
+  return c.json(await publicFileLink(c, 'cf', await commentFileOr404('document', id, c.req.param('fid'))));
 });
 
 // ---------------------------------------------------------------- create / update
@@ -740,6 +749,7 @@ r.delete('/documents/:id', async (c) => {
   if (c.req.query('permanent') === '1') {
     if (!d.deleted_at) throw badRequest('Chỉ xóa vĩnh viễn văn bản trong thùng rác');
     const files = await all('SELECT filename FROM document_attachments WHERE document_id = ?', id);
+    await purgeCommentFiles('document', { entityIds: [id] });
     await run('DELETE FROM documents WHERE id = ?', id);
     for (const f of files) await removeFile(f.filename);
     return c.json({ ok: true });

@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import { all, get, run, batch, logActivity, notify, getSetting, setSetting, markSeen, findMentions } from '../db.js';
 import { requireAdmin, userDeptIds, inDeptSql } from '../auth.js';
 import { publicFileLink } from '../files.js';
+import { readComment, saveCommentFiles, withCommentFiles, commentFileOr404, commentSnippet, purgeCommentFiles } from '../comments.js';
 import { audit } from '../platform.js';
 import {
   badRequest, notFound, forbidden, toInt, idList, paginate, today, jsonBody, formBody, storeFiles, removeFile, sendFile,
@@ -830,8 +831,10 @@ r.put('/tasks/:id', async (c) => {
 
 async function deleteTaskFiles(taskId) {
   // include attachments of subtasks, which cascade-delete with the parent
-  return all(`WITH RECURSIVE sub(id) AS (SELECT ? UNION ALL SELECT t.id FROM tasks t JOIN sub ON t.parent_id = sub.id)
-    SELECT filename FROM task_attachments WHERE task_id IN (SELECT id FROM sub)`, taskId);
+  const ids = (await all(`WITH RECURSIVE sub(id) AS (SELECT ? UNION ALL SELECT t.id FROM tasks t JOIN sub ON t.parent_id = sub.id)
+    SELECT id FROM sub`, taskId)).map((x) => x.id);
+  await purgeCommentFiles('task', { entityIds: ids });
+  return all(`SELECT filename FROM task_attachments WHERE task_id IN (${ids.map(() => '?').join(',')})`, ...ids);
 }
 
 r.delete('/tasks/:id', async (c) => {
@@ -945,26 +948,26 @@ const TASK_COMMENT_SELECT = `SELECT c.*, u.name AS user_name, u.color AS user_co
 
 r.get('/tasks/:id/comments', async (c) => {
   const t = await viewableTask(c);
-  return c.json(await all(`${TASK_COMMENT_SELECT} WHERE c.task_id = ? ORDER BY c.id`, t.id));
+  return c.json(await withCommentFiles('task', t.id, await all(`${TASK_COMMENT_SELECT} WHERE c.task_id = ? ORDER BY c.id`, t.id)));
 });
 r.post('/tasks/:id/comments', async (c) => {
   const user = c.get('user');
   const t = await viewableTask(c);
-  const content = String((await jsonBody(c)).content || '').trim();
-  if (!content) throw badRequest('Nội dung bình luận trống');
+  const { content, files } = await readComment(c);
   const { lastId } = await run('INSERT INTO task_comments(task_id, user_id, content) VALUES (?,?,?)', t.id, user.id, content);
+  await saveCommentFiles('task', t.id, lastId, user.id, files);
   const watchers = (await all('SELECT user_id FROM task_followers WHERE task_id = ?', t.id)).map((x) => x.user_id);
   // @mention: @tên_đăng_nhập (ô bình luận gợi ý người dùng khi gõ @)
   const mentioned = await findMentions(content, user.id);
   // người được nhắc tên được thêm vào người theo dõi để mở được công việc và nhận các cập nhật sau
   await batch(mentioned.map((uid) => ['INSERT OR IGNORE INTO task_followers(task_id, user_id) VALUES (?,?)', [t.id, uid]]));
-  const snippet = content.replace(/\s+/g, ' ').slice(0, 80);
+  const snippet = commentSnippet(content, files);
   await notify(mentioned, { actorId: user.id, app: APP, type: 'mention',
     title: `${user.name} đã nhắc đến bạn trong "${t.title}": ${snippet}`, link: `/wework/task/${t.id}` });
   await notify([t.creator_id, t.assignee_id, ...watchers].filter((x) => !mentioned.includes(x)), { actorId: user.id, app: APP, type: 'comment',
     title: `${user.name} đã bình luận trong "${t.title}"`, link: `/wework/task/${t.id}` });
   await run("UPDATE tasks SET updated_at = datetime('now') WHERE id = ?", t.id);
-  return c.json(await get(`${TASK_COMMENT_SELECT} WHERE c.id = ?`, lastId), 201);
+  return c.json(await withCommentFiles('task', t.id, await get(`${TASK_COMMENT_SELECT} WHERE c.id = ?`, lastId)), 201);
 });
 r.delete('/tasks/:id/comments/:cid', async (c) => {
   const user = c.get('user');
@@ -972,7 +975,16 @@ r.delete('/tasks/:id/comments/:cid', async (c) => {
   if (!cm) throw notFound();
   if (cm.user_id !== user.id && !isAdmin(user)) throw forbidden();
   await run('DELETE FROM task_comments WHERE id = ?', cm.id);
+  await purgeCommentFiles('task', { commentId: cm.id });
   return c.json({ ok: true });
+});
+r.get('/tasks/:id/comment-files/:fid', async (c) => {
+  const t = await viewableTask(c);
+  return sendFile(c, await commentFileOr404('task', t.id, c.req.param('fid')), c.req.query('inline') === '1');
+});
+r.post('/tasks/:id/comment-files/:fid/link', async (c) => {
+  const t = await viewableTask(c);
+  return c.json(await publicFileLink(c, 'cf', await commentFileOr404('task', t.id, c.req.param('fid'))));
 });
 r.get('/tasks/:id/activity', async (c) => {
   const t = await viewableTask(c);
@@ -1292,6 +1304,7 @@ r.delete('/projects/:id', async (c) => {
   const p = await projectOr404(c);
   if (!(isAdmin(user) || p.owner_id === user.id)) throw forbidden('Chỉ chủ dự án mới được xóa');
   const files = await all(`SELECT a.filename FROM task_attachments a JOIN tasks t ON t.id = a.task_id WHERE t.project_id = ?`, p.id);
+  await purgeCommentFiles('task', { entityIds: (await all('SELECT id FROM tasks WHERE project_id = ?', p.id)).map((x) => x.id) });
   await run('DELETE FROM projects WHERE id = ?', p.id);
   for (const f of files) await removeFile(f.filename);
   return c.json({ ok: true });

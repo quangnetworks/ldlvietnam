@@ -12,6 +12,7 @@ const SOURCES = {
   ra: 'request_attachments',
   gf: 'request_group_files',
   cm: 'chat_messages',
+  cf: 'comment_files',
 };
 
 /** Tạo liên kết tuyệt đối tới tệp (quyền xem phải được kiểm tra trước khi gọi). */

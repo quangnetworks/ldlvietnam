@@ -830,3 +830,40 @@ test('wework bulk actions: only admins / business owners, never department heads
   const r = await owner.post('/tasks/bulk', { ids: [], action: 'follow' });
   assert.equal(r.status, 200);
 });
+
+test('comments accept image / file attachments in tasks, requests and documents', async () => {
+  const admin = await login('admin');
+  await admin.post('/users', { username: 'cmt.outsider', password: '123456', name: 'Người ngoài' });
+  const outsider = await login('cmt.outsider');
+  const task = (await admin.get('/tasks?limit=1')).data.items[0];
+  const reqs = (await admin.get('/requests?box=all&limit=1')).data;
+  const docs = (await admin.get('/documents?limit=1')).data;
+  const targets = [['tasks', task.id], ['requests', (reqs.items || reqs)[0]?.id], ['documents', (docs.items || docs)[0]?.id]].filter(([, id]) => id);
+  assert.ok(targets.length >= 2);
+  for (const [base, id] of targets) {
+    // chỉ có ảnh, không có chữ
+    const fd = new FormData();
+    fd.append('content', '');
+    fd.append('files', new File([new Uint8Array([137, 80, 78, 71])], 'anh.png', { type: 'image/png' }));
+    fd.append('files', new File(['xin chào'], 'ghi-chu.txt', { type: 'text/plain' }));
+    const r = await admin.post(`/${base}/${id}/comments`, fd);
+    assert.equal(r.status, 201, `${base}: ${JSON.stringify(r.data)}`);
+    assert.equal(r.data.files.length, 2);
+    const list = (await admin.get(`/${base}/${id}/comments`)).data;
+    const mine = list.find((x) => x.id === r.data.id);
+    assert.deepEqual(mine.files.map((f) => f.original_name), ['anh.png', 'ghi-chu.txt']);
+    const file = await admin.get(`/${base}/${id}/comment-files/${mine.files[1].id}`);
+    assert.equal(file.status, 200);
+    assert.equal(file.data, 'xin chào');
+    assert.equal((await admin.post(`/${base}/${id}/comment-files/${mine.files[1].id}/link`)).status, 200);
+    // tệp của bản ghi khác / người không có quyền xem
+    assert.equal((await admin.get(`/${base}/${id + 999}/comment-files/${mine.files[1].id}`)).status, 404);
+    if (base === 'requests') assert.equal((await outsider.get(`/${base}/${id}/comment-files/${mine.files[1].id}`)).status, 403);
+    // bình luận trống hoàn toàn vẫn bị từ chối
+    assert.equal((await admin.post(`/${base}/${id}/comments`, { content: '  ' })).status, 400);
+  }
+  // xoá bình luận công việc → xoá luôn tệp
+  const c = (await admin.get(`/tasks/${task.id}/comments`)).data.find((x) => x.files?.length);
+  assert.equal((await admin.del(`/tasks/${task.id}/comments/${c.id}`)).status, 200);
+  assert.equal((await admin.get(`/tasks/${task.id}/comment-files/${c.files[0].id}`)).status, 404);
+});
