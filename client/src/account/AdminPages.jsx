@@ -6,7 +6,10 @@ import {
 } from 'lucide-react';
 import { api } from '../api.js';
 import { useApp, useFetch, useToast } from '../context.jsx';
-import { Avatar, Modal, Field, UserPicker, Spinner, Dropdown, MenuItem, Empty, Tabs, Pagination } from '../components/ui.jsx';
+import { Avatar, Modal, Field, UserPicker, Spinner, Dropdown, MenuItem, Empty, Tabs, Pagination, MultiSelect } from '../components/ui.jsx';
+import { ContactButtons } from '../components/Contact.jsx';
+import PushCard from '../components/PushCard.jsx';
+import { refreshBadge } from '../push.js';
 import { MODULE_APPS, AppIcon } from '../apps.jsx';
 import { fmtDate, fmtDateTime, cx } from '../utils.js';
 import { LoginHistory } from './ProfilePages.jsx';
@@ -15,12 +18,14 @@ import AvatarEditor from '../components/AvatarEditor.jsx';
 const appByKey = Object.fromEntries(MODULE_APPS.map((a) => [a.module, a]));
 
 // ---------------------------------------------------------------- user form
-function UserModal({ user: editing, guest = false, onClose, onSaved }) {
+function UserModal({ user: editing, guest = false, ownersCount, onClose, onSaved }) {
   const { users, departments } = useApp();
   const toast = useToast();
-  const [f, setF] = useState(editing ? { ...editing, password: '', department_id: editing.department_id || '' } : {
+  const extraOf = (u) => String(u.extra_departments || '').split(',').map(Number).filter((x) => x && x !== u.department_id);
+  const { user: me } = useApp();
+  const [f, setF] = useState(editing ? { ...editing, role: editing.is_owner ? 'owner' : editing.role, password: '', department_id: editing.department_id || '', extra_department_ids: extraOf(editing) } : {
     username: '', password: '', name: '', email: '', phone: '', title: '', department_id: '', manager_id: null, role: guest ? 'guest' : 'member',
-    birthday: '', apps: guest ? [] : MODULE_APPS.map((a) => a.module), expires_at: '',
+    birthday: '', apps: guest ? [] : MODULE_APPS.map((a) => a.module), expires_at: '', extra_department_ids: [],
   });
   const [err, setErr] = useState('');
   const set = (k) => (e) => setF({ ...f, [k]: e?.target ? e.target.value : e });
@@ -61,21 +66,31 @@ function UserModal({ user: editing, guest = false, onClose, onSaved }) {
             {departments.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
           </select>
         </Field>
+        <Field label="Phòng ban kiêm nhiệm" hint="Một tài khoản có thể thuộc nhiều phòng ban: nhận văn bản, kênh chat, tài liệu của các phòng ban này">
+          <MultiSelect options={departments.filter((d) => String(d.id) !== String(f.department_id)).map((d) => ({ value: d.id, label: d.name }))}
+            value={f.extra_department_ids || []} onChange={set('extra_department_ids')} placeholder="Không có" />
+        </Field>
         <Field label="Quản lý trực tiếp"><UserPicker users={users} exclude={editing ? [editing.id] : []} value={f.manager_id} onChange={set('manager_id')} placeholder="Không có" /></Field>
         <Field label="Vai trò">
           <select className="input" value={f.role} onChange={(e) => setF({ ...f, role: e.target.value, apps: e.target.value === 'guest' && !editing ? [] : f.apps })}>
             <option value="member">Thành viên</option>
-            <option value="admin">Quản trị hệ thống</option>
+            <option value="admin">Quản trị hệ thống (quản trị cấp cao)</option>
+            {(!!me.is_owner || f.role === 'owner' || ownersCount === 0) && <option value="owner">Chủ doanh nghiệp (quản trị cao nhất)</option>}
             <option value="guest">Tài khoản khách (đối tác, NPP…)</option>
           </select>
         </Field>
+        {f.role === 'owner' && (
+          <Field label=" ">
+            <small className="muted">Chủ doanh nghiệp có toàn quyền như quản trị hệ thống; chỉ Chủ doanh nghiệp mới sửa, khoá hoặc đổi mật khẩu được tài khoản này.</small>
+          </Field>
+        )}
         {f.role === 'guest' && (
           <Field label="Hạn truy cập" hint="Tài khoản khách tự khoá sau ngày này; chỉ thấy nội dung được chia sẻ trực tiếp">
             <input type="date" className="input" value={f.expires_at || ''} onChange={set('expires_at')} />
           </Field>
         )}
         <div className="span-2">
-          <span className="field-label">Ứng dụng được sử dụng {f.role === 'admin' && <small className="muted">(quản trị viên dùng được tất cả)</small>}</span>
+          <span className="field-label">Ứng dụng được sử dụng {['admin', 'owner'].includes(f.role) && <small className="muted">(quản trị viên dùng được tất cả)</small>}</span>
           <div className="app-checks">
             {MODULE_APPS.map((a) => (
               <label key={a.key} className={cx('app-check', (f.apps || []).includes(a.module) && 'on')}>
@@ -158,7 +173,7 @@ export function MembersPage() {
   };
   const tabs = [
     { value: 'all', label: `TẤT CẢ (${data?.counts.all ?? '…'})` },
-    { value: 'admins', label: 'QUẢN TRỊ HỆ THỐNG' },
+    { value: 'admins', label: `QUẢN TRỊ HỆ THỐNG (${data?.counts.admins ?? 0})` },
     { value: 'guests', label: `TK KHÁCH (${data?.counts.guests ?? 0})` },
     ...(admin ? [{ value: 'disabled', label: 'VÔ HIỆU HOÁ' }, { value: 'logins', label: 'LỊCH SỬ ĐĂNG NHẬP' }] : []),
   ];
@@ -190,7 +205,8 @@ export function MembersPage() {
                   <Link to={`/account/u/${u.id}`} className="mem-title">{u.name}</Link>
                   <div className="small"><b>@{u.username}</b> · <i className="muted">{u.title || 'Chưa nhập chức danh'}</i></div>
                   <div className="mem-apps">
-                    {u.role === 'admin' && <span className="text-red small">Quản trị cấp cao · </span>}
+                    {u.is_owner ? <span className="owner-badge">Chủ doanh nghiệp</span>
+                      : u.role === 'admin' && <span className="text-red small">Quản trị cấp cao · </span>}
                     {u.role === 'guest' && <span className="badge badge-gray">KHÁCH{u.expires_at ? ` · HẾT HẠN ${fmtDate(u.expires_at)}` : ''}</span>}
                     {!!u.totp_enabled && <span className="small text-green" title="Đã bật bảo mật hai lớp">2FA · </span>}
                     {u.apps.map((k) => appByKey[k] && <span key={k} title={appByKey[k].name}><AppIcon app={appByKey[k]} size={16} /></span>)}
@@ -202,26 +218,28 @@ export function MembersPage() {
                 <div>{u.email || <i className="muted">Chưa nhập email</i>}</div>
                 <div>{u.phone || <i className="muted">Chưa nhập số điện thoại</i>}</div>
                 <div>{u.birthday ? fmtDate(u.birthday) : <i className="muted">Chưa nhập ngày sinh</i>}</div>
+                {u.active ? <ContactButtons user={u} compact /> : null}
               </div>
               <div className="mem-manager">
                 {u.manager_name && (<><Avatar name={u.manager_name} color={u.manager_color} size={40} />
                   <div><b>{u.manager_name}</b><div className="small muted">@{u.manager_username}{u.manager_title ? ` · ${u.manager_title}` : ''}</div></div></>)}
               </div>
               <div className="mem-actions">
+                {(() => { const manage = admin && (!u.is_owner || !!user.is_owner); return (
                 <Dropdown align="right" trigger={(o, t) => <button className="icon-btn sm" onClick={t} aria-label="Thao tác"><MoreHorizontal size={16} /></button>}>
                   <MenuItem icon={Eye} onClick={() => { window.location.href = `/account/u/${u.id}`; }}>Xem hồ sơ</MenuItem>
-                  {admin && <MenuItem icon={Pencil} onClick={() => setEdit(u)}>Sửa tài khoản</MenuItem>}
-                  {admin && u.id !== user.id && <MenuItem icon={KeyRound} onClick={() => setResetFor(u)}>Đặt lại mật khẩu</MenuItem>}
-                  {admin && !!u.totp_enabled && <MenuItem icon={ShieldCheck} onClick={async () => {
+                  {manage && <MenuItem icon={Pencil} onClick={() => setEdit(u)}>Sửa tài khoản</MenuItem>}
+                  {manage && u.id !== user.id && <MenuItem icon={KeyRound} onClick={() => setResetFor(u)}>Đặt lại mật khẩu</MenuItem>}
+                  {manage && !!u.totp_enabled && <MenuItem icon={ShieldCheck} onClick={async () => {
                     if (!window.confirm(`Tắt bảo mật hai lớp của ${u.name}? (dùng khi nhân viên mất điện thoại)`)) return;
                     await api.post(`/account/2fa/reset/${u.id}`);
                     toast('Đã đặt lại bảo mật hai lớp');
                     refresh();
                   }}>Đặt lại bảo mật 2 lớp</MenuItem>}
-                  {admin && u.id !== user.id && (u.active
+                  {manage && u.id !== user.id && (u.active
                     ? <MenuItem icon={UserX} danger onClick={() => setActive(u, false)}>Vô hiệu hoá</MenuItem>
                     : <MenuItem icon={UserCheck} onClick={() => setActive(u, true)}>Kích hoạt lại</MenuItem>)}
-                </Dropdown>
+                </Dropdown>); })()}
                 <small className="muted">{fmtDate(u.created_at)}</small>
               </div>
             </div>
@@ -229,7 +247,7 @@ export function MembersPage() {
           {!data.items.length && <Empty icon={Users} title="Không có thành viên nào" />}
         </div>
       )}
-      {edit && <UserModal user={edit.id ? edit : null} guest={!!edit.guest} onClose={() => { setEdit(null); if (params.get('edit')) setParams({}); }} onSaved={() => { setEdit(null); refresh(); }} />}
+      {edit && <UserModal user={edit.id ? edit : null} guest={!!edit.guest} ownersCount={data?.counts.owners} onClose={() => { setEdit(null); if (params.get('edit')) setParams({}); }} onSaved={() => { setEdit(null); refresh(); }} />}
       {importing && <ImportModal onClose={() => setImporting(false)} onDone={refresh} />}
       {resetFor && <ResetPasswordModal ids={[resetFor.id]} title={`Đặt lại mật khẩu cho ${resetFor.name}`} onClose={() => setResetFor(null)} />}
     </div>
@@ -359,7 +377,7 @@ export function GroupsPage() {
 }
 
 export function DepartmentsPage() {
-  const { departments, loadDirectory } = useApp();
+  const { departments, loadDirectory, users } = useApp();
   const toast = useToast();
   const [edit, setEdit] = useState(null);
   const save = async () => {
@@ -375,13 +393,14 @@ export function DepartmentsPage() {
       <div className="page-head"><h1>Phòng ban</h1><button className="btn btn-success" onClick={() => setEdit({ name: '', code: '', parent_id: '' })}><Plus size={15} /> Thêm phòng ban</button></div>
       <div className="table-wrap">
         <table className="table">
-          <thead><tr><th>Phòng ban</th><th>Mã</th><th>Trực thuộc</th><th>Số nhân sự</th><th /></tr></thead>
+          <thead><tr><th>Phòng ban</th><th>Mã</th><th>Trưởng phòng</th><th>Trực thuộc</th><th>Số nhân sự</th><th>Duyệt hoàn thành</th><th /></tr></thead>
           <tbody>
             {departments.map((d) => (
               <tr key={d.id}>
-                <td>{d.name}</td><td>{d.code}</td><td>{departments.find((x) => x.id === d.parent_id)?.name}</td><td>{d.member_count}</td>
+                <td>{d.name}</td><td>{d.code}</td><td>{d.head_name || <span className="muted">—</span>}</td><td>{departments.find((x) => x.id === d.parent_id)?.name}</td><td>{d.member_count}</td>
+                <td>{d.task_approval ? <span className="badge badge-green">Bật</span> : <span className="muted">—</span>}</td>
                 <td className="nowrap">
-                  <button className="icon-btn sm" onClick={() => setEdit({ ...d, parent_id: d.parent_id || '' })} aria-label="Sửa"><Pencil size={15} /></button>
+                  <button className="icon-btn sm" onClick={() => setEdit({ ...d, parent_id: d.parent_id || '', head_id: d.head_id || null })} aria-label="Sửa"><Pencil size={15} /></button>
                   <button className="icon-btn sm" aria-label="Xoá" onClick={async () => { if (window.confirm(`Xoá phòng ban ${d.name}?`)) { await api.del(`/departments/${d.id}`); loadDirectory(); } }}><Trash2 size={15} /></button>
                 </td>
               </tr>
@@ -395,6 +414,14 @@ export function DepartmentsPage() {
           <div className="form-grid one">
             <Field label="Tên phòng ban" required><input className="input" autoFocus value={edit.name} onChange={(e) => setEdit({ ...edit, name: e.target.value })} /></Field>
             <Field label="Mã"><input className="input" value={edit.code || ''} onChange={(e) => setEdit({ ...edit, code: e.target.value })} /></Field>
+            <Field label="Trưởng phòng" hint="Trưởng phòng được giao việc cho mọi nhân sự của phòng ban (kể cả người kiêm nhiệm)">
+              <UserPicker users={users} value={edit.head_id} onChange={(v) => setEdit({ ...edit, head_id: v })} placeholder="Chưa chọn" />
+            </Field>
+            <label className="check">
+              <input type="checkbox" checked={!!edit.task_approval} onChange={(e) => setEdit({ ...edit, task_approval: e.target.checked })} />
+              <span><b>Công việc của nhân viên cần quản lý duyệt hoàn thành</b>
+                <small className="muted block">Nhân viên không tự bấm "Hoàn thành": công việc chuyển sang "Chờ đánh giá" để quản lý trực tiếp / trưởng phòng / người giao việc duyệt.</small></span>
+            </label>
             <Field label="Trực thuộc">
               <select className="input" value={edit.parent_id || ''} onChange={(e) => setEdit({ ...edit, parent_id: e.target.value })}>
                 <option value="">— Cấp gốc —</option>
@@ -540,8 +567,9 @@ export function NotificationsPage() {
     <div className="acc-page wide">
       <div className="page-head">
         <h1>Thông báo</h1>
-        <button className="btn btn-sm" onClick={async () => { await api.put('/notifications/read-all'); reload(); }}>Đánh dấu tất cả đã đọc</button>
+        <button className="btn btn-sm" onClick={async () => { await api.put('/notifications/read-all'); reload(); refreshBadge(true); }}>Đánh dấu tất cả đã đọc</button>
       </div>
+      <PushCard />
       <div className="row gap wrap">
         <Tabs tabs={NOTIF_APPS.map(([value, label]) => ({ value, label }))} value={app} onChange={setApp} />
         <label className="check"><input type="checkbox" checked={unread} onChange={(e) => setUnread(e.target.checked)} /> Chỉ chưa đọc</label>
@@ -549,7 +577,7 @@ export function NotificationsPage() {
       <div className="notif-full">
         {data?.items.map((n) => (
           <Link key={n.id} to={n.link || '#'} className={cx('notif-item', !n.is_read && 'unread')}
-            onClick={() => { if (!n.is_read) api.put(`/notifications/${n.id}/read`); }}>
+            onClick={() => { if (!n.is_read) api.put(`/notifications/${n.id}/read`).then(() => refreshBadge(true)); }}>
             <Avatar name={n.actor_name || 'Hệ thống'} color={n.actor_color} size={34} />
             <span className="grow"><span className="notif-title">{n.title}</span>
               <small className="muted">{NOTIF_APPS.find((x) => x[0] === n.app)?.[1] || 'Hệ thống'} · {fmtDateTime(n.created_at)}</small></span>

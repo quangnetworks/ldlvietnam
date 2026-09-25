@@ -8,6 +8,7 @@ import { api } from '../api.js';
 import { useApp } from '../context.jsx';
 import { Avatar, useClickOutside } from '../components/ui.jsx';
 import { NotificationBell, AppSwitcher, UserMenu, useDebounced } from '../components/shell.jsx';
+import { ContactsButton } from '../components/Contact.jsx';
 import { cx } from '../utils.js';
 import TaskDrawer from './TaskDrawer.jsx';
 import TaskCreateModal from './TaskCreateModal.jsx';
@@ -72,8 +73,11 @@ export default function WeworkLayout() {
   const location = useLocation();
   const navigate = useNavigate();
 
+  const [meta, setMeta] = useState({ can_view_reports: user.role === 'admin' });
   const loadProjects = useCallback(async () => setProjects(await api.get('/projects', { sort: 'name' })), []);
   useEffect(() => { loadProjects(); }, [loadProjects]);
+  const loadMeta = useCallback(() => api.get('/wework/meta').then(setMeta).catch(() => {}), []);
+  useEffect(() => { loadMeta(); }, [loadMeta]);
   useEffect(() => setMobileNav(false), [location.key]);
   useEffect(() => {
     if (params.get('create') === '1') {
@@ -87,6 +91,7 @@ export default function WeworkLayout() {
   const bump = useCallback(() => setVersion((v) => v + 1), []);
   const ctx = {
     projects, loadProjects, version, bump,
+    canReports: !!meta.can_view_reports, loadMeta,
     openTask: setTaskId,
     openCreate: (defaults = {}) => setCreateDefaults(defaults),
     openProjectForm: (opts) => setProjectForm(opts),
@@ -108,6 +113,7 @@ export default function WeworkLayout() {
   return (
     <WeworkCtx.Provider value={ctx}>
       <div className="wework">
+        {mobileNav && <div className="side-backdrop" onClick={() => setMobileNav(false)} />}
         <aside className={cx('ww-side', mobileNav && 'open')}>
           <Link to="/" className="brand side-brand" title="Về trang chủ">
             <img className="brand-logo" src="/logo-192.png" alt="LDL" />
@@ -116,6 +122,7 @@ export default function WeworkLayout() {
           <div className="ww-user">
             <UserMenu dark />
             <div className="grow" />
+            <ContactsButton dark />
             <NotificationBell app="wework" dark />
             <AppSwitcher dark />
           </div>
@@ -127,10 +134,10 @@ export default function WeworkLayout() {
                 <>
                   {link('/wework', 'Công việc', Home)}
                   {link('/wework/my', 'Công việc của tôi', CheckSquare)}
-                  {link('/wework/projects', 'Dự án & phòng ban', FolderKanban)}
-                  {link('/wework/departments', 'Departments', Building2)}
+                  {link('/wework/projects', 'Dự án', FolderKanban)}
+                  {link('/wework/departments', 'Phòng ban', Building2)}
                   {link('/wework/members', 'Thành viên', Users)}
-                  {link('/wework/reports', 'Báo cáo', BarChart3)}
+                  {meta.can_view_reports && link('/wework/reports', 'Báo cáo', BarChart3)}
                   <Link to="/office" className="ww-link"><FileText size={16} /> Văn bản (Office)</Link>
                 </>
               )}
@@ -152,7 +159,7 @@ export default function WeworkLayout() {
                   <button className="ww-link" onClick={() => setProjectForm({ kind: 'project' })}><PlusSquare size={16} /> Tạo dự án mới</button>
                   <button className="ww-link" onClick={() => setProjectForm({ kind: 'department' })}><PlusSquare size={16} /> Tạo phòng ban mới</button>
                   {link('/wework/templates', 'Tạo từ mẫu', Copy)}
-                  {link('/wework/bulk', 'Tác vụ hàng loạt', ListChecks)}
+                  {user.role === 'admin' && link('/wework/bulk', 'Tác vụ hàng loạt', ListChecks)}
                   {user.role === 'admin' && <Link to="/admin" className="ww-link"><Settings size={16} /> Cài đặt hệ thống</Link>}
                   {link('/wework/guide', 'Video hướng dẫn', PlayCircle)}
                 </>
@@ -161,7 +168,16 @@ export default function WeworkLayout() {
           </div>
         </aside>
         <div className="ww-content">
-          <button className="icon-btn mobile-only ww-burger" onClick={() => setMobileNav(!mobileNav)} aria-label="Menu"><Menu size={20} /></button>
+          <header className="topbar ww-mobilebar">
+            <button className="icon-btn on-dark" onClick={() => setMobileNav(!mobileNav)} aria-label="Menu Wework"><Menu size={20} /></button>
+            <Link to="/" className="brand"><img className="brand-logo" src="/logo-192.png" alt="LDL" /></Link>
+            <span className="topbar-title">Wework</span>
+            <div className="grow" />
+            <button className="icon-btn on-dark" onClick={() => ctx.openCreate({})} aria-label="Tạo công việc"><PlusSquare size={19} /></button>
+            <ContactsButton dark />
+            <NotificationBell app="wework" dark />
+            <UserMenu dark showName={false} />
+          </header>
           <Outlet />
         </div>
       </div>

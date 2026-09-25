@@ -1,13 +1,16 @@
 import { useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { ArrowLeft, Star, Eye, Pencil, Send, Ban, Trash2, CheckCircle2, XCircle, Undo2, Clock, Paperclip, Link2, History, MessageSquare, Printer } from 'lucide-react';
+import { ArrowLeft, Star, Eye, Pencil, Send, Ban, Trash2, CheckCircle2, XCircle, Undo2, Clock, Paperclip, Link2, History, Printer } from 'lucide-react';
 import { api, toFormData } from '../api.js';
 import { useFetch, useToast } from '../context.jsx';
-import { Avatar, Spinner, FileChip, Modal, Field, Tabs, Empty } from '../components/ui.jsx';
-import { fmtDateTime, timeAgo, cx } from '../utils.js';
+import { Avatar, Spinner, FileChip, Modal, Field, Tabs } from '../components/ui.jsx';
+import { fmtDateTime, cx } from '../utils.js';
 import { useRequestApp } from './RequestLayout.jsx';
 import { STATUS, fieldDisplay } from './fields.jsx';
 import { StatusSteps } from './RequestForm.jsx';
+import GroupGuide from './GroupGuide.jsx';
+import FileViewer, { InlinePreview } from '../components/FileViewer.jsx';
+import CommentBox, { CommentList } from '../components/CommentBox.jsx';
 
 const DECIDE = {
   approve: { title: 'Chấp thuận đề xuất', btn: 'Chấp thuận', cls: 'btn-success', need: false },
@@ -25,8 +28,8 @@ export default function RequestDetail() {
   const [activity, reloadActivity] = useFetch(() => api.get(`/requests/${id}/activity`), [id]);
   const [decide, setDecide] = useState(null);
   const [reason, setReason] = useState('');
-  const [comment, setComment] = useState('');
   const [tab, setTab] = useState('comments');
+  const [viewing, setViewing] = useState(null);
 
   if (error) return <div className="rq-page"><div className="alert alert-error">{error.message}</div></div>;
   if (loading && !q) return <div className="rq-page"><Spinner /></div>;
@@ -51,7 +54,7 @@ export default function RequestDetail() {
         <button className={cx('icon-btn', q.starred && 'starred')} title="Đánh dấu" onClick={() => act(() => api.post(`/requests/${id}/star`))}><Star size={18} fill={q.starred ? 'currentColor' : 'none'} /></button>
         <button className={cx('icon-btn', q.following && 'text-blue')} title={q.following ? 'Bỏ theo dõi' : 'Theo dõi'} onClick={() => act(() => api.post(`/requests/${id}/follow`))}><Eye size={18} /></button>
         <button className="icon-btn" title="Sao chép liên kết" onClick={() => { navigator.clipboard?.writeText(window.location.href); toast('Đã sao chép liên kết'); }}><Link2 size={18} /></button>
-        <button className="icon-btn" title="In" onClick={() => window.print()}><Printer size={18} /></button>
+        <button className="icon-btn" title="In phiếu đề xuất / lưu PDF" onClick={() => navigate(`/request/${id}/print`)}><Printer size={18} /></button>
       </div>
 
       {q.my_turn && (
@@ -82,9 +85,16 @@ export default function RequestDetail() {
               {q.fields.map((f) => (<div key={f.key}><dt>{f.label}</dt><dd className="pre">{fieldDisplay(f, q.data[f.key], usersById)}</dd></div>))}
             </dl>
             {q.content && <><h3 className="card-title">Nội dung</h3><div className="pre">{q.content}</div></>}
+            <InlinePreview files={q.attachments} title="Xem trước tệp đính kèm" height={560}
+              urlOf={(f) => api.url(`/requests/${id}/attachments/${f.id}`)}
+              publicUrlOf={async (f, share) => (await api.post(`/requests/${id}/attachments/${f.id}/link${share ? '?share=1' : ''}`)).url} />
             <h3 className="card-title">Tệp đính kèm ({q.attachments.length})</h3>
+            {viewing != null && (
+              <FileViewer files={q.attachments} index={viewing} urlOf={(f) => api.url(`/requests/${id}/attachments/${f.id}`)} onClose={() => setViewing(null)}
+                publicUrlOf={async (f, share) => (await api.post(`/requests/${id}/attachments/${f.id}/link${share ? '?share=1' : ''}`)).url} />
+            )}
             <div className="attach-list">
-              {q.attachments.map((a) => <FileChip key={a.id} file={a} href={api.url(`/requests/${id}/attachments/${a.id}`, { inline: 1 })} />)}
+              {q.attachments.map((a, i) => <FileChip key={a.id} file={a} onOpen={() => setViewing(i)} />)}
               <label className="btn btn-sm" style={{ width: 'fit-content' }}><Paperclip size={14} /> Thêm tệp
                 <input type="file" multiple hidden onChange={(e) => { const fs = [...e.target.files]; e.target.value = ''; act(() => api.post(`/requests/${id}/attachments`, toFormData({}, fs)), 'Đã tải tệp lên'); }} /></label>
             </div>
@@ -93,22 +103,8 @@ export default function RequestDetail() {
             <Tabs value={tab} onChange={setTab} tabs={[{ value: 'comments', label: 'Thảo luận', count: comments?.length }, { value: 'activity', label: 'Lịch sử' }]} />
             {tab === 'comments' ? (
               <>
-                <div className="comments">
-                  {comments?.map((c) => (
-                    <div key={c.id} className="comment"><Avatar name={c.user_name} color={c.user_color} size={30} />
-                      <div className="grow"><div><b>{c.user_name}</b> <small className="muted">{timeAgo(c.created_at)}</small></div><div className="pre">{c.content}</div></div></div>
-                  ))}
-                  {comments && !comments.length && <Empty icon={MessageSquare} title="Chưa có thảo luận" />}
-                </div>
-                <form className="comment-form" onSubmit={async (e) => {
-                  e.preventDefault();
-                  if (!comment.trim()) return;
-                  await api.post(`/requests/${id}/comments`, { content: comment });
-                  setComment(''); reloadComments();
-                }}>
-                  <textarea className="input" rows={2} value={comment} onChange={(e) => setComment(e.target.value)} placeholder="Viết bình luận..." />
-                  <button className="btn btn-primary" disabled={!comment.trim()}>Gửi</button>
-                </form>
+                <CommentList base={`/requests/${id}`} comments={comments} onChanged={reloadComments} />
+                <CommentBox base={`/requests/${id}`} onSent={reloadComments} />
               </>
             ) : (
               <ul className="timeline">
@@ -124,6 +120,7 @@ export default function RequestDetail() {
             {q.deadline_at && q.status === 'pending' && <p className={cx('small', q.is_overdue ? 'text-red' : 'muted')}>Hạn xử lý: {fmtDateTime(q.deadline_at)}</p>}
             {q.completed_at && <p className="small muted">Hoàn tất: {fmtDateTime(q.completed_at)}</p>}
           </div>
+          <GroupGuide groupId={q.group_id} guide={q.group_guide} files={q.group_files} title="Biểu mẫu & quy trình" />
           <div className="card">
             <h3 className="card-title">Người theo dõi</h3>
             <div className="chips">{q.followers.map((f) => <span key={f.id} className="chip"><Avatar name={f.name} color={f.color} size={18} /> {f.name}</span>)}</div>

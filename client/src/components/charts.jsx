@@ -67,23 +67,28 @@ export function TipRows({ title, rows }) {
 }
 
 /** Chú thích: ô màu + nhãn + giá trị (nhận dạng không chỉ dựa vào màu). */
-export function Legend({ series, values, total, className, onHover }) {
+export function Legend({ series, values, total, className, onHover, onSelect }) {
   return (
     <div className={cx('viz-legend', className)}>
-      {series.map((s) => (
-        <span key={s.key} className="viz-legend-item" onMouseEnter={() => onHover?.(s.key)} onMouseLeave={() => onHover?.(null)}>
-          <i style={{ background: s.color }} />
-          {values && <b>{fmt(values[s.key] || 0)}</b>}
-          <span>{s.label}</span>
-          {values && total > 0 && <small>{Math.round(((values[s.key] || 0) / total) * 100)}%</small>}
-        </span>
-      ))}
+      {series.map((s) => {
+        const Tag = onSelect ? 'button' : 'span';
+        return (
+          <Tag key={s.key} type={onSelect ? 'button' : undefined} className={cx('viz-legend-item', onSelect && 'clickable')}
+            onMouseEnter={() => onHover?.(s.key)} onMouseLeave={() => onHover?.(null)} onClick={onSelect ? () => onSelect(s.key) : undefined}
+            title={onSelect ? `Xem danh sách: ${s.label}` : undefined}>
+            <i style={{ background: s.color }} />
+            {values && <b>{fmt(values[s.key] || 0)}</b>}
+            <span>{s.label}</span>
+            {values && total > 0 && <small>{Math.round(((values[s.key] || 0) / total) * 100)}%</small>}
+          </Tag>
+        );
+      })}
     </div>
   );
 }
 
 /** Biểu đồ tròn phần–tổng (≤ 6 phần), số tổng ở giữa, khe 2px giữa các phần. */
-export function Donut({ series, values, size = 168, thickness = 22, centerValue, centerLabel, legend = true }) {
+export function Donut({ series, values, size = 168, thickness = 22, centerValue, centerLabel, legend = true, onSelect }) {
   const { tip, box, show, hide } = useTip();
   const [active, setActive] = useState(null);
   const total = series.reduce((s, x) => s + (values[x.key] || 0), 0);
@@ -104,7 +109,9 @@ export function Donut({ series, values, size = 168, thickness = 22, centerValue,
             const el = (
               <circle key={s.key} cx={size / 2} cy={size / 2} r={r} fill="none" stroke={s.color} strokeWidth={thickness}
                 strokeDasharray={`${dash} ${C - dash}`} strokeDashoffset={-offset} transform={`rotate(-90 ${size / 2} ${size / 2})`}
-                className={cx('viz-seg', active && active !== s.key && 'dim')} tabIndex={0}
+                className={cx('viz-seg', active && active !== s.key && 'dim', onSelect && 'clickable')} tabIndex={0}
+                onClick={onSelect ? () => onSelect(s.key) : undefined}
+                onKeyDown={onSelect ? (e) => e.key === 'Enter' && onSelect(s.key) : undefined}
                 onMouseMove={(e) => { setActive(s.key); show(e, <TipRows rows={[{ label: s.label, value: values[s.key], color: s.color }]} />); }}
                 onFocus={(e) => { setActive(s.key); show(e, <TipRows rows={[{ label: s.label, value: values[s.key], color: s.color }]} />); }}
                 onMouseLeave={() => { setActive(null); hide(); }} onBlur={() => { setActive(null); hide(); }} />
@@ -113,10 +120,12 @@ export function Donut({ series, values, size = 168, thickness = 22, centerValue,
             return el;
           })}
         </svg>
-        <div className="viz-donut-center"><b>{fmt(centerValue ?? total)}</b><span>{centerLabel}</span></div>
+        {onSelect ? (
+          <button type="button" className="viz-donut-center clickable" onClick={() => onSelect(null)} title="Xem tất cả"><b>{fmt(centerValue ?? total)}</b><span>{centerLabel}</span></button>
+        ) : <div className="viz-donut-center"><b>{fmt(centerValue ?? total)}</b><span>{centerLabel}</span></div>}
         <Tip tip={tip} />
       </div>
-      {legend && <Legend series={series} values={values} total={total} onHover={setActive} />}
+      {legend && <Legend series={series} values={values} total={total} onHover={setActive} onSelect={onSelect} />}
     </div>
   );
 }
@@ -156,7 +165,7 @@ export function MiniStack({ series, values, width = 96 }) {
  * Cột chồng theo trục thời gian / danh mục. rows: [{ label, tip, values: {key: n} }].
  * Một trục duy nhất, lưới mảnh, cột ≤ 24px bo 4px ở đầu, khe 2px giữa các phần; rê chuột để xem đủ các chuỗi.
  */
-export function StackedColumns({ series, rows, height = 240, yLabel, labelEvery, showTotal = true }) {
+export function StackedColumns({ series, rows, height = 240, yLabel, labelEvery, showTotal = true, onSelect }) {
   const { tip, box, show, hide } = useTip();
   const [hover, setHover] = useState(null);
   const wrap = useRef(null);
@@ -192,7 +201,8 @@ export function StackedColumns({ series, rows, height = 240, yLabel, labelEvery,
             const onTip = (e) => { setHover(i); show(e, <TipRows title={r.tip || r.label} rows={[{ label: 'Tổng', value: totals[i], color: 'transparent' }, ...tipRows]} />); };
             return (
               <g key={r.label + i}>
-                <rect x={padL + band * i} y={padT} width={band} height={plotH} fill="transparent" tabIndex={0} className="viz-hit"
+                <rect x={padL + band * i} y={padT} width={band} height={plotH} fill="transparent" tabIndex={0} className={cx('viz-hit', onSelect && 'clickable')}
+                  onClick={onSelect ? () => onSelect(i) : undefined} onKeyDown={onSelect ? (e) => e.key === 'Enter' && onSelect(i) : undefined}
                   onMouseMove={onTip} onFocus={onTip} onMouseLeave={() => { setHover(null); hide(); }} onBlur={() => { setHover(null); hide(); }} />
                 {parts.map((s, j) => {
                   const v = r.values[s.key];
@@ -248,14 +258,20 @@ export function useChartTable() {
 }
 
 /** Bảng dữ liệu tương đương biểu đồ cột chồng. */
-export function SeriesTable({ series, rows, labelHead = 'Mốc' }) {
+export function SeriesTable({ series, rows, labelHead = 'Mốc', onCell }) {
   const totals = useMemo(() => rows.map((r) => series.reduce((s, x) => s + (r.values[x.key] || 0), 0)), [rows, series]);
   return (
     <div className="table-wrap viz-table">
       <table className="table compact">
         <thead><tr><th>{labelHead}</th>{series.map((s) => <th key={s.key} className="num" title={s.label}><i className="viz-key" style={{ background: s.color }} />{s.short || s.label}</th>)}<th className="num">Tổng</th></tr></thead>
         <tbody>{rows.map((r, i) => (
-          <tr key={r.label + i}><td>{r.tip || r.label}</td>{series.map((s) => <td key={s.key} className="num">{fmt(r.values[s.key] || 0)}</td>)}<td className="num"><b>{fmt(totals[i])}</b></td></tr>
+          <tr key={r.label + i}>
+            <td>{onCell ? <button type="button" className="rpt-link" onClick={() => onCell(i, null)}>{r.tip || r.label}</button> : r.tip || r.label}</td>
+            {series.map((s) => (
+              <td key={s.key} className="num">{onCell && r.values[s.key] ? <button type="button" className="rpt-link" onClick={() => onCell(i, s.key)}>{fmt(r.values[s.key])}</button> : fmt(r.values[s.key] || 0)}</td>
+            ))}
+            <td className="num">{onCell && totals[i] ? <button type="button" className="rpt-link" onClick={() => onCell(i, null)}><b>{fmt(totals[i])}</b></button> : <b>{fmt(totals[i])}</b>}</td>
+          </tr>
         ))}</tbody>
       </table>
     </div>

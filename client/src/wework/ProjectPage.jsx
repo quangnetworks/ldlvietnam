@@ -1,14 +1,14 @@
 import { useState } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import {
-  Plus, Settings, Copy, Trash2, MoreHorizontal, Pencil, ChevronDown, UserPlus, X, History, Calendar as CalIcon,
+  Plus, Settings, Copy, Trash2, MoreHorizontal, Pencil, ChevronDown, UserPlus, X, History, Calendar as CalIcon, Search, Users,
 } from 'lucide-react';
 import { api } from '../api.js';
 import { useApp, useFetch, useToast } from '../context.jsx';
 import { Avatar, AvatarStack, Spinner, Empty, Dropdown, MenuItem, UserPicker, Modal, Progress, FilterSelect } from '../components/ui.jsx';
 import { TASK_STATUS, fmtDate, fmtDateTime, cx } from '../utils.js';
 import { useWework } from './WeworkLayout.jsx';
-import { TaskRow, TaskTags } from './taskParts.jsx';
+import { TaskRow, TaskTags, nestTasks } from './taskParts.jsx';
 import TaskCalendar, { Timeline } from './Calendar.jsx';
 import ProjectFormModal from './ProjectFormModal.jsx';
 import { ReportView } from './ReportsPage.jsx';
@@ -59,7 +59,26 @@ function BoardCard({ t, onOpen }) {
   );
 }
 
-function Board({ columns, tasks, field, onMove, onOpen, projectId, onAdded, quickAdd }) {
+/** Ô tạo nhóm công việc ngay tại chỗ (Enter để tạo, Esc để huỷ). */
+function NewListInline({ onCreate, className }) {
+  const [open, setOpen] = useState(false);
+  const [name, setName] = useState('');
+  const submit = async () => {
+    if (!name.trim()) return;
+    if (await onCreate(name.trim())) { setName(''); setOpen(false); }
+  };
+  if (!open) return <button type="button" className={cx('btn btn-sm', className)} onClick={() => setOpen(true)}><Plus size={14} /> Thêm nhóm công việc</button>;
+  return (
+    <div className={cx('list-add-inline', className)}>
+      <input className="input input-sm" autoFocus value={name} onChange={(e) => setName(e.target.value)} placeholder="Tên nhóm, ví dụ: Chuẩn bị / Triển khai / Nghiệm thu"
+        onKeyDown={(e) => { if (e.key === 'Enter' && !e.nativeEvent.isComposing) submit(); if (e.key === 'Escape') setOpen(false); }} />
+      <button type="button" className="btn btn-sm btn-primary" disabled={!name.trim()} onClick={submit}>Tạo nhóm</button>
+      <button type="button" className="btn btn-sm" onClick={() => setOpen(false)}>Huỷ</button>
+    </div>
+  );
+}
+
+function Board({ columns, tasks, field, onMove, onOpen, projectId, onAdded, quickAdd, onCreateList }) {
   const [over, setOver] = useState(null);
   return (
     <div className="board">
@@ -80,55 +99,85 @@ function Board({ columns, tasks, field, onMove, onOpen, projectId, onAdded, quic
           </div>
         );
       })}
+      {onCreateList && <div className="board-add-col"><NewListInline onCreate={onCreateList} /></div>}
     </div>
   );
 }
 
 function Members({ project, reload }) {
-  const { users } = useApp();
+  const { users, departments, user } = useApp();
   const toast = useToast();
-  const [adding, setAdding] = useState(false);
   const [picked, setPicked] = useState([]);
-  const isManager = project.my_role === 'manager';
-  const save = async (members) => {
-    try {
-      await api.put(`/projects/${project.id}/members`, { members });
-      reload();
-    } catch (e) {
-      toast(e.message, 'error');
-    }
+  const [role, setRole] = useState('member');
+  const [dep, setDep] = useState('');
+  const [q, setQ] = useState('');
+  const [busy, setBusy] = useState(false);
+  const canManage = project.my_role === 'manager' || user.role === 'admin';
+  const call = async (fn, msg) => {
+    setBusy(true);
+    try { const r = await fn(); if (msg) toast(typeof msg === 'function' ? msg(r) : msg); reload(); return true; } catch (e) { toast(e.message, 'error'); return false; } finally { setBusy(false); }
   };
-  const current = project.members.map((m) => ({ user_id: m.id, role: m.role }));
+  const addPeople = async () => {
+    if (!picked.length) return;
+    if (await call(() => api.post(`/projects/${project.id}/members`, { user_ids: picked, role }), (r) => `Đã thêm ${r.added} thành viên`)) setPicked([]);
+  };
+  const addDepartment = async () => {
+    if (!dep) return;
+    if (await call(() => api.post(`/projects/${project.id}/members`, { department_ids: [dep], role }), (r) => (r.added ? `Đã thêm ${r.added} nhân sự của phòng ban` : 'Nhân sự phòng ban đã có trong dự án'))) setDep('');
+  };
+  const list = project.members.filter((m) => !q || `${m.name} ${m.username} ${m.title || ''}`.toLowerCase().includes(q.toLowerCase()));
+  const label = project.kind === 'department' ? 'phòng ban' : 'dự án';
   return (
-    <div className="card">
-      <div className="row between">
-        <h3 className="card-title">Thành viên ({project.members.length})</h3>
-        {isManager && <button className="btn btn-sm btn-primary" onClick={() => setAdding(true)}><UserPlus size={14} /> Thêm thành viên</button>}
+    <div className="card members-card">
+      <div className="row between wrap gap">
+        <h3 className="card-title">Thành viên {label} ({project.members.length})</h3>
+        <div className="ww-search"><Search size={14} /><input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Tìm thành viên" /></div>
       </div>
-      <div className="user-list">
-        {project.members.map((m) => (
-          <div key={m.id} className="user-row">
-            <Avatar name={m.name} color={m.color} size={34} />
-            <span className="grow">{m.name}<small className="muted block">@{m.username} · {m.title}</small></span>
-            {isManager && m.id !== project.owner_id ? (
-              <>
-                <select className="input input-sm" value={m.role} onChange={(e) => save(current.map((c) => (c.user_id === m.id ? { ...c, role: e.target.value } : c)))}>
-                  <option value="manager">Quản lý</option>
-                  <option value="member">Thành viên</option>
-                </select>
-                <button className="icon-btn sm" onClick={() => save(current.filter((c) => c.user_id !== m.id))} aria-label="Xóa"><X size={15} /></button>
-              </>
-            ) : <span className="badge badge-gray">{m.id === project.owner_id ? 'Chủ sở hữu' : m.role === 'manager' ? 'Quản lý' : 'Thành viên'}</span>}
+      {canManage && (
+        <div className="members-add">
+          <div className="members-add-row">
+            <div className="grow"><UserPicker users={users.filter((u) => u.role !== 'guest' || project.kind !== 'department')} multiple exclude={project.members.map((m) => m.id)}
+              value={picked} onChange={setPicked} placeholder="Chọn người để thêm vào dự án…" /></div>
+            <select className="input members-role" value={role} onChange={(e) => setRole(e.target.value)} aria-label="Vai trò">
+              <option value="member">Thành viên</option><option value="manager">Quản lý</option>
+            </select>
+            <button className="btn btn-primary" disabled={!picked.length || busy} onClick={addPeople}><UserPlus size={15} /> Thêm{picked.length ? ` (${picked.length})` : ''}</button>
           </div>
-        ))}
-      </div>
-      {adding && (
-        <Modal title="Thêm thành viên" onClose={() => setAdding(false)} width={480}
-          footer={<><button className="btn" onClick={() => setAdding(false)}>Hủy</button>
-            <button className="btn btn-primary" disabled={!picked.length} onClick={() => { save([...current, ...picked.map((id) => ({ user_id: id, role: 'member' }))]); setAdding(false); setPicked([]); }}>Thêm</button></>}>
-          <UserPicker users={users} multiple exclude={project.members.map((m) => m.id)} value={picked} onChange={setPicked} placeholder="Chọn thành viên" />
-        </Modal>
+          <div className="members-add-row">
+            <select className="input grow" value={dep} onChange={(e) => setDep(e.target.value)} aria-label="Thêm cả phòng ban">
+              <option value="">Hoặc thêm toàn bộ nhân sự của một phòng ban…</option>
+              {departments.map((d) => <option key={d.id} value={d.id}>{d.name}{d.member_count != null ? ` (${d.member_count} người)` : ''}</option>)}
+            </select>
+            <button className="btn" disabled={!dep || busy} onClick={addDepartment}><Users size={15} /> Thêm phòng ban</button>
+          </div>
+        </div>
       )}
+      <div className="user-list">
+        {list.map((m) => {
+          const owner = m.id === project.owner_id;
+          return (
+            <div key={m.id} className="user-row">
+              <Avatar name={m.name} color={m.color} uid={m.id} size={34} />
+              <span className="grow">{m.name}<small className="muted block">@{m.username}{m.title ? ` · ${m.title}` : ''}</small></span>
+              {canManage && !owner ? (
+                <>
+                  <select className="input input-sm members-role" value={m.role} disabled={busy}
+                    onChange={(e) => call(() => api.put(`/projects/${project.id}/members/${m.id}`, { role: e.target.value }), 'Đã đổi vai trò')}>
+                    <option value="manager">Quản lý</option>
+                    <option value="member">Thành viên</option>
+                  </select>
+                  <button className="icon-btn sm" disabled={busy} title="Xoá khỏi dự án" aria-label="Xoá khỏi dự án"
+                    onClick={() => window.confirm(`Xoá ${m.name} khỏi ${label}? Công việc của họ vẫn được giữ nguyên.`) && call(() => api.del(`/projects/${project.id}/members/${m.id}`), 'Đã xoá thành viên')}>
+                    <Trash2 size={15} />
+                  </button>
+                </>
+              ) : <span className={cx('badge', owner ? 'badge-blue' : 'badge-gray')}>{owner ? 'Chủ sở hữu' : m.role === 'manager' ? 'Quản lý' : 'Thành viên'}</span>}
+            </div>
+          );
+        })}
+        {!list.length && <p className="muted small">Không có thành viên phù hợp</p>}
+      </div>
+      {!canManage && <p className="muted small">Chỉ quản lý dự án và quản trị viên được thêm, đổi vai trò hoặc xoá thành viên.</p>}
     </div>
   );
 }
@@ -137,7 +186,8 @@ export default function ProjectPage() {
   const { id } = useParams();
   const navigate = useNavigate();
   const toast = useToast();
-  const { openTask, openCreate, version, bump, loadProjects } = useWework();
+  const { user } = useApp();
+  const { openTask, openCreate, version, bump, loadProjects, canReports } = useWework();
   const [params, setParams] = useSearchParams();
   const view = params.get('view') || 'list';
   const [statusFilter, setStatusFilter] = useState('');
@@ -166,11 +216,14 @@ export default function ProjectPage() {
       toast(e.message, 'error');
     }
   };
+  // mọi thành viên dự án được tạo nhóm công việc (đổi tên / xoá do quản lý dự án)
+  const canAddList = isManager || project.members.some((m) => m.id === user.id) || user.role === 'admin';
+  const createList = async (name) => {
+    try { await api.post(`/projects/${id}/lists`, { name }); toast(`Đã tạo nhóm "${name}"`); reloadProject(); return true; } catch (e) { toast(e.message, 'error'); return false; }
+  };
   const addList = async () => {
     const name = window.prompt('Tên nhóm công việc mới');
-    if (!name?.trim()) return;
-    await api.post(`/projects/${id}/lists`, { name });
-    reloadProject();
+    if (name?.trim()) createList(name.trim());
   };
   const renameList = async (l) => {
     const name = window.prompt('Đổi tên nhóm công việc', l.name);
@@ -196,6 +249,7 @@ export default function ProjectPage() {
             <div className="muted small row gap-sm wrap">
               <span>{project.kind === 'department' ? 'Phòng ban' : 'Dự án'}</span>·
               <span>Quản lý: {project.owner_name}</span>·
+              {project.departments?.length > 0 && <><span>Phối hợp: {project.departments.map((d) => d.name).join(', ')}</span>·</>}
               <span>{project.done_count}/{project.task_count} hoàn thành ({pct}%)</span>
               {project.start_date && <>· <span>{fmtDate(project.start_date)} → {fmtDate(project.end_date)}</span></>}
             </div>
@@ -204,7 +258,7 @@ export default function ProjectPage() {
           <button className="btn btn-primary" onClick={() => openCreate({ project_id: project.id })}><Plus size={15} /> Tạo công việc</button>
           <Dropdown align="right" trigger={(o, t) => <button className="btn" onClick={t} aria-label="Thêm"><MoreHorizontal size={16} /></button>}>
             {isManager && <MenuItem icon={Settings} onClick={() => setEditing(true)}>Cài đặt</MenuItem>}
-            {isManager && <MenuItem icon={Plus} onClick={addList}>Thêm nhóm công việc</MenuItem>}
+            {canAddList && <MenuItem icon={Plus} onClick={addList}>Thêm nhóm công việc</MenuItem>}
             {isManager && !project.is_template && <MenuItem icon={Copy} onClick={async () => {
               const p = await api.post(`/projects/${id}/save-template`, {});
               toast(`Đã lưu thành mẫu "${p.name}"`);
@@ -224,7 +278,7 @@ export default function ProjectPage() {
 
         <div className="ww-toolbar">
           <div className="view-tabs">
-            {VIEWS.map((v) => (
+            {VIEWS.filter((v) => v.value !== 'report' || canReports).map((v) => (
               <button key={v.value} className={cx(view === v.value && 'active')} onClick={() => setParams(v.value === 'list' ? {} : { view: v.value })}>{v.label}</button>
             ))}
           </div>
@@ -260,18 +314,19 @@ export default function ProjectPage() {
                   </div>
                   {!collapsed[key] && (
                     <>
-                      {listTasks.map((t) => <TaskRow key={t.id} t={t} onOpen={openTask} onChanged={bump} showProject={false} />)}
+                      {nestTasks(listTasks).map(({ t, depth, orphan, childrenShown }) => <TaskRow key={t.id} t={t} depth={depth} orphan={orphan} childrenShown={childrenShown} onOpen={openTask} onChanged={bump} showProject={false} />)}
                       <QuickAdd projectId={project.id} listId={c.id} onAdded={bump} />
                     </>
                   )}
                 </div>
               );
             })}
-            {isManager && <button className="btn btn-sm mt" onClick={addList}><Plus size={14} /> Thêm nhóm công việc</button>}
+            {canAddList && <NewListInline onCreate={createList} className="mt" />}
+            {canAddList && !project.lists.length && <p className="muted small">Chia công việc theo giai đoạn / hạng mục bằng các nhóm công việc (ví dụ: Chuẩn bị, Triển khai, Nghiệm thu).</p>}
           </div>
         )}
         {view === 'board' && (
-          <Board columns={listColumns} tasks={tasks} field="list_id" onOpen={openTask} projectId={project.id} onAdded={bump} quickAdd
+          <Board columns={listColumns} tasks={tasks} field="list_id" onOpen={openTask} projectId={project.id} onAdded={bump} quickAdd onCreateList={canAddList ? createList : null}
             onMove={(taskId, listId) => moveTask(taskId, { list_id: listId })} />
         )}
         {view === 'status' && (
@@ -296,7 +351,7 @@ export default function ProjectPage() {
             )}
           </div>
         )}
-        {view === 'report' && <ReportView projectId={project.id} />}
+        {view === 'report' && canReports && <ReportView projectId={project.id} />}
       </div>
       {editing && <ProjectFormModal project={project} onClose={() => setEditing(false)} onSaved={() => { setEditing(false); reloadProject(); loadProjects(); }} />}
     </div>

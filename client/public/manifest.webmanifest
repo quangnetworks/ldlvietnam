@@ -1,9 +1,27 @@
 {
+  "id": "/",
   "name": "Công ty LDL Việt Nam",
-  "short_name": "LDL Việt Nam",
-  "start_url": "/",
+  "short_name": "LDL",
+  "description": "LDL Workspace — Công việc, Văn bản, Đề xuất, Tin nhắn, Nhân sự",
+  "lang": "vi",
+  "start_url": "/?source=pwa",
+  "scope": "/",
   "display": "standalone",
+  "display_override": ["standalone", "minimal-ui"],
   "background_color": "#ffffff",
   "theme_color": "#37404b",
-  "icons": [{ "src": "/logo-192.png", "sizes": "192x192", "type": "image/png" }]
+  "categories": ["business", "productivity"],
+  "icons": [
+    { "src": "/logo-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/logo-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/maskable-192.png", "sizes": "192x192", "type": "image/png", "purpose": "maskable" },
+    { "src": "/maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ],
+  "shortcuts": [
+    { "name": "Công việc", "short_name": "Công việc", "url": "/wework", "icons": [{ "src": "/logo-192.png", "sizes": "192x192" }] },
+    { "name": "Tin nhắn", "short_name": "Tin nhắn", "url": "/message", "icons": [{ "src": "/logo-192.png", "sizes": "192x192" }] },
+    { "name": "Văn bản", "short_name": "Văn bản", "url": "/office", "icons": [{ "src": "/logo-192.png", "sizes": "192x192" }] },
+    { "name": "Tạo đề xuất", "short_name": "Đề xuất", "url": "/request/new", "icons": [{ "src": "/logo-192.png", "sizes": "192x192" }] },
+    { "name": "Thông báo", "short_name": "Thông báo", "url": "/account/notifications", "icons": [{ "src": "/logo-192.png", "sizes": "192x192" }] }
+  ]
 }

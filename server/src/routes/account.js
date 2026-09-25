@@ -1,6 +1,6 @@
 import { Hono } from 'hono';
 import { all, get, run, batch, getSetting, setSetting } from '../db.js';
-import { requireAdmin, hashPassword, verifyPassword, loadUser, PUBLIC_USER_FIELDS } from '../auth.js';
+import { requireAdmin, assertCanManage, hashPassword, verifyPassword, loadUser, PUBLIC_USER_FIELDS, deptIn, userDeptIds, inDeptSql } from '../auth.js';
 import { randomBase32, otpauthUrl, verifyTotp, securitySettings, validIpRule, clientIp, ipMatches } from '../security.js';
 import { badRequest, notFound, forbidden, toInt, idList, jsonBody, paginate, formBody, storeFiles, removeFile, sendFile } from '../util.js';
 import { MODULES, userApps, grantApps, audit } from '../platform.js';
@@ -43,7 +43,7 @@ r.get('/account/members', async (c) => {
     params.push(like, like, like, like);
   }
   const dep = toInt(q.department_id);
-  if (dep) { where.push('u.department_id = ?'); params.push(dep); }
+  if (dep) { where.push(inDeptSql('u', '?')); params.push(dep, dep); }
   const grp = toInt(q.group_id);
   if (grp) { where.push('EXISTS (SELECT 1 FROM user_group_members gm WHERE gm.user_id = u.id AND gm.group_id = ?)'); params.push(grp); }
   const items = await all(
@@ -51,16 +51,16 @@ r.get('/account/members', async (c) => {
        m.username AS manager_username, m.title AS manager_title,
        (SELECT group_concat(x.app_key) FROM app_access x WHERE x.user_id = u.id) AS app_keys
      FROM users u LEFT JOIN departments d ON d.id = u.department_id LEFT JOIN users m ON m.id = u.manager_id
-     WHERE ${where.join(' AND ')} ORDER BY u.name COLLATE NOCASE`,
+     WHERE ${where.join(' AND ')} ORDER BY ${q.tab === 'admins' ? 'u.is_owner DESC, ' : ''}u.name COLLATE NOCASE`,
     ...params
   );
   for (const u of items) {
     u.apps = u.role === 'admin' ? Object.keys(MODULES) : (u.app_keys ? u.app_keys.split(',') : []);
     delete u.app_keys;
   }
-  const counts = await get(`SELECT SUM(active = 1) AS all_count, SUM(active = 1 AND role = 'admin') AS admins, SUM(active = 0) AS disabled,
+  const counts = await get(`SELECT SUM(active = 1) AS all_count, SUM(active = 1 AND role = 'admin') AS admins, SUM(active = 1 AND is_owner = 1) AS owners, SUM(active = 0) AS disabled,
     SUM(active = 1 AND role = 'guest') AS guests FROM users`);
-  return c.json({ items, counts: { all: counts.all_count || 0, admins: counts.admins || 0, disabled: counts.disabled || 0, guests: counts.guests || 0 } });
+  return c.json({ items, counts: { all: counts.all_count || 0, admins: counts.admins || 0, owners: counts.owners || 0, disabled: counts.disabled || 0, guests: counts.guests || 0 } });
 });
 
 const csvEsc = (v) => `"${String(v ?? '').replace(/^[=+\-@\t\r]/, "'$&").replace(/"/g, '""')}"`;
@@ -132,7 +132,8 @@ r.post('/account/members/import', requireAdmin, async (c) => {
       }
     }
     const role = v('role') === 'admin' ? 'admin' : 'member';
-    const existing = await get('SELECT id FROM users WHERE lower(username) = lower(?)', username);
+    const existing = await get('SELECT id, is_owner FROM users WHERE lower(username) = lower(?)', username);
+    if (existing?.is_owner && !c.get('user').is_owner) { result.errors.push(`Dòng ${i + 1}: @${username} là Chủ doanh nghiệp — không được cập nhật`); continue; }
     if (existing) {
       await run(`UPDATE users SET name = ?, email = COALESCE(NULLIF(?, ''), email), phone = COALESCE(NULLIF(?, ''), phone),
         title = COALESCE(NULLIF(?, ''), title), department_id = COALESCE(?, department_id), birthday = COALESCE(NULLIF(?, ''), birthday) WHERE id = ?`,
@@ -159,6 +160,7 @@ r.post('/account/members/reset-passwords', requireAdmin, async (c) => {
   const ids = idList(b.ids).filter((id) => id !== c.get('user').id);
   if (!ids.length) throw badRequest('Chưa chọn tài khoản');
   if (!b.password || String(b.password).length < 6) throw badRequest('Mật khẩu mới phải có ít nhất 6 ký tự');
+  await assertCanManage(c.get('user'), ids);
   const hash = await hashPassword(b.password);
   await batch(ids.map((id) => ['UPDATE users SET password_hash = ? WHERE id = ?', [hash, id]]));
   await audit(c.get('user').id, 'user.password', `Đổi mật khẩu hàng loạt cho ${ids.length} tài khoản`);
@@ -303,10 +305,12 @@ r.get('/home/summary', async (c) => {
   const apps = await userApps(user);
   const out = { apps, announcements: [], counters: {} };
   if (apps.includes('office')) {
+    const dep = deptIn('dr.department_id', user);
     const vis = user.role === 'admin' ? ['1=1', []] : [`(${user.role === 'guest' ? '0' : 'd.is_public'} = 1 OR EXISTS (SELECT 1 FROM document_recipients dr WHERE dr.document_id = d.id
-      AND (dr.user_id = ? OR dr.department_id = ?)))`, [user.id, user.department_id ?? -1]];
+      AND (dr.user_id = ? OR ${dep.sql})))`, [user.id, ...dep.params]];
     out.announcements = await all(`SELECT d.id, d.title, d.code, d.issued_at, u.name AS issuer_name FROM documents d
       LEFT JOIN users u ON u.id = d.issuer_id WHERE d.status = 'issued' AND d.deleted_at IS NULL AND ${vis[0]}
+      AND NOT (d.superseded_by IS NOT NULL AND IFNULL(d.superseded_at, '') <= date('now'))
       ORDER BY d.issued_at DESC LIMIT 6`, ...vis[1]);
     out.counters.documents_to_approve = (await get(`SELECT COUNT(*) AS c FROM document_approvers da JOIN documents d ON d.id = da.document_id
       WHERE da.user_id = ? AND da.status = 'pending' AND d.status = 'pending' AND d.deleted_at IS NULL
@@ -417,7 +421,30 @@ r.get('/home/agenda', async (c) => {
   items.sort((a, b) => order[a.bucket] - order[b.bucket] || String(a.due || '9999').localeCompare(String(b.due || '9999')));
   const counts = { overdue: 0, today: 0, upcoming: 0, todo: 0 };
   for (const i of items) counts[i.bucket]++;
-  return c.json({ today, counts, items });
+
+  // Quan trọng cần lưu ý: công việc khẩn cấp / quan trọng chưa xong mà tôi thực hiện, đã giao hoặc đang theo dõi
+  const important = [];
+  if (apps.includes('wework')) {
+    const rows = await all(`SELECT t.id, t.title, t.status, t.priority, date(t.due_date) AS due, t.assignee_id, t.creator_id,
+        p.name AS project_name, a.name AS assignee_name, a.color AS assignee_color
+      FROM tasks t LEFT JOIN projects p ON p.id = t.project_id LEFT JOIN users a ON a.id = t.assignee_id
+      WHERE t.status IN ('todo','doing','review') AND t.priority IN ('critical','urgent','important')
+        AND (t.assignee_id = ? OR t.creator_id = ? OR EXISTS (SELECT 1 FROM task_followers f WHERE f.task_id = t.id AND f.user_id = ?))
+      ORDER BY CASE t.priority WHEN 'critical' THEN 0 WHEN 'urgent' THEN 1 ELSE 2 END, t.due_date IS NULL, t.due_date LIMIT 30`, user.id, user.id, user.id);
+    for (const t of rows) {
+      important.push({
+        key: `imp-${t.id}`, id: t.id, title: t.title, priority: t.priority, status: t.status, due: t.due, bucket: bucketOf(t.due),
+        project_name: t.project_name, assignee_name: t.assignee_name, assignee_color: t.assignee_color, assignee_id: t.assignee_id,
+        role: t.assignee_id === user.id ? 'assignee' : t.creator_id === user.id ? 'creator' : 'follower', link: `/wework/task/${t.id}`,
+      });
+    }
+    // quá hạn trước, rồi khẩn cấp, rồi theo thời hạn
+    const rank = { overdue: 0, today: 1, upcoming: 2, todo: 3 };
+    const pr = { critical: 0, urgent: 1, important: 2 };
+    important.sort((a, b) => rank[a.bucket] - rank[b.bucket] || pr[a.priority] - pr[b.priority]
+      || String(a.due || '9999').localeCompare(String(b.due || '9999')));
+  }
+  return c.json({ today, counts, items, important });
 });
 
 /** Kênh chat nhóm trên Home: kênh toàn công ty + kênh phòng ban của người dùng. */
@@ -425,8 +452,11 @@ r.get('/home/chat', async (c) => {
   const user = c.get('user');
   if (user.role === 'guest' || !(await userApps(user)).includes('message')) return c.json({ channels: [] });
   const company = await get("SELECT id, name, description, kind FROM chat_channels WHERE kind = 'public' AND name = 'chung' ORDER BY id LIMIT 1");
-  const dep = await departmentChannel(user.department_id);
-  const channels = [company && { ...company, label: 'Toàn công ty' }, dep && { id: dep.id, name: dep.name, description: dep.description, kind: dep.kind, label: 'Phòng ban' }].filter(Boolean);
+  // một tài khoản có thể thuộc nhiều phòng ban → mỗi phòng ban một kênh
+  const deps = [];
+  for (const d of userDeptIds(user)) deps.push(await departmentChannel(d));
+  const channels = [company && { ...company, label: 'Toàn công ty' },
+    ...deps.filter(Boolean).map((dep) => ({ id: dep.id, name: dep.name, description: dep.description, kind: dep.kind, label: 'Phòng ban' }))].filter(Boolean);
   for (const ch of channels) {
     ch.unread = (await get(`SELECT COUNT(*) AS n FROM chat_messages x WHERE x.channel_id = ? AND x.deleted_at IS NULL AND IFNULL(x.user_id, 0) <> ?
       AND x.id > IFNULL((SELECT last_read_id FROM chat_members WHERE channel_id = ? AND user_id = ?), 0)`, ch.id, user.id, ch.id, user.id)).n;
@@ -462,6 +492,7 @@ r.post('/account/2fa/disable', async (c) => {
 r.post('/account/2fa/reset/:id', requireAdmin, async (c) => {
   const u = await get('SELECT id, username FROM users WHERE id = ?', toInt(c.req.param('id')));
   if (!u) throw notFound();
+  await assertCanManage(c.get('user'), u.id);
   await run('UPDATE users SET totp_enabled = 0, totp_secret = NULL WHERE id = ?', u.id);
   await audit(c.get('user').id, 'security.2fa', `Đặt lại bảo mật hai lớp cho @${u.username}`);
   return c.json({ ok: true });
@@ -491,6 +522,7 @@ async function avatarTarget(c) {
   const user = c.get('user');
   const id = toInt(c.req.param('id'));
   if (id !== user.id && user.role !== 'admin') throw forbidden('Chỉ quản trị viên được đổi ảnh đại diện của người khác');
+  if (id !== user.id) await assertCanManage(user, id);
   const target = await get('SELECT id, username, avatar FROM users WHERE id = ?', id);
   if (!target) throw notFound('Tài khoản không tồn tại');
   return target;

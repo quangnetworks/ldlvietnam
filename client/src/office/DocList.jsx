@@ -20,6 +20,7 @@ const BOX_TITLES = {
 
 export function StatusBadge({ doc }) {
   if (doc.deleted_at) return <span className="badge badge-gray">ĐÃ TẠM XÓA</span>;
+  if (doc.is_superseded) return <span className="badge badge-gray" title="Đã có văn bản mới thay thế">ĐÃ BỊ THAY THẾ</span>;
   const s = DOC_STATUS[doc.status] || DOC_STATUS.draft;
   return <span className={cx('badge', s.cls)}>{s.label.toUpperCase()}</span>;
 }

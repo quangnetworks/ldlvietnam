@@ -6,6 +6,7 @@ import {
 } from 'lucide-react';
 import { useApp } from '../context.jsx';
 import { AppSwitcher, NotificationBell, UserMenu } from './shell.jsx';
+import { ContactsButton } from './Contact.jsx';
 import { ECOSYSTEM, AppIcon } from '../apps.jsx';
 import { cx } from '../utils.js';
 
@@ -46,11 +47,13 @@ export default function ModuleShell({ app }) {
         <button className="icon-btn on-dark mobile-only" onClick={() => setOpen(!open)} aria-label="Menu"><Menu size={20} /></button>
         <Link to="/" className="brand"><img className="brand-logo" src="/logo-192.png" alt="LDL" /><span className="brand-name">{company}</span></Link>
         <div className="grow" />
+        <ContactsButton dark />
         <NotificationBell app={app} dark />
         <AppSwitcher dark />
         <UserMenu dark />
       </header>
       <div className="office-body">
+        {open && <div className="side-backdrop" onClick={() => setOpen(false)} />}
         <aside className={cx('office-side', open && 'open')}>
           <div className="mod-title"><AppIcon app={meta} size={30} /><span><b>{meta.name}</b><small className="muted block">{meta.desc}</small></span></div>
           {NAV[app].filter((n) => !n.admin || user.role === 'admin').map((n) => (

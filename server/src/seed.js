@@ -43,6 +43,7 @@ export async function buildSeed() {
   };
   addUser('admin', 'admin', 'Quản trị hệ thống', 'Quản trị viên', 'it', 'admin');
   addUser('gd', 'giamdoc', 'Võ Trung Cang', 'Giám đốc', 'bgd', 'admin');
+  add('UPDATE users SET is_owner = 1 WHERE id = ?', users.gd);
   addUser('hr', 'chilan', 'Đinh Phạm Chi Lan', 'Trưởng phòng HCNS', 'hcns', 'member', 'gd');
   addUser('kd', 'truongkd', 'Lê Trường Giang', 'Trưởng phòng Kinh doanh', 'kd', 'member', 'gd');
   addUser('mkt', 'minhtrang', 'Nguyễn Minh Trang', 'Trưởng phòng Marketing', 'mkt', 'member', 'gd');
@@ -318,14 +319,18 @@ export async function buildSeed() {
   add("INSERT OR IGNORE INTO app_access(app_key, user_id) VALUES ('request', 11)");
   add("INSERT INTO notifications(user_id, actor_id, app, type, title, link) VALUES (?,?, 'wework', 'assigned', ?, '/wework')",
     users.nv1, users.mkt, 'Nguyễn Minh Trang đã giao cho bạn công việc "Thiết kế bộ nhận diện chiến dịch"');
+  // trưởng phòng (được giao việc cho mọi nhân sự trong phòng ban)
+  for (const [dk, uk] of [['kd', 'kd'], ['mkt', 'mkt'], ['hcns', 'hr'], ['kt', 'kt']]) {
+    if (dep[dk] && users[uk]) add('UPDATE departments SET head_id = ? WHERE id = ?', users[uk], dep[dk]);
+  }
   return S;
 }
 
 const TABLES = ['chat_messages', 'chat_members', 'chat_channels', 'drive_shares', 'drive_items', 'leave_quotas', 'checkins', 'hr_profiles',
   'webhook_logs', 'webhooks', 'request_attachments', 'request_comments', 'request_stars', 'request_followers', 'request_approvers', 'requests',
   'request_group_stars', 'request_group_followers', 'request_group_approvers', 'notes', 'user_prefs', 'login_logs', 'app_access',
-  'user_group_members', 'user_groups', 'notifications', 'activity_logs', 'custom_filters', 'goals', 'task_attachments', 'task_comments', 'task_checklist',
-  'task_stars', 'task_followers', 'tasks', 'task_lists', 'project_members', 'projects', 'document_comments', 'document_views',
+  'user_departments', 'user_group_members', 'user_groups', 'notifications', 'activity_logs', 'custom_filters', 'goals', 'task_attachments', 'task_results', 'task_comments', 'request_group_files', 'task_checklist',
+  'task_stars', 'task_followers', 'tasks', 'task_lists', 'project_departments', 'project_members', 'projects', 'document_comments', 'document_views',
   'document_stars', 'document_follows', 'document_recipients', 'document_approvers', 'document_attachments', 'documents',
   'doc_categories', 'doc_folders', 'doc_types', 'users', 'departments'];
 

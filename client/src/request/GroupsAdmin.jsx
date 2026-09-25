@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react';
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
-import { Search, ChevronDown, Pencil, Plus, Trash2, ArrowUp, ArrowDown, User, Users, Copy } from 'lucide-react';
-import { api } from '../api.js';
+import { Search, ChevronDown, Pencil, Plus, Trash2, ArrowUp, ArrowDown, User, Users, Copy, BookOpen, Upload, FileText, Workflow, Printer } from 'lucide-react';
+import { api, toFormData } from '../api.js';
 import { useApp, useFetch, useToast } from '../context.jsx';
-import { Field, UserPicker, Spinner, Dropdown, MenuItem, Empty, Avatar, Modal } from '../components/ui.jsx';
+import { Field, UserPicker, Spinner, Dropdown, MenuItem, Empty, Avatar, Modal, RichEditor, FileChip } from '../components/ui.jsx';
+import FileViewer from '../components/FileViewer.jsx';
 import { useDebounced } from '../components/shell.jsx';
 import { fmtDateTime, cx } from '../utils.js';
 import { useRequestApp, groupByCategory } from './RequestLayout.jsx';
@@ -87,7 +88,7 @@ export function GroupsAdmin({ bulk = false }) {
                   <tr key={g.id}>
                     <td><input type="checkbox" checked={selected.includes(g.id)} onChange={() => sel(g.id)} /></td>
                     <td><Link to={`/request/settings/group/${g.id}`} className="rq-gname">{g.name}</Link>
-                      <small className="muted block">{g.description || 'Không có mô tả'} · {g.request_count} đề xuất</small></td>
+                      <small className="muted block">{g.description || 'Không có mô tả'} · {g.request_count} đề xuất{g.file_count ? ` · ${g.file_count} biểu mẫu / quy trình` : ''}</small></td>
                     <td><FlowLabel flow={g.flow} /></td>
                     <td>{g.sla_hours ? <b>{g.sla_hours} <span className="muted">(h)</span></b> : '—'}</td>
                     <td><label className="switch"><input type="checkbox" checked={g.active} onChange={() => toggleOne(g)} /><span /></label></td>
@@ -164,6 +165,8 @@ export function GroupEditor() {
   const [g, setG] = useState(null);
   const [err, setErr] = useState('');
   const [preview, setPreview] = useState({});
+  const [pending, setPending] = useState([]); // [{ file, kind }] tải lên sau khi lưu nhóm
+  const [viewing, setViewing] = useState(null);
   useEffect(() => {
     if (id && id !== 'new') {
       api.get(`/request-groups/${id}`).then((x) => setG({ ...x, approvers: x.approvers.map((a) => a.user_id), followers: x.followers.map((f) => f.user_id) }))
@@ -188,8 +191,11 @@ export function GroupEditor() {
     setErr('');
     try {
       const body = { ...g, fields: g.fields.map((f) => ({ ...f, options: f.type === 'select' ? (Array.isArray(f.options) ? f.options : String(f.options || '').split('\n')) : undefined })) };
-      if (id && id !== 'new') await api.put(`/request-groups/${id}`, body);
-      else await api.post('/request-groups', body);
+      const gid = id && id !== 'new' ? (await api.put(`/request-groups/${id}`, body), id) : (await api.post('/request-groups', body)).id;
+      for (const kind of ['form', 'process']) {
+        const list = pending.filter((p) => p.kind === kind).map((p) => p.file);
+        if (list.length) await api.post(`/request-groups/${gid}/files`, toFormData({ kind }, list));
+      }
       toast('Đã lưu nhóm đề xuất');
       reloadGroups();
       navigate('/request/settings');
@@ -244,17 +250,86 @@ export function GroupEditor() {
         </div>
         <div>
           <div className="card">
+            <h3 className="card-title"><BookOpen size={16} /> Biểu mẫu & quy trình hướng dẫn</h3>
+            <p className="muted small">Đính kèm biểu mẫu (mẫu đơn, bảng kê…) và tài liệu quy trình để người làm đề xuất đọc, xem trước, tải về và thực hiện theo.
+              Hiển thị ngay khi tạo đề xuất và trong trang chi tiết đề xuất.</p>
+            <Field label="Hướng dẫn thực hiện">
+              <RichEditor value={g.guide || ''} onChange={set('guide')} minHeight={100} placeholder="Ví dụ: Bước 1 — tải biểu mẫu, điền đầy đủ; Bước 2 — đính kèm chứng từ; Bước 3 — gửi trước 3 ngày…" />
+            </Field>
+            {[['form', 'Biểu mẫu', FileText], ['process', 'Quy trình / hướng dẫn', Workflow]].map(([kind, label, Icon]) => {
+              const saved = (g.files || []).filter((f) => f.kind === kind);
+              const staged = pending.filter((p) => p.kind === kind);
+              return (
+                <div key={kind} className="rq-guide-group">
+                  <div className="row between"><small className="muted rq-guide-label"><Icon size={13} /> {label}</small>
+                    <label className="link-btn small"><Upload size={13} /> Tải lên
+                      <input type="file" multiple hidden onChange={(e) => { setPending([...pending, ...[...e.target.files].map((file) => ({ file, kind }))]); e.target.value = ''; }} /></label>
+                  </div>
+                  <div className="attach-list">
+                    {saved.map((f) => (
+                      <FileChip key={f.id} file={f} onOpen={() => setViewing(g.files.indexOf(f))} onRemove={async () => {
+                        if (!window.confirm(`Xoá "${f.original_name}"?`)) return;
+                        try { setG({ ...g, files: await api.del(`/request-groups/${g.id}/files/${f.id}`) }); } catch (e) { toast(e.message, 'error'); }
+                      }} />
+                    ))}
+                    {staged.map((p) => <FileChip key={`${p.file.name}${pending.indexOf(p)}`} file={p.file} onRemove={() => setPending(pending.filter((x) => x !== p))} />)}
+                    {!saved.length && !staged.length && <small className="muted">Chưa có tệp</small>}
+                  </div>
+                </div>
+              );
+            })}
+            {pending.length > 0 && <small className="muted">{pending.length} tệp sẽ được tải lên khi bấm “Lưu nhóm đề xuất”.</small>}
+            {viewing != null && (
+              <FileViewer files={g.files} index={viewing} urlOf={(f) => api.url(`/request-groups/${g.id}/files/${f.id}`)} onClose={() => setViewing(null)}
+                publicUrlOf={async (f, share) => (await api.post(`/request-groups/${g.id}/files/${f.id}/link${share ? '?share=1' : ''}`)).url} />
+            )}
+          </div>
+          <div className="card">
             <h3 className="card-title">Quy trình duyệt</h3>
+            <div className="stage-setup">
+              <div className="stage-setup-row">
+                <span className="stage-no">1</span>
+                <div className="grow">
+                  <label className="check"><input type="checkbox" checked={!!g.manager_approval} onChange={set('manager_approval')} /> <b>Quản lý trực tiếp duyệt trước</b></label>
+                  <small className="muted block">Nhân viên gửi đề xuất → quản lý trực tiếp (hoặc trưởng phòng nếu chưa có quản lý) duyệt trước khi chuyển các phòng ban. Người không có cấp trên bỏ qua bước này.</small>
+                </div>
+              </div>
+              <div className="stage-setup-row">
+                <span className="stage-no">2</span>
+                <div className="grow">
+                  <b>Phòng ban / người duyệt liên quan</b>
+                  <small className="muted block">Duyệt lần lượt theo thứ tự bên dưới (ví dụ: Kế toán → Hành chính).</small>
+                </div>
+              </div>
+              <div className="stage-setup-row">
+                <span className="stage-no">3</span>
+                <div className="grow">
+                  <b>Người duyệt cuối cùng</b>
+                  <UserPicker users={users} value={g.final_approver_id || null} onChange={set('final_approver_id')} placeholder="Không có (tuỳ chọn) — ví dụ: Giám đốc" />
+                </div>
+              </div>
+              {(g.manager_approval || g.final_approver_id) && <small className="muted">Nhóm có luồng theo chặng luôn duyệt lần lượt: 1 → 2 → 3.</small>}
+            </div>
             <div className="seg-choice">
               <label className={cx(g.flow === 'sequential' && 'on')}><input type="radio" checked={g.flow === 'sequential'} onChange={() => setG({ ...g, flow: 'sequential' })} />
                 <b><Users size={14} /> Duyệt lần lượt</b><small className="muted">Từng người duyệt theo thứ tự; tất cả đồng ý mới được chấp thuận.</small></label>
               <label className={cx(g.flow === 'any' && 'on')}><input type="radio" checked={g.flow === 'any'} onChange={() => setG({ ...g, flow: 'any' })} />
                 <b><User size={14} /> Chỉ cần một người duyệt</b><small className="muted">Một trong các người duyệt đồng ý là đề xuất được chấp thuận.</small></label>
             </div>
-            <Field label="Người duyệt mặc định (theo thứ tự)"><UserPicker users={users} multiple value={g.approvers} onChange={set('approvers')} placeholder="Chọn người duyệt" /></Field>
+            <Field label={g.manager_approval || g.final_approver_id ? 'Chặng 2 — Người duyệt phòng ban liên quan (theo thứ tự)' : 'Người duyệt mặc định (theo thứ tự)'}><UserPicker users={users} multiple value={g.approvers} onChange={set('approvers')} placeholder="Chọn người duyệt" /></Field>
             <label className="check mt"><input type="checkbox" checked={g.custom_approvers} onChange={set('custom_approvers')} /> Cho phép người tạo chọn / thêm người duyệt</label>
             <h3 className="card-title">Người theo dõi mặc định</h3>
             <UserPicker users={users} multiple value={g.followers} onChange={set('followers')} placeholder="Ví dụ: kế toán, HCNS" />
+          </div>
+          <div className="card">
+            <h3 className="card-title"><Printer size={16} /> Mẫu in (bản cứng / PDF)</h3>
+            <p className="muted small">Mỗi đề xuất in ra theo mẫu: tiêu đề, mã biểu mẫu, thông tin người đề nghị, các trường đã điền, thời gian gửi
+              và bảng phê duyệt theo luồng (dấu ✓, người duyệt, thời gian, ý kiến) kèm ô ký xác nhận.</p>
+            <div className="form-grid">
+              <div className="span-2"><Field label="Tiêu đề trên phiếu in" hint="Để trống: dùng tên nhóm đề xuất"><input className="input" value={g.print_title || ''} onChange={set('print_title')} placeholder="VD: GIẤY ĐỀ NGHỊ TẠM ỨNG" /></Field></div>
+              <Field label="Mã biểu mẫu"><input className="input" value={g.print_code || ''} onChange={set('print_code')} placeholder="VD: BM-KT-01" /></Field>
+              <div className="span-2"><Field label="Ghi chú / cam kết cuối phiếu"><textarea className="input" rows={2} value={g.print_note || ''} onChange={set('print_note')} placeholder="VD: Tôi cam kết hoàn ứng trong vòng 07 ngày kể từ ngày hoàn thành công việc." /></Field></div>
+            </div>
           </div>
           <div className="card">
             <h3 className="card-title">Xem trước biểu mẫu</h3>

@@ -1,7 +1,8 @@
-import { NavLink, Outlet, Link } from 'react-router-dom';
+import { useEffect, useState } from 'react';
+import { NavLink, Outlet, Link, useLocation } from 'react-router-dom';
 import {
   UserCircle2, Bell, Users, Network, LayoutGrid, Power, Settings, Pencil, KeyRound, Palette, History, Building2, AppWindow,
-  ScrollText, FileText, GitPullRequestArrow, Home, LockKeyhole, ShieldCheck, Shield, Webhook,
+  ScrollText, FileText, GitPullRequestArrow, Home, LockKeyhole, ShieldCheck, Shield, Webhook, Menu,
 } from 'lucide-react';
 import { useApp } from '../context.jsx';
 import { Avatar } from '../components/ui.jsx';
@@ -27,9 +28,13 @@ function SideLink({ to, icon: Icon, children, end = true }) {
 export default function AccountLayout() {
   const { user, logout } = useApp();
   const admin = user.role === 'admin';
+  const location = useLocation();
+  const [side, setSide] = useState(false);
+  useEffect(() => setSide(false), [location.key]);
   return (
     <div className="acc">
       <nav className="acc-rail">
+        <button className="acc-rail-link acc-rail-menu" onClick={() => setSide(!side)} aria-label="Menu tài khoản"><Menu size={22} /><span>Menu</span></button>
         <Link to="/" className="rail-logo" title="Về trang chủ"><img src="/logo-192.png" alt="LDL" /></Link>
         <Link to="/account" className="acc-rail-avatar" title="Tài khoản của tôi"><Avatar name={user.name} color={user.color} size={36} /></Link>
         <RailLink to="/account" end icon={UserCircle2} label="Cá nhân" />
@@ -42,7 +47,8 @@ export default function AccountLayout() {
         <button className="acc-rail-link" onClick={logout}><Power size={22} /><span>Đăng xuất</span></button>
       </nav>
       <main className="acc-main"><Outlet /></main>
-      <aside className="acc-side">
+      {side && <div className="side-backdrop" onClick={() => setSide(false)} />}
+      <aside className={cx('acc-side', side && 'open')}>
         <div className="acc-side-head">
           <h2 className="ellipsis">{user.name}</h2>
           <small className="muted ellipsis block">@{user.username} · {user.email}</small>

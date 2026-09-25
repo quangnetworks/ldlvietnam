@@ -1,7 +1,12 @@
 /** LDL Message: channels (public / private), direct messages, unread counters, attachments, @mentions. */
 import { Hono } from 'hono';
-import { all, get, run, batch, notify } from '../db.js';
-import { badRequest, notFound, forbidden, toInt, idList, jsonBody, formBody, storeFiles, sendFile } from '../util.js';
+import { all, get, run, batch, notify, markSeen, findMentions } from '../db.js';
+import { audit } from '../platform.js';
+import { badRequest, notFound, forbidden, toInt, idList, jsonBody, formBody, storeFiles, sendFile, removeFile } from '../util.js';
+import { publicFileLink } from '../files.js';
+import { userDeptIds, deptIn, inDeptSql } from '../auth.js';
+
+import { pushToUsers } from '../push.js';
 
 const r = new Hono();
 
@@ -11,10 +16,22 @@ async function channelAccess(user, id) {
   const member = await get('SELECT * FROM chat_members WHERE channel_id = ? AND user_id = ?', id, user.id);
   if (ch.kind === 'department') {
     // Kênh phòng ban: mọi nhân sự đang thuộc phòng ban (quản trị viên xem được mọi phòng ban)
-    if (user.role === 'guest' || (user.department_id !== ch.department_id && user.role !== 'admin')) throw forbidden('Kênh này dành cho thành viên phòng ban');
+    if (user.role === 'guest' || (!userDeptIds(user).includes(ch.department_id) && user.role !== 'admin')) throw forbidden('Kênh này dành cho thành viên phòng ban');
   } else if (ch.kind === 'public' ? user.role === 'guest' && !member : !member) throw forbidden('Bạn không phải thành viên của kênh này');
-  return { ch, member };
+  // kênh riêng tư: thành viên được thêm sau chỉ thấy tin nhắn từ mốc được cấp (history_from_id)
+  const floor = ch.kind === 'private' ? member?.history_from_id || 0 : 0;
+  return { ch, member, floor };
 }
+
+/** Mốc lịch sử cho thành viên mới: all = toàn bộ, days7 = 7 ngày gần đây, none = chỉ tin nhắn từ lúc được thêm. */
+async function historyFloorFor(channelId, mode) {
+  if (mode === 'none') return (await get('SELECT IFNULL(MAX(id), 0) AS m FROM chat_messages WHERE channel_id = ?', channelId)).m;
+  if (mode === 'days7') {
+    return (await get("SELECT IFNULL(MAX(id), 0) AS m FROM chat_messages WHERE channel_id = ? AND created_at < datetime('now', '-7 day')", channelId)).m;
+  }
+  return 0;
+}
+const HISTORY_LABEL = { all: 'xem toàn bộ tin nhắn trước đó', days7: 'xem tin nhắn 7 ngày gần đây', none: 'không xem tin nhắn cũ' };
 
 /** Kênh chat của một phòng ban (tạo nếu chưa có — vd. phòng ban mới thêm). */
 export async function departmentChannel(departmentId) {
@@ -30,17 +47,17 @@ export async function departmentChannel(departmentId) {
 
 const visibleWhere = (user) => (user.role === 'guest'
   ? { sql: "c.kind <> 'department' AND EXISTS (SELECT 1 FROM chat_members m2 WHERE m2.channel_id = c.id AND m2.user_id = ?)", params: [user.id] }
-  : { sql: `(c.kind = 'public' OR (c.kind = 'department' AND c.department_id = ?)
+  : { sql: `(c.kind = 'public' OR (c.kind = 'department' AND ${deptIn('c.department_id', user).sql})
       OR (c.kind <> 'department' AND EXISTS (SELECT 1 FROM chat_members m2 WHERE m2.channel_id = c.id AND m2.user_id = ?)))`,
-  params: [user.department_id ?? -1, user.id] });
+  params: [...deptIn('c.department_id', user).params, user.id] });
 
 r.get('/chat/channels', async (c) => {
   const user = c.get('user');
-  if (user.role !== 'guest') await departmentChannel(user.department_id);
+  if (user.role !== 'guest') for (const d of userDeptIds(user)) await departmentChannel(d);
   const v = visibleWhere(user);
   const rows = await all(`SELECT c.*, IFNULL(m.last_read_id, 0) AS last_read_id,
       (SELECT COUNT(*) FROM chat_messages x WHERE x.channel_id = c.id AND x.id > IFNULL(m.last_read_id, 0) AND IFNULL(x.user_id, 0) <> ? AND x.deleted_at IS NULL) AS unread,
-      (SELECT x.content FROM chat_messages x WHERE x.channel_id = c.id AND x.deleted_at IS NULL ORDER BY x.id DESC LIMIT 1) AS last_content,
+      (SELECT x.content FROM chat_messages x WHERE x.channel_id = c.id AND x.deleted_at IS NULL AND (c.kind <> 'private' OR x.id > IFNULL(m.history_from_id, 0)) ORDER BY x.id DESC LIMIT 1) AS last_content,
       (SELECT u.id FROM chat_members dm JOIN users u ON u.id = dm.user_id WHERE c.kind = 'direct' AND dm.channel_id = c.id AND dm.user_id <> ? LIMIT 1) AS peer_id
     FROM chat_channels c LEFT JOIN chat_members m ON m.channel_id = c.id AND m.user_id = ?
     WHERE ${v.sql} ORDER BY IFNULL(c.last_message_at, c.created_at) DESC`, user.id, user.id, user.id, ...v.params);
@@ -77,20 +94,19 @@ r.post('/chat/direct', async (c) => {
   const user = c.get('user');
   const other = toInt((await jsonBody(c)).user_id);
   if (!other || other === user.id || !(await get('SELECT 1 FROM users WHERE id = ? AND active = 1', other))) throw badRequest('Người nhận không hợp lệ');
-  const existing = await get(`SELECT c.id FROM chat_channels c WHERE c.kind = 'direct'
-    AND EXISTS (SELECT 1 FROM chat_members a WHERE a.channel_id = c.id AND a.user_id = ?)
-    AND EXISTS (SELECT 1 FROM chat_members b WHERE b.channel_id = c.id AND b.user_id = ?)`, user.id, other);
-  if (existing) return c.json({ id: existing.id });
-  const { lastId } = await run("INSERT INTO chat_channels(kind, created_by) VALUES ('direct', ?)", user.id);
-  await batch([user.id, other].map((uid) => ['INSERT INTO chat_members(channel_id, user_id) VALUES (?,?)', [lastId, uid]]));
-  return c.json({ id: lastId }, 201);
+  // khoá duy nhất theo cặp người dùng: bấm liên tục / hai người cùng mở vẫn chỉ ra một cuộc trò chuyện
+  const key = `${Math.min(user.id, other)}-${Math.max(user.id, other)}`;
+  await run("INSERT OR IGNORE INTO chat_channels(kind, created_by, direct_key) VALUES ('direct', ?, ?)", user.id, key);
+  const ch = await get("SELECT id FROM chat_channels WHERE kind = 'direct' AND direct_key = ?", key);
+  await batch([user.id, other].map((uid) => ['INSERT OR IGNORE INTO chat_members(channel_id, user_id) VALUES (?,?)', [ch.id, uid]]));
+  return c.json({ id: ch.id });
 });
 
 r.get('/chat/channels/:id', async (c) => {
   const { ch } = await channelAccess(c.get('user'), toInt(c.req.param('id')));
   const members = ch.kind === 'department'
-    ? await all("SELECT id, name, color, username, title FROM users WHERE department_id = ? AND active = 1 AND role <> 'guest' ORDER BY name", ch.department_id)
-    : await all(`SELECT u.id, u.name, u.color, u.username, u.title FROM chat_members m JOIN users u ON u.id = m.user_id
+    ? await all(`SELECT u.id, u.name, u.color, u.username, u.title FROM users u WHERE ${inDeptSql('u', '?')} AND u.active = 1 AND u.role <> 'guest' ORDER BY u.name`, ch.department_id, ch.department_id)
+    : await all(`SELECT u.id, u.name, u.color, u.username, u.title, m.history_from_id FROM chat_members m JOIN users u ON u.id = m.user_id
     WHERE m.channel_id = ? ORDER BY u.name`, ch.id);
   return c.json({ ...ch, members });
 });
@@ -108,19 +124,36 @@ r.put('/chat/channels/:id', async (c) => {
   }
   if (b.members !== undefined && ch.kind === 'private') {
     const members = [...new Set([...idList(b.members), ch.created_by].filter(Boolean))];
+    const existing = new Set((await all('SELECT user_id FROM chat_members WHERE channel_id = ?', ch.id)).map((x) => x.user_id));
+    const added = members.filter((uid) => !existing.has(uid));
+    const mode = HISTORY_LABEL[b.history] ? b.history : 'all';
+    const floor = added.length ? await historyFloorFor(ch.id, mode) : 0;
     await batch([
       [`DELETE FROM chat_members WHERE channel_id = ? AND user_id NOT IN (${members.map(() => '?').join(',')})`, [ch.id, ...members]],
-      ...members.map((uid) => ['INSERT OR IGNORE INTO chat_members(channel_id, user_id) VALUES (?,?)', [ch.id, uid]]),
+      // người mới: không tính tin nhắn ẩn là chưa đọc
+      ...added.map((uid) => ['INSERT OR IGNORE INTO chat_members(channel_id, user_id, history_from_id, last_read_id) VALUES (?,?,?,?)', [ch.id, uid, floor, floor]]),
     ]);
+    if (added.length) {
+      await notify(added, { actorId: user.id, app: 'message', type: 'channel',
+        title: `${user.name} đã thêm bạn vào kênh #${ch.name} (${HISTORY_LABEL[mode]})`, link: `/message/${ch.id}` });
+    }
   }
   return c.json({ ok: true });
 });
 
+/** Xoá nhóm / kênh (quản trị viên hoặc người tạo kênh) cùng toàn bộ tin nhắn và tệp. */
 r.delete('/chat/channels/:id', async (c) => {
   const user = c.get('user');
-  const { ch } = await channelAccess(user, toInt(c.req.param('id')));
-  if (ch.kind === 'direct' || ch.kind === 'department' || (ch.created_by !== user.id && user.role !== 'admin')) throw forbidden();
+  const ch = await get('SELECT * FROM chat_channels WHERE id = ?', toInt(c.req.param('id')));
+  if (!ch) throw notFound('Kênh không tồn tại');
+  if (ch.kind === 'direct') throw badRequest('Không xoá được cuộc trò chuyện trực tiếp');
+  if (ch.kind === 'department') throw badRequest('Kênh phòng ban gắn với phòng ban — không xoá được');
+  if (ch.kind === 'public' && ch.name === 'chung' && !ch.created_by) throw badRequest('Không xoá được kênh chung toàn công ty');
+  if (user.role !== 'admin' && ch.created_by !== user.id) throw forbidden('Chỉ quản trị viên hoặc người tạo kênh được xoá kênh');
+  const files = await all('SELECT filename FROM chat_messages WHERE channel_id = ? AND filename IS NOT NULL', ch.id);
   await run('DELETE FROM chat_channels WHERE id = ?', ch.id);
+  for (const f of files) await removeFile(f.filename);
+  await audit(user.id, 'chat.delete', `Xoá kênh #${ch.name} (${files.length} tệp)`);
   return c.json({ ok: true });
 });
 
@@ -130,16 +163,16 @@ const MSG_SELECT = `SELECT x.id, x.channel_id, x.user_id, CASE WHEN x.deleted_at
   FROM chat_messages x LEFT JOIN users u ON u.id = x.user_id`;
 
 r.get('/chat/channels/:id/messages', async (c) => {
-  const { ch } = await channelAccess(c.get('user'), toInt(c.req.param('id')));
+  const { ch, floor } = await channelAccess(c.get('user'), toInt(c.req.param('id')));
   const q = c.req.query();
-  const after = toInt(q.after_id);
+  const after = Math.max(toInt(q.after_id, 0), floor);
   const before = toInt(q.before_id);
   const limit = Math.min(100, toInt(q.limit, 50));
   let rows;
-  if (after) rows = await all(`${MSG_SELECT} WHERE x.channel_id = ? AND x.id > ? ORDER BY x.id LIMIT ?`, ch.id, after, limit);
+  if (toInt(q.after_id)) rows = await all(`${MSG_SELECT} WHERE x.channel_id = ? AND x.id > ? ORDER BY x.id LIMIT ?`, ch.id, after, limit);
   else {
-    rows = (await all(`${MSG_SELECT} WHERE x.channel_id = ? ${before ? 'AND x.id < ?' : ''} ORDER BY x.id DESC LIMIT ?`,
-      ch.id, ...(before ? [before] : []), limit)).reverse();
+    rows = (await all(`${MSG_SELECT} WHERE x.channel_id = ? AND x.id > ? ${before ? 'AND x.id < ?' : ''} ORDER BY x.id DESC LIMIT ?`,
+      ch.id, floor, ...(before ? [before] : []), limit)).reverse();
   }
   return c.json(rows);
 });
@@ -157,10 +190,14 @@ r.post('/chat/channels/:id/messages', async (c) => {
   await run('INSERT INTO chat_members(channel_id, user_id, last_read_id) VALUES (?,?,?) ON CONFLICT DO UPDATE SET last_read_id = excluded.last_read_id',
     ch.id, user.id, lastId);
   // Thông báo: nhắc tên (@username) hoặc tin nhắn 1-1
-  const mentioned = [];
-  for (const m of content.matchAll(/@([\w.]+)/g)) {
-    const u = await get('SELECT id FROM users WHERE username = ?', m[1]);
-    if (u) mentioned.push(u.id);
+  // chỉ nhắc được người xem được kênh (kênh riêng tư / 1-1: thành viên; kênh phòng ban: nhân sự phòng ban)
+  let mentioned = await findMentions(content, user.id);
+  if (mentioned.length && ch.kind !== 'public') {
+    const ok = ch.kind === 'department'
+      ? await all(`SELECT u.id FROM users u WHERE u.role <> 'guest' AND ${inDeptSql('u', '?')}`, ch.department_id, ch.department_id)
+      : await all('SELECT user_id AS id FROM chat_members WHERE channel_id = ?', ch.id);
+    const allowed = new Set(ok.map((x) => x.id));
+    mentioned = mentioned.filter((id) => allowed.has(id));
   }
   if (ch.kind === 'direct') {
     const peer = await get('SELECT user_id FROM chat_members WHERE channel_id = ? AND user_id <> ?', ch.id, user.id);
@@ -171,6 +208,13 @@ r.post('/chat/channels/:id/messages', async (c) => {
       title: `${user.name}${ch.kind === 'direct' ? ' nhắn tin' : ` nhắc đến bạn trong #${ch.name}`}: ${(content || stored?.original_name || '').slice(0, 80)}`,
       link: `/message/${ch.id}` });
   }
+  // Nhóm chat riêng tư: đẩy tin mới tới điện thoại các thành viên (không tạo thông báo trong hệ thống)
+  if (ch.kind === 'private') {
+    const members = (await all('SELECT user_id FROM chat_members WHERE channel_id = ? AND user_id <> ?', ch.id, user.id))
+      .map((m) => m.user_id).filter((id) => !mentioned.includes(id));
+    pushToUsers(members, { app: 'message', title: `#${ch.name}`, body: `${user.name}: ${(content || `📎 ${stored?.original_name || 'Tệp đính kèm'}`).slice(0, 140)}`,
+      link: `/message/${ch.id}`, tag: `chat:/message/${ch.id}` });
+  }
   return c.json(await get(`${MSG_SELECT} WHERE x.id = ?`, lastId), 201);
 });
 
@@ -180,6 +224,7 @@ r.post('/chat/channels/:id/read', async (c) => {
   const last = toInt((await jsonBody(c)).last_id) || (await get('SELECT MAX(id) AS m FROM chat_messages WHERE channel_id = ?', ch.id)).m || 0;
   await run(`INSERT INTO chat_members(channel_id, user_id, last_read_id) VALUES (?,?,?)
     ON CONFLICT DO UPDATE SET last_read_id = MAX(last_read_id, excluded.last_read_id)`, ch.id, user.id, last);
+  await markSeen(user.id, `/message/${ch.id}`);
   return c.json({ ok: true });
 });
 
@@ -201,20 +246,25 @@ r.delete('/chat/messages/:id', async (c) => {
   await run("UPDATE chat_messages SET deleted_at = datetime('now') WHERE id = ?", m.id);
   return c.json({ ok: true });
 });
-r.get('/chat/messages/:id/file', async (c) => {
+async function messageFile(c) {
   const m = await get('SELECT * FROM chat_messages WHERE id = ?', toInt(c.req.param('id')));
   if (!m || !m.filename || m.deleted_at) throw notFound('Tệp không tồn tại');
-  await channelAccess(c.get('user'), m.channel_id);
-  return sendFile(c, m, c.req.query('inline') === '1');
-});
+  const { floor } = await channelAccess(c.get('user'), m.channel_id);
+  if (m.id <= floor) throw forbidden('Bạn không được xem tin nhắn này');
+  return m;
+}
+r.get('/chat/messages/:id/file', async (c) => sendFile(c, await messageFile(c), c.req.query('inline') === '1'));
+r.post('/chat/messages/:id/file/link', async (c) => c.json(await publicFileLink(c, 'cm', await messageFile(c))));
 
 r.get('/chat/search', async (c) => {
   const user = c.get('user');
   const q = String(c.req.query('q') || '').trim();
   if (!q) return c.json([]);
   const v = visibleWhere(user);
-  return c.json(await all(`${MSG_SELECT} JOIN chat_channels c ON c.id = x.channel_id WHERE ${v.sql} AND x.deleted_at IS NULL AND x.content LIKE ?
-    ORDER BY x.id DESC LIMIT 30`, ...v.params, `%${q}%`));
+  return c.json(await all(`${MSG_SELECT} JOIN chat_channels c ON c.id = x.channel_id
+    LEFT JOIN chat_members hm ON hm.channel_id = c.id AND hm.user_id = ?
+    WHERE ${v.sql} AND x.deleted_at IS NULL AND x.content LIKE ? AND (c.kind <> 'private' OR x.id > IFNULL(hm.history_from_id, 0))
+    ORDER BY x.id DESC LIMIT 30`, user.id, ...v.params, `%${q}%`));
 });
 
 export default r;

@@ -4,9 +4,15 @@ import { Search, StickyNote, Palette, Users, Lock, X, Plus, Trash2, Cake, Megaph
 import { api } from '../api.js';
 import { useApp, useFetch, useToast } from '../context.jsx';
 import { NotificationBell, UserMenu, ThemeToggle } from '../components/shell.jsx';
+import { ContactsButton } from '../components/Contact.jsx';
 import HomeAgenda from '../home/HomeAgenda.jsx';
 import { BRANDS, applyBrand, getBrandIndex } from '../theme.js';
 import HomeChat from '../home/HomeChat.jsx';
+import HomeLucky from '../home/HomeLucky.jsx';
+import HomeWeather from '../home/HomeWeather.jsx';
+import HomeImportant from '../home/HomeImportant.jsx';
+import PushCard from '../components/PushCard.jsx';
+import HomeQuote from '../home/HomeQuote.jsx';
 import { Avatar, Drawer, Empty } from '../components/ui.jsx';
 import { ECOSYSTEM, CATEGORIES, canOpen, AppIcon } from '../apps.jsx';
 import { fmtDate, timeAgo, cx } from '../utils.js';
@@ -108,7 +114,8 @@ export default function Home() {
         <div className="home2-top">
           <Link to="/" className="brand"><img className="brand-logo" src="/logo-192.png" alt="LDL" /><span className="brand-name">{company}</span></Link>
           <div className="grow" />
-          <Link to="/account/members" className="icon-btn on-dark" title="Thành viên"><Users size={18} /></Link>
+          <Link to="/account/members" className="icon-btn on-dark hide-sm" title="Thành viên"><Users size={18} /></Link>
+          <ContactsButton dark />
           <button className="icon-btn on-dark" title="Ghi chú" onClick={() => setNotesOpen(true)}><StickyNote size={18} /></button>
           <button className="icon-btn on-dark" title="Màu thương hiệu" onClick={() => setBgOpen((o) => !o)}><Palette size={18} /></button>
           <ThemeToggle dark />
@@ -131,11 +138,16 @@ export default function Home() {
           <div className="home2-greet">
             <div className="home2-date">{DAYS[now.getDay()]}, {fmtDate(now)}</div>
             <h1>{greeting(now.getHours())}, {user.name} 👋</h1>
+            <HomeQuote />
             {summary?.birthdays?.length > 0 && (
               <div className="home2-bday"><Cake size={15} /> Sinh nhật hôm nay: {summary.birthdays.map((b) => b.name).join(', ')} 🎉</div>
             )}
           </div>
-          <div className="home2-clock">{pad(now.getHours())}:{pad(now.getMinutes())}<small>:{pad(now.getSeconds())}</small></div>
+          <div className="home2-right">
+            <div className="home2-clock">{pad(now.getHours())}:{pad(now.getMinutes())}<small>:{pad(now.getSeconds())}</small></div>
+            <HomeWeather />
+            <HomeLucky />
+          </div>
         </div>
         <div className="home2-stats">
           {stats.map((st) => {
@@ -148,7 +160,11 @@ export default function Home() {
       </header>
 
       <div className="home2-grid">
-        <div className="home2-col left"><HomeAgenda data={agenda} reload={reloadAgenda} loading={agendaLoading} /></div>
+        <div className="home2-col left">
+          <PushCard compact />
+          {(apps || []).includes('wework') && <HomeImportant data={agenda} />}
+          <HomeAgenda data={agenda} reload={reloadAgenda} loading={agendaLoading} />
+        </div>
 
         <div className="home2-col mid">
           <section className="hcard">

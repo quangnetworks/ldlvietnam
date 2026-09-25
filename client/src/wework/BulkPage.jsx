@@ -7,7 +7,23 @@ import { useWework } from './WeworkLayout.jsx';
 import { TaskRow } from './taskParts.jsx';
 
 export default function BulkPage() {
-  const { users } = useApp();
+  const { users, user } = useApp();
+  if (user.role !== 'admin') return <BulkDenied />;
+  return <BulkInner users={users} />;
+}
+
+function BulkDenied() {
+  return (
+    <div className="ww-page">
+      <div className="ww-main wide">
+        <div className="page-head"><h1>Tác vụ hàng loạt</h1></div>
+        <Empty title="Không có quyền truy cập">Chỉ Quản trị cấp cao hoặc Chủ doanh nghiệp mới được thao tác hàng loạt công việc.</Empty>
+      </div>
+    </div>
+  );
+}
+
+function BulkInner({ users }) {
   const { projects, openTask, version, bump } = useWework();
   const toast = useToast();
   const [projectId, setProjectId] = useState('');
@@ -47,7 +63,7 @@ export default function BulkPage() {
           </select>
           <select className="input input-sm" value="" onChange={(e) => e.target.value && run('update', { priority: e.target.value })} disabled={!selected.length}>
             <option value="">Đổi ưu tiên...</option>
-            <option value="normal">Bình thường</option><option value="important">Quan trọng</option><option value="urgent">Khẩn cấp</option>
+            <option value="normal">Bình thường</option><option value="important">Quan trọng</option><option value="urgent">Khẩn cấp</option><option value="critical">Quan trọng & khẩn cấp</option>
           </select>
           <div style={{ minWidth: 200 }}><UserPicker users={users} value={assignee} onChange={setAssignee} placeholder="Giao cho..." /></div>
           <button className="btn btn-sm" disabled={!selected.length || !assignee} onClick={() => run('update', { assignee_id: assignee })}>Giao việc</button>

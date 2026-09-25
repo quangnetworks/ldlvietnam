@@ -7,8 +7,9 @@ import { Avatar, FilterSelect, Dropdown, MenuItem, Spinner, Empty, Progress, Mod
 import { useDebounced } from '../components/shell.jsx';
 import { weekLabel, fmtDate, cx } from '../utils.js';
 import { useWework } from './WeworkLayout.jsx';
-import { TaskRow } from './taskParts.jsx';
+import { TaskRow, nestTasks } from './taskParts.jsx';
 import TaskCalendar from './Calendar.jsx';
+import GoalModal from './GoalModal.jsx';
 
 const SCOPES = [
   { value: 'mine', label: 'Giao & được giao' },
@@ -30,6 +31,7 @@ const STATUSES = [
   { value: 'overdue', label: 'Quá hạn' },
   { value: 'urgent', label: 'Khẩn cấp' },
   { value: 'important', label: 'Quan trọng' },
+  { value: 'critical', label: 'Quan trọng & khẩn cấp' },
 ];
 const SUBTASKS = [
   { value: '', label: 'Công việc & công việc con' },
@@ -64,13 +66,6 @@ function RightPanel({ onPick }) {
   const [open, setOpen] = useState(null);
   const [goalForm, setGoalForm] = useState(null);
   if (!s) return <aside className="ww-right"><Spinner /></aside>;
-  const saveGoal = async () => {
-    if (goalForm.id) await api.put(`/goals/${goalForm.id}`, goalForm);
-    else await api.post('/goals', goalForm);
-    setGoalForm(null);
-    reload();
-    toast('Đã lưu mục tiêu');
-  };
   const list = (key, items) => open === key && (
     <div className="rp-list">
       {items.map((t) => (
@@ -103,13 +98,16 @@ function RightPanel({ onPick }) {
         )}
       </div>
       <div className="rp-card">
-        <div className="rp-head">MỤC TIÊU <button className="link-btn" onClick={() => setGoalForm({ title: '', progress: 0, due_date: '' })}>+ THÊM</button></div>
+        <div className="rp-head">MỤC TIÊU <button className="link-btn" onClick={() => setGoalForm({})}>+ THÊM</button></div>
         {s.goals.map((g) => (
-          <div key={g.id} className="goal" onClick={() => setGoalForm({ ...g, due_date: g.due_date || '' })}>
+          <div key={g.id} className="goal" onClick={() => setGoalForm(g)} title="Bấm để gắn công việc liên quan, cập nhật tiến độ">
             <div className="row"><Target size={14} /> <span className="grow ellipsis">{g.title}</span><b>{g.progress}%</b></div>
             <Progress value={g.progress} />
+            <small className="muted goal-meta">{g.task_count ? `${g.task_done}/${g.task_count} công việc hoàn thành` : 'Chưa gắn công việc'}
+              {g.task_overdue > 0 && <span className="text-red"> · {g.task_overdue} quá hạn</span>}{g.due_date && ` · hạn ${fmtDate(g.due_date)}`}</small>
           </div>
         ))}
+        {!s.goals.length && <div className="empty-small">Đặt mục tiêu và gắn các công việc liên quan để theo dõi tiến độ</div>}
       </div>
       <div className="rp-card">
         <div className="rp-head">BỘ LỌC TÙY CHỈNH <button className="link-btn" onClick={() => onPick({ saveCurrent: true, reload: reloadFilters })}>+ THÊM</button></div>
@@ -132,21 +130,7 @@ function RightPanel({ onPick }) {
         ))}
         {!s.team.length && <div className="empty-small">Bạn chưa quản lý nhân viên nào</div>}
       </div>
-      {goalForm && (
-        <Modal title={goalForm.id ? 'Cập nhật mục tiêu' : 'Thêm mục tiêu'} onClose={() => setGoalForm(null)} width={440}
-          footer={<>
-            {goalForm.id && <button className="btn btn-danger-ghost" onClick={async () => { await api.del(`/goals/${goalForm.id}`); setGoalForm(null); reload(); }}><Trash2 size={14} /></button>}
-            <div className="grow" />
-            <button className="btn" onClick={() => setGoalForm(null)}>Hủy</button>
-            <button className="btn btn-primary" disabled={!goalForm.title.trim()} onClick={saveGoal}>Lưu</button>
-          </>}>
-          <div className="form-grid one">
-            <Field label="Mục tiêu" required><input className="input" autoFocus value={goalForm.title} onChange={(e) => setGoalForm({ ...goalForm, title: e.target.value })} /></Field>
-            <Field label={`Tiến độ: ${goalForm.progress}%`}><input type="range" min="0" max="100" step="5" value={goalForm.progress} onChange={(e) => setGoalForm({ ...goalForm, progress: Number(e.target.value) })} /></Field>
-            <Field label="Hạn hoàn thành"><input type="date" className="input" value={goalForm.due_date} onChange={(e) => setGoalForm({ ...goalForm, due_date: e.target.value })} /></Field>
-          </div>
-        </Modal>
-      )}
+      {goalForm && <GoalModal goal={goalForm.id ? goalForm : null} onClose={() => setGoalForm(null)} onSaved={() => { setGoalForm(null); reload(); }} />}
     </aside>
   );
 }
@@ -304,7 +288,7 @@ export default function TasksHome({ mode }) {
                 {groups.map((g) => (
                   <div key={g.label} className="task-group">
                     <div className="group-label">{g.label}</div>
-                    {g.items.map((t) => <TaskRow key={t.id} t={t} onOpen={openTask} onChanged={reload} />)}
+                    {nestTasks(g.items).map(({ t, depth, orphan, childrenShown }) => <TaskRow key={t.id} t={t} depth={depth} orphan={orphan} childrenShown={childrenShown} onOpen={openTask} onChanged={reload} />)}
                   </div>
                 ))}
               </div>

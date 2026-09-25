@@ -97,22 +97,32 @@ export function useClickOutside(ref, onOutside, active = true) {
 export function Dropdown({ trigger, children, align = 'left', className, width }) {
   const [open, setOpen] = useState(false);
   const [side, setSide] = useState(align);
+  const [up, setUp] = useState(false);
   const ref = useRef(null);
   const menuRef = useRef(null);
   useClickOutside(ref, () => setOpen(false), open);
   // Đổi hướng mở nếu menu tràn ra ngoài màn hình (vd. avatar nằm sát mép trái ở thanh bên)
   useLayoutEffect(() => {
-    if (!open) { setSide(align); return; }
+    if (!open) { setSide(align); setUp(false); return; }
     const r = menuRef.current?.getBoundingClientRect();
     if (!r) return;
     if (side === 'right' && r.left < 8) setSide('left');
     else if (side === 'left' && r.right > window.innerWidth - 8) setSide('right');
-  }, [open, side, align]);
+    if (!up) {
+      // tràn đáy màn hình hoặc đáy khung cuộn chứa nó → mở lên trên nếu phía trên đủ chỗ
+      let bottom = window.innerHeight;
+      for (let el = ref.current?.parentElement; el && el !== document.body; el = el.parentElement) {
+        if (/(auto|scroll|hidden)/.test(getComputedStyle(el).overflowY)) bottom = Math.min(bottom, el.getBoundingClientRect().bottom);
+      }
+      const top = ref.current.getBoundingClientRect().top;
+      if (r.bottom > bottom - 4 && top - r.height > 8) setUp(true);
+    }
+  }, [open, side, align, up]);
   return (
     <div className={cx('dropdown', className)} ref={ref}>
       {trigger(open, () => setOpen((o) => !o))}
       {open && (
-        <div ref={menuRef} className={cx('dropdown-menu', side === 'right' && 'right')} style={width ? { width } : undefined}
+        <div ref={menuRef} className={cx('dropdown-menu', side === 'right' && 'right', up && 'up')} style={width ? { width } : undefined}
           onClick={(e) => { if (e.target.closest('[data-close]')) setOpen(false); }}>
           {typeof children === 'function' ? children(() => setOpen(false)) : children}
         </div>
@@ -297,7 +307,7 @@ export function Spinner() {
   return <div className="spinner" aria-label="Đang tải" />;
 }
 
-export function FileChip({ file, href, onRemove }) {
+export function FileChip({ file, href, onRemove, onOpen, extra }) {
   const ic = fileIcon(file.original_name || file.name);
   const content = (
     <>
@@ -308,7 +318,9 @@ export function FileChip({ file, href, onRemove }) {
   );
   return (
     <span className="file-chip">
-      {href ? <a href={href} target="_blank" rel="noreferrer">{content}</a> : content}
+      {onOpen ? <button type="button" className="file-open" onClick={onOpen} title="Xem nội dung">{content}</button>
+        : href ? <a href={href} target="_blank" rel="noreferrer">{content}</a> : content}
+      {extra}
       {onRemove && (
         <button type="button" className="chip-x" onClick={onRemove} aria-label="Bỏ tệp"><X size={12} /></button>
       )}

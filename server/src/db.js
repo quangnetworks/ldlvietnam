@@ -34,10 +34,31 @@ export function logActivity(entityType, entityId, userId, action, detail = null)
   );
 }
 
-export function notify(userIds, { actorId = null, app, type, title, link = null }) {
+/**
+ * Người được nhắc tên trong nội dung: "@tên_đăng_nhập" (không phân biệt hoa thường, bỏ dấu chấm / gạch cuối câu).
+ * Trả về id các tài khoản đang hoạt động, bỏ qua người viết.
+ */
+export async function findMentions(content, excludeId = null) {
+  const names = [...new Set([...String(content || '').matchAll(/@([\w.-]+)/g)].map((m) => m[1].replace(/[.-]+$/, '').toLowerCase()))].filter(Boolean);
+  if (!names.length) return [];
+  const rows = await all(`SELECT id FROM users WHERE active = 1 AND lower(username) IN (${names.map(() => '?').join(',')})`, ...names);
+  return rows.map((r) => r.id).filter((id) => id !== excludeId);
+}
+
+/** Người dùng đã mở nội dung (công việc, đề xuất, văn bản, cuộc trò chuyện) → thông báo trỏ tới đó coi như đã đọc. */
+export function markSeen(userId, link) {
+  return run('UPDATE notifications SET is_read = 1 WHERE user_id = ? AND link = ? AND is_read = 0', userId, link);
+}
+
+let notifyHook = null;
+/** Đăng ký xử lý thêm sau mỗi thông báo (vd. gửi thông báo đẩy tới điện thoại). */
+export const onNotify = (fn) => { notifyHook = fn; };
+
+export async function notify(userIds, { actorId = null, app, type, title, link = null }) {
   const ids = [...new Set((Array.isArray(userIds) ? userIds : [userIds]).filter(Boolean))].filter((id) => id !== actorId);
-  return batch(ids.map((uid) => [
+  await batch(ids.map((uid) => [
     'INSERT INTO notifications(user_id, actor_id, app, type, title, link) VALUES (?,?,?,?,?,?)',
     [uid, actorId, app, type, title, link],
   ]));
+  if (ids.length && notifyHook) notifyHook(ids, { actorId, app, type, title, link });
 }

@@ -1,15 +1,19 @@
 import { Hono } from 'hono';
 import { setCookie, deleteCookie } from 'hono/cookie';
-import { all, get, run, getSetting, setSetting } from '../db.js';
+import { all, get, run, batch, getSetting, setSetting } from '../db.js';
 import {
-  COOKIE, TOKEN_TTL, signToken, loadUser, requireAdmin, PUBLIC_USER_FIELDS, hashPassword, verifyPassword,
+  COOKIE, TOKEN_TTL, signToken, loadUser, requireAdmin, assertCanManage, PUBLIC_USER_FIELDS, hashPassword, verifyPassword, inDeptSql,
 } from '../auth.js';
-import { badRequest, notFound, toInt, jsonBody } from '../util.js';
+import { badRequest, forbidden, notFound, toInt, idList, jsonBody } from '../util.js';
 import { userApps, grantApps, audit, recordLogin, MODULES } from '../platform.js';
 import { verifyTotp, ipAllowed } from '../security.js';
 import { isExpired } from '../auth.js';
+import { servePublicFile } from '../files.js';
 
 const r = new Hono();
+
+// Liên kết tạm tới tệp cho trình xem trực tuyến (không cần đăng nhập — token là thông tin xác thực)
+r.get('/public/files/:token/:name?', servePublicFile);
 
 // ---------- Auth ----------
 r.post('/auth/login', async (c) => {
@@ -123,19 +127,49 @@ r.get('/users/:id', async (c) => {
   return c.json(u);
 });
 
+/** Phòng ban kiêm nhiệm (ngoài phòng ban chính). */
+async function saveExtraDepartments(userId, primaryId, ids) {
+  const list = idList(ids).filter((d) => d !== primaryId);
+  await batch([
+    ['DELETE FROM user_departments WHERE user_id = ?', [userId]],
+    ...list.map((d) => ['INSERT OR IGNORE INTO user_departments(user_id, department_id) SELECT ?, id FROM departments WHERE id = ?', [userId, d]]),
+  ]);
+}
+
 function validateUserBody(b, creating) {
   if (creating) {
     if (!b.username?.trim()) throw badRequest('Tên đăng nhập là bắt buộc');
     if (!b.password || String(b.password).length < 6) throw badRequest('Mật khẩu phải có ít nhất 6 ký tự');
     if (!b.name?.trim()) throw badRequest('Họ tên là bắt buộc');
   }
-  if (b.role && !['admin', 'member', 'guest'].includes(b.role)) throw badRequest('Vai trò không hợp lệ');
+  if (b.role && !['owner', 'admin', 'member', 'guest'].includes(b.role)) throw badRequest('Vai trò không hợp lệ');
   if (b.expires_at && !/^\d{4}-\d{2}-\d{2}$/.test(b.expires_at)) throw badRequest('Ngày hết hạn không hợp lệ');
+}
+
+/**
+ * Vai trò "owner" (Chủ doanh nghiệp) = role 'admin' + is_owner = 1.
+ * Chỉ Chủ doanh nghiệp được trao / thu hồi vai trò này — trừ khi hệ thống chưa có Chủ doanh nghiệp nào.
+ * Trả về is_owner mới (0/1) hoặc undefined nếu không đổi vai trò.
+ */
+async function ownerFlag(actor, b, targetId) {
+  if (b.role === undefined || b.role === null || b.role === '') return undefined;
+  const want = b.role === 'owner' ? 1 : 0;
+  if (b.role === 'owner') b.role = 'admin';
+  const current = targetId ? (await get('SELECT is_owner FROM users WHERE id = ?', targetId))?.is_owner || 0 : 0;
+  if (want === current) return want;
+  if (!actor.is_owner && (await get('SELECT 1 FROM users WHERE is_owner = 1 AND active = 1'))) {
+    throw forbidden('Chỉ Chủ doanh nghiệp mới được trao hoặc thu hồi vai trò Chủ doanh nghiệp');
+  }
+  if (!want && !(await get('SELECT 1 FROM users WHERE is_owner = 1 AND active = 1 AND id <> ?', targetId))) {
+    throw badRequest('Hệ thống cần ít nhất một Chủ doanh nghiệp');
+  }
+  return want;
 }
 
 r.post('/users', requireAdmin, async (c) => {
   const b = await jsonBody(c);
   validateUserBody(b, true);
+  const owner = await ownerFlag(c.get('user'), b, null);
   if (await get('SELECT 1 FROM users WHERE lower(username) = lower(?)', b.username.trim())) {
     throw badRequest('Tên đăng nhập đã tồn tại');
   }
@@ -148,7 +182,9 @@ r.post('/users', requireAdmin, async (c) => {
   await run('UPDATE users SET birthday = ?, address = ?, expires_at = ? WHERE id = ?', b.birthday || null, b.address || null,
     b.role === 'guest' ? b.expires_at || null : null, lastId);
   // Tài khoản khách: chỉ nhận ứng dụng được chọn rõ ràng
+  if (owner) await run('UPDATE users SET is_owner = 1 WHERE id = ?', lastId);
   await grantApps(lastId, Array.isArray(b.apps) ? b.apps : b.role === 'guest' ? [] : null);
+  if (b.extra_department_ids !== undefined) await saveExtraDepartments(lastId, toInt(b.department_id), b.extra_department_ids);
   await audit(c.get('user').id, 'user.create', `Tạo tài khoản @${b.username.trim()}`);
   return c.json(await loadUser(lastId), 201);
 });
@@ -158,6 +194,8 @@ r.put('/users/:id', requireAdmin, async (c) => {
   const b = await jsonBody(c);
   validateUserBody(b, false);
   if (!(await get('SELECT 1 FROM users WHERE id = ?', id))) throw notFound();
+  await assertCanManage(c.get('user'), id);
+  const owner = await ownerFlag(c.get('user'), b, id);
   if (toInt(b.manager_id) === id) throw badRequest('Không thể tự làm quản lý của chính mình');
   if (b.active === undefined || Object.keys(b).length > 1) {
     await run(
@@ -167,11 +205,16 @@ r.put('/users/:id', requireAdmin, async (c) => {
       toInt(b.manager_id), b.role || null, b.color || null, id
     );
   }
+  if (owner !== undefined) await run('UPDATE users SET is_owner = ? WHERE id = ?', owner, id);
   if (b.birthday !== undefined || b.address !== undefined) {
     await run('UPDATE users SET birthday = COALESCE(?, birthday), address = COALESCE(?, address) WHERE id = ?',
       b.birthday ?? null, b.address ?? null, id);
   }
   if (Array.isArray(b.apps)) await grantApps(id, b.apps.filter((k) => MODULES[k]));
+  if (b.extra_department_ids !== undefined) {
+    const primary = b.department_id !== undefined ? toInt(b.department_id) : (await get('SELECT department_id FROM users WHERE id = ?', id)).department_id;
+    await saveExtraDepartments(id, primary, b.extra_department_ids);
+  }
   if (b.expires_at !== undefined || b.role !== undefined) {
     await run("UPDATE users SET expires_at = CASE WHEN role = 'guest' THEN ? ELSE NULL END WHERE id = ?", b.expires_at || null, id);
   }
@@ -191,6 +234,7 @@ r.put('/users/:id', requireAdmin, async (c) => {
 r.delete('/users/:id', requireAdmin, async (c) => {
   const id = toInt(c.req.param('id'));
   if (id === c.get('user').id) throw badRequest('Không thể vô hiệu hóa chính mình');
+  await assertCanManage(c.get('user'), id);
   await run('UPDATE users SET active = 0 WHERE id = ?', id);
   const target = await get('SELECT username FROM users WHERE id = ?', id);
   await audit(c.get('user').id, 'user.disable', `Vô hiệu hoá @${target?.username}`);
@@ -199,21 +243,23 @@ r.delete('/users/:id', requireAdmin, async (c) => {
 
 // ---------- Departments ----------
 r.get('/departments', async (c) => c.json(await all(
-  `SELECT d.*, (SELECT COUNT(*) FROM users u WHERE u.department_id = d.id AND u.active = 1) AS member_count
-   FROM departments d ORDER BY d.name COLLATE NOCASE`
+  `SELECT d.*, h.name AS head_name, (SELECT COUNT(*) FROM users u WHERE ${inDeptSql('u', 'd.id')} AND u.active = 1) AS member_count
+   FROM departments d LEFT JOIN users h ON h.id = d.head_id ORDER BY d.name COLLATE NOCASE`
 )));
 r.post('/departments', requireAdmin, async (c) => {
-  const { name, code, parent_id } = await jsonBody(c);
+  const { name, code, parent_id, head_id, task_approval } = await jsonBody(c);
   if (!name?.trim()) throw badRequest('Tên phòng ban là bắt buộc');
-  const { lastId } = await run('INSERT INTO departments(name, code, parent_id) VALUES (?,?,?)', name.trim(), code || null, toInt(parent_id));
+  const { lastId } = await run('INSERT INTO departments(name, code, parent_id, head_id, task_approval) VALUES (?,?,?,?,?)',
+    name.trim(), code || null, toInt(parent_id), toInt(head_id), task_approval ? 1 : 0);
   return c.json(await get('SELECT * FROM departments WHERE id = ?', lastId), 201);
 });
 r.put('/departments/:id', requireAdmin, async (c) => {
   const id = toInt(c.req.param('id'));
-  const { name, code, parent_id } = await jsonBody(c);
+  const { name, code, parent_id, head_id, task_approval } = await jsonBody(c);
   if (toInt(parent_id) === id) throw badRequest('Phòng ban cha không hợp lệ');
-  await run('UPDATE departments SET name = COALESCE(?, name), code = ?, parent_id = ? WHERE id = ?',
-    name?.trim() || null, code || null, toInt(parent_id), id);
+  await run('UPDATE departments SET name = COALESCE(?, name), code = ?, parent_id = ?, head_id = ? WHERE id = ?',
+    name?.trim() || null, code || null, toInt(parent_id), toInt(head_id), id);
+  if (task_approval !== undefined) await run('UPDATE departments SET task_approval = ? WHERE id = ?', task_approval ? 1 : 0, id);
   return c.json(await get('SELECT * FROM departments WHERE id = ?', id));
 });
 r.delete('/departments/:id', requireAdmin, async (c) => {

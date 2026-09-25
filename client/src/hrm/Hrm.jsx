@@ -81,7 +81,7 @@ export function HrmEmployees() {
         <FilterSelect value={contract} onChange={setContract} options={[{ value: '', label: 'Mọi hợp đồng' }, { value: 'expiring', label: 'Sắp hết hạn (30 ngày)' }]} />
       </div>
       {loading && !items ? <Spinner /> : !items.length ? <Empty title="Không có nhân sự" /> : (
-        <div className="table-wrap"><table className="table">
+        <div className="table-wrap"><table className="table nowrap-cells">
           <thead><tr><th>Mã NV</th><th>Nhân viên</th><th>Phòng ban</th><th>Ngày vào làm</th><th>Loại hợp đồng</th><th>Hết hạn HĐ</th><th>Trạng thái</th></tr></thead>
           <tbody>{items.map((e) => (
             <tr key={e.id} className="clickable" onClick={() => { window.location.href = `/hrm/employees/${e.id}`; }}>
