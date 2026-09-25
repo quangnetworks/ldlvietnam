@@ -6,7 +6,7 @@ import {
 } from '../util.js';
 import { fireRequestEvent } from './webhooks.js';
 import { publicFileLink } from '../files.js';
-import { readComment, saveCommentFiles, withCommentFiles, commentFileOr404, commentSnippet, purgeCommentFiles } from '../comments.js';
+import { readComment, saveCommentFiles, withCommentFiles, commentFileOr404, commentSnippet, purgeCommentFiles, editComment, deleteComment } from '../comments.js';
 
 const r = new Hono();
 const APP = 'request';
@@ -484,6 +484,16 @@ r.post('/requests/:id/comments', async (c) => {
     title: `${user.name} bình luận trong đề xuất "${q.title}"`, link: `/request/${q.id}` });
   await fireRequestEvent(c, 'request.commented', q.id, { comment: (content || snippet).slice(0, 1000) });
   return c.json(await withCommentFiles('request', q.id, await get(`${COMMENT_SELECT} WHERE c.id = ?`, lastId)), 201);
+});
+r.put('/requests/:id/comments/:cid', async (c) => {
+  const q = await viewable(c);
+  const cid = await editComment(c, 'request', q.id, c.req.param('cid'), c.get('user'));
+  return c.json(await withCommentFiles('request', q.id, await get(`${COMMENT_SELECT} WHERE c.id = ?`, cid)));
+});
+r.delete('/requests/:id/comments/:cid', async (c) => {
+  const q = await viewable(c);
+  await deleteComment('request', q.id, c.req.param('cid'), c.get('user'));
+  return c.json({ ok: true });
 });
 r.get('/requests/:id/comment-files/:fid', async (c) => {
   const q = await viewable(c);

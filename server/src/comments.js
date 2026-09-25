@@ -2,8 +2,8 @@
  * Ảnh / tệp đính kèm trong bình luận — dùng chung cho Wework (task), Request (request), Office (document).
  * Bình luận gửi dạng JSON { content } hoặc multipart (content + files); được phép chỉ có tệp mà không có chữ.
  */
-import { all, batch, get } from './db.js';
-import { badRequest, formBody, notFound, removeFile, storeFiles, toInt } from './util.js';
+import { all, batch, get, run, findMentions, notify } from './db.js';
+import { badRequest, forbidden, formBody, idList, notFound, removeFile, storeFiles, toInt } from './util.js';
 
 export const MAX_COMMENT_FILES = 10;
 
@@ -59,4 +59,62 @@ export async function purgeCommentFiles(entity, { entityIds = [], commentId = nu
   if (!rows.length) return;
   await batch(rows.map((r) => ['DELETE FROM comment_files WHERE id = ?', [r.id]]));
   for (const r of rows) await removeFile(r.filename);
+}
+
+// ---------------------------------------------------------------- sửa / xoá bình luận
+const KINDS = {
+  task: { table: 'task_comments', fk: 'task_id', follow: ['task_followers', 'task_id'], parent: 'tasks', app: 'wework', link: (id) => `/wework/task/${id}`, noun: '' },
+  request: { table: 'request_comments', fk: 'request_id', follow: ['request_followers', 'request_id'], parent: 'requests', app: 'request', link: (id) => `/request/${id}`, noun: 'đề xuất ' },
+  document: { table: 'document_comments', fk: 'document_id', follow: ['document_follows', 'document_id'], parent: 'documents', app: 'office', link: (id) => `/office/doc/${id}`, noun: 'văn bản ' },
+};
+
+async function commentOr404(entity, entityId, cid) {
+  const k = KINDS[entity];
+  const cm = await get(`SELECT * FROM ${k.table} WHERE id = ? AND ${k.fk} = ?`, toInt(cid), entityId);
+  if (!cm) throw notFound('Bình luận không tồn tại');
+  return cm;
+}
+
+/**
+ * Sửa bình luận (chỉ người viết): nội dung, bỏ tệp cũ (remove_files: danh sách id), thêm tệp mới (files).
+ * Người mới được @nhắc tên trong nội dung sửa được thêm vào người theo dõi và nhận thông báo.
+ */
+export async function editComment(c, entity, entityId, cid, user) {
+  const k = KINDS[entity];
+  const cm = await commentOr404(entity, entityId, cid);
+  if (cm.user_id !== user.id) throw forbidden('Chỉ người viết mới được sửa bình luận này');
+  const { fields, files } = await formBody(c);
+  const content = String(fields.content ?? cm.content ?? '').trim().slice(0, 5000);
+  const current = await all('SELECT id, filename FROM comment_files WHERE entity = ? AND comment_id = ?', entity, cm.id);
+  const drop = new Set(idList(fields.remove_files));
+  const removed = current.filter((f) => drop.has(f.id));
+  const keep = current.length - removed.length;
+  if (keep + files.length > MAX_COMMENT_FILES) throw badRequest(`Tối đa ${MAX_COMMENT_FILES} tệp mỗi bình luận`);
+  if (!content && !keep && !files.length) throw badRequest('Bình luận không được để trống — hãy xoá bình luận nếu không cần nữa');
+  await run(`UPDATE ${k.table} SET content = ?, updated_at = datetime('now') WHERE id = ?`, content, cm.id);
+  if (removed.length) {
+    await batch(removed.map((f) => ['DELETE FROM comment_files WHERE id = ?', [f.id]]));
+    for (const f of removed) await removeFile(f.filename);
+  }
+  await saveCommentFiles(entity, entityId, cm.id, user.id, files);
+  const before = new Set(await findMentions(cm.content, user.id));
+  const added = (await findMentions(content, user.id)).filter((id) => !before.has(id));
+  if (added.length) {
+    const [ft, fk] = k.follow;
+    await batch(added.map((uid) => [`INSERT OR IGNORE INTO ${ft}(${fk}, user_id) VALUES (?,?)`, [entityId, uid]]));
+    const parent = await get(`SELECT title FROM ${k.parent} WHERE id = ?`, entityId);
+    await notify(added, { actorId: user.id, app: k.app, type: 'mention',
+      title: `${user.name} đã nhắc đến bạn trong ${k.noun}"${parent?.title || ''}": ${commentSnippet(content, files)}`, link: k.link(entityId) });
+  }
+  return cm.id;
+}
+
+/** Xoá bình luận: người viết hoặc quản trị cấp cao / chủ doanh nghiệp; xoá luôn ảnh, tệp đính kèm. */
+export async function deleteComment(entity, entityId, cid, user) {
+  const k = KINDS[entity];
+  const cm = await commentOr404(entity, entityId, cid);
+  if (cm.user_id !== user.id && user.role !== 'admin') throw forbidden('Chỉ người viết hoặc quản trị viên mới được xoá bình luận');
+  await run(`DELETE FROM ${k.table} WHERE id = ?`, cm.id);
+  await purgeCommentFiles(entity, { commentId: cm.id });
+  return cm;
 }

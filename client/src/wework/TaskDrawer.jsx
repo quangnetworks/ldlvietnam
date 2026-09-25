@@ -12,8 +12,7 @@ import { useWework } from './WeworkLayout.jsx';
 import { StatusCircle, TaskTags, useAssignable, createTaskList } from './taskParts.jsx';
 import TaskResults from './TaskResults.jsx';
 import FileViewer from '../components/FileViewer.jsx';
-import CommentBox, { CommentFiles } from '../components/CommentBox.jsx';
-import { MentionText } from '../components/Mention.jsx';
+import CommentBox, { CommentItem } from '../components/CommentBox.jsx';
 
 export function TaskDetail({ id, onClose, onChanged, standalone }) {
   const { users } = useApp();
@@ -312,16 +311,7 @@ export function TaskDetail({ id, onClose, onChanged, standalone }) {
         <section className="td-section">
           <div className="td-section-head"><b><MessageSquare size={15} /> Thảo luận ({comments?.length || 0})</b></div>
           <div className="comments">
-            {comments?.map((c) => (
-              <div key={c.id} className="comment">
-                <Avatar name={c.user_name} color={c.user_color} uid={c.user_id} size={30} />
-                <div className="grow">
-                  <div><b>{c.user_name}</b> <small className="muted">{timeAgo(c.created_at)}</small></div>
-                  {c.content && <div className="pre comment-text"><MentionText text={c.content} /></div>}
-                  <CommentFiles base={`/tasks/${id}`} files={c.files} />
-                </div>
-              </div>
-            ))}
+            {comments?.map((c) => <CommentItem key={c.id} base={`/tasks/${id}`} c={c} onChanged={() => { reloadComments(); onChanged?.(); }} />)}
             {comments && !comments.length && <Empty icon={MessageSquare} title="Chưa có thảo luận" />}
           </div>
           <CommentBox base={`/tasks/${id}`} onSent={() => { reloadComments(); reloadActivity(); onChanged?.(); }}

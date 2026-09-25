@@ -1941,3 +1941,14 @@ button.rpt-task:hover { background: var(--hover); }
 .cmt-files .attach-list { display: flex; flex-direction: row; flex-wrap: wrap; gap: 6px; }
 .cmt-files .attach-list .file-chip { width: auto; max-width: 100%; }
 @media (max-width: 800px) { .cmt-thumbs { grid-template-columns: repeat(auto-fill, minmax(76px, 96px)); } }
+
+/* Sửa / xoá bình luận */
+.cmt-head { display: flex; align-items: center; gap: 6px; min-width: 0; flex-wrap: wrap; }
+.cmt-head .cmt-edited { font-style: italic; }
+.cmt-head .cmt-more { margin-left: auto; opacity: 0; transition: opacity 0.15s; }
+.comment:hover .cmt-head .cmt-more, .cmt-head .cmt-more:focus-within, .cmt-head .cmt-more .active { opacity: 1; }
+@media (hover: none) { .cmt-head .cmt-more { opacity: 1; } }
+.comment.is-editing .cmt-box { margin-top: 6px; }
+.cmt-box.editing { flex-wrap: wrap; }
+.cmt-edit-actions { display: flex; gap: 6px; margin-left: auto; }
+@media (max-width: 800px) { .cmt-box.editing .cmt-edit-actions { width: 100%; justify-content: flex-end; } }

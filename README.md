@@ -89,6 +89,10 @@ Webapp nội bộ gồm 2 phân hệ, giao diện và chức năng mô phỏng *
 - Bình luận công việc (Wework), thảo luận đề xuất (Request) và thảo luận văn bản (Office) đều có nút **đính kèm ảnh / video** và **đính kèm tệp** (Word, Excel, PDF…); có thể **dán ảnh chụp màn hình (Ctrl+V)** hoặc **kéo thả** tệp vào ô bình luận. Xem trước và bỏ bớt trước khi gửi; được gửi chỉ ảnh / tệp mà không cần chữ (tối đa 10 tệp, mỗi tệp 50MB).
 - Ảnh / video hiện dạng hình thu nhỏ, tệp khác dạng thẻ; bấm để **xem ngay** bằng trình xem tích hợp (ảnh, video, PDF, Word, Excel…). Quyền xem tệp theo quyền xem công việc / đề xuất / văn bản; xoá bình luận hoặc xoá bản ghi thì tệp cũng được xoá.
 
+### Sửa, xoá bình luận
+- Nút **⋯** trên mỗi bình luận (Wework, Request, Office): **Sửa** — chỉ người viết; sửa nội dung, bỏ ảnh / tệp cũ, thêm ảnh / tệp mới (Esc để huỷ). Bình luận đã sửa hiện nhãn **"đã sửa"** (di chuột để xem thời điểm); người mới được @nhắc tên khi sửa cũng nhận thông báo.
+- **Xoá** — người viết hoặc Quản trị cấp cao / Chủ doanh nghiệp (có xác nhận); ảnh, tệp đính kèm của bình luận bị xoá theo.
+
 ### Bảo mật
 - **Bảo mật hai lớp (2FA)** theo chuẩn TOTP — quét mã QR bằng Google / Microsoft Authenticator; quản trị viên có thể đặt lại 2FA cho thành viên.
 - **Giới hạn truy cập theo dải IP** (IPv4, CIDR) — quản trị viên luôn được truy cập để tránh bị khoá ngoài.

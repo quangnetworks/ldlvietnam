@@ -2,7 +2,7 @@ import { Hono } from 'hono';
 import { all, get, run, batch, logActivity, notify, getSetting, setSetting, markSeen, findMentions } from '../db.js';
 import { requireAdmin, userDeptIds, inDeptSql } from '../auth.js';
 import { publicFileLink } from '../files.js';
-import { readComment, saveCommentFiles, withCommentFiles, commentFileOr404, commentSnippet, purgeCommentFiles } from '../comments.js';
+import { readComment, saveCommentFiles, withCommentFiles, commentFileOr404, commentSnippet, purgeCommentFiles, editComment, deleteComment } from '../comments.js';
 import { audit } from '../platform.js';
 import {
   badRequest, notFound, forbidden, toInt, idList, paginate, today, jsonBody, formBody, storeFiles, removeFile, sendFile,
@@ -969,13 +969,14 @@ r.post('/tasks/:id/comments', async (c) => {
   await run("UPDATE tasks SET updated_at = datetime('now') WHERE id = ?", t.id);
   return c.json(await withCommentFiles('task', t.id, await get(`${TASK_COMMENT_SELECT} WHERE c.id = ?`, lastId)), 201);
 });
+r.put('/tasks/:id/comments/:cid', async (c) => {
+  const t = await viewableTask(c);
+  const cid = await editComment(c, 'task', t.id, c.req.param('cid'), c.get('user'));
+  return c.json(await withCommentFiles('task', t.id, await get(`${TASK_COMMENT_SELECT} WHERE c.id = ?`, cid)));
+});
 r.delete('/tasks/:id/comments/:cid', async (c) => {
-  const user = c.get('user');
-  const cm = await get('SELECT * FROM task_comments WHERE id = ? AND task_id = ?', toInt(c.req.param('cid')), toInt(c.req.param('id')));
-  if (!cm) throw notFound();
-  if (cm.user_id !== user.id && !isAdmin(user)) throw forbidden();
-  await run('DELETE FROM task_comments WHERE id = ?', cm.id);
-  await purgeCommentFiles('task', { commentId: cm.id });
+  const t = await viewableTask(c);
+  await deleteComment('task', t.id, c.req.param('cid'), c.get('user'));
   return c.json({ ok: true });
 });
 r.get('/tasks/:id/comment-files/:fid', async (c) => {

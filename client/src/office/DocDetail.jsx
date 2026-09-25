@@ -8,10 +8,9 @@ import FileViewer, { InlinePreview } from '../components/FileViewer.jsx';
 import { api } from '../api.js';
 import { useFetch, useToast } from '../context.jsx';
 import { Avatar, Spinner, SafeHtml, FileChip, Modal, Field, Tabs, Empty } from '../components/ui.jsx';
-import { DOC_KINDS, fmtDate, fmtDateTime, timeAgo, cx } from '../utils.js';
+import { DOC_KINDS, fmtDate, fmtDateTime, cx } from '../utils.js';
 import { StatusBadge } from './DocList.jsx';
-import { MentionText } from '../components/Mention.jsx';
-import CommentBox, { CommentFiles } from '../components/CommentBox.jsx';
+import CommentBox, { CommentItem } from '../components/CommentBox.jsx';
 
 function ApproveModal({ decision, onClose, onSubmit }) {
   const [comment, setComment] = useState('');
@@ -182,16 +181,7 @@ export default function DocDetail() {
             {tab === 'comments' && (
               <div>
                 <div className="comments">
-                  {comments?.map((c) => (
-                    <div key={c.id} className="comment">
-                      <Avatar name={c.user_name} color={c.user_color} size={32} />
-                      <div className="grow">
-                        <div><b>{c.user_name}</b> <small className="muted">{timeAgo(c.created_at)}</small></div>
-                        {c.content && <div className="pre"><MentionText text={c.content} /></div>}
-                        <CommentFiles base={`/documents/${id}`} files={c.files} />
-                      </div>
-                    </div>
-                  ))}
+                  {comments?.map((c) => <CommentItem key={c.id} base={`/documents/${id}`} c={c} size={32} onChanged={reloadComments} />)}
                   {comments && !comments.length && <Empty icon={MessageSquare} title="Chưa có thảo luận" />}
                 </div>
                 <CommentBox base={`/documents/${id}`} onSent={reloadComments} />

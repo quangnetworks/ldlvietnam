@@ -6,7 +6,7 @@ import {
   badRequest, notFound, forbidden, toInt, idList, paginate, today, jsonBody, formBody, storeFiles, removeFile, sendFile,
 } from '../util.js';
 import { publicFileLink } from '../files.js';
-import { readComment, saveCommentFiles, withCommentFiles, commentFileOr404, commentSnippet, purgeCommentFiles } from '../comments.js';
+import { readComment, saveCommentFiles, withCommentFiles, commentFileOr404, commentSnippet, purgeCommentFiles, editComment, deleteComment } from '../comments.js';
 
 const r = new Hono();
 
@@ -483,6 +483,16 @@ r.post('/documents/:id/comments', async (c) => {
     title: `${user.name} đã bình luận văn bản "${d.title}"`, link: `/office/doc/${id}`,
   });
   return c.json(await withCommentFiles('document', id, await get(`${COMMENT_SELECT} WHERE c.id = ?`, lastId)), 201);
+});
+r.put('/documents/:id/comments/:cid', async (c) => {
+  const id = await requireViewable(c);
+  const cid = await editComment(c, 'document', id, c.req.param('cid'), c.get('user'));
+  return c.json(await withCommentFiles('document', id, await get(`${COMMENT_SELECT} WHERE c.id = ?`, cid)));
+});
+r.delete('/documents/:id/comments/:cid', async (c) => {
+  const id = await requireViewable(c);
+  await deleteComment('document', id, c.req.param('cid'), c.get('user'));
+  return c.json({ ok: true });
 });
 r.get('/documents/:id/comment-files/:fid', async (c) => {
   const id = await requireViewable(c);

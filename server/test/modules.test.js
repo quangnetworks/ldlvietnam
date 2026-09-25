@@ -867,3 +867,53 @@ test('comments accept image / file attachments in tasks, requests and documents'
   assert.equal((await admin.del(`/tasks/${task.id}/comments/${c.id}`)).status, 200);
   assert.equal((await admin.get(`/tasks/${task.id}/comment-files/${c.files[0].id}`)).status, 404);
 });
+
+test('comments can be edited by their author and deleted by the author or an admin', async () => {
+  const admin = await login('admin');
+  const demo = await login('demo');
+  const head = await login('truongkd');
+  const task = (await demo.get('/tasks?limit=1')).data.items[0];
+  const reqs = (await demo.get('/requests?limit=1')).data;
+  const docs = (await demo.get('/documents?limit=1')).data;
+  const targets = [['tasks', task?.id], ['requests', (reqs.items || reqs)[0]?.id], ['documents', (docs.items || docs)[0]?.id]].filter(([, id]) => id);
+  assert.ok(targets.length >= 2);
+  for (const [base, id] of targets) {
+    const fd = new FormData();
+    fd.append('content', 'Bản nháp');
+    fd.append('files', new File(['a'], 'a.txt', { type: 'text/plain' }));
+    fd.append('files', new File(['b'], 'b.txt', { type: 'text/plain' }));
+    const cm = (await demo.post(`/${base}/${id}/comments`, fd)).data;
+    // người khác (kể cả quản trị viên) không sửa được nội dung của người viết
+    assert.equal((await admin.put(`/${base}/${id}/comments/${cm.id}`, { content: 'x' })).status, 403);
+    // sửa: đổi nội dung + @nhắc tên mới, bỏ 1 tệp, thêm 1 tệp
+    const ed = new FormData();
+    ed.append('content', 'Đã chỉnh sửa @thuhuyen');
+    ed.append('remove_files', String(cm.files[0].id));
+    ed.append('files', new File(['c'], 'c.txt', { type: 'text/plain' }));
+    const r = await demo.put(`/${base}/${id}/comments/${cm.id}`, ed);
+    assert.equal(r.status, 200, JSON.stringify(r.data));
+    assert.equal(r.data.content, 'Đã chỉnh sửa @thuhuyen');
+    assert.ok(r.data.updated_at);
+    assert.deepEqual(r.data.files.map((f) => f.original_name), ['b.txt', 'c.txt']);
+    assert.equal((await demo.get(`/${base}/${id}/comment-files/${cm.files[0].id}`)).status, 404);
+    // không được sửa thành bình luận rỗng
+    assert.equal((await demo.put(`/${base}/${id}/comments/${cm.id}`, toForm({ content: '', remove_files: r.data.files.map((f) => f.id).join(',') }))).status, 400);
+    // trưởng phòng không phải người viết → không xoá được; quản trị viên xoá được
+    const other = (await demo.post(`/${base}/${id}/comments`, { content: 'Xoá thử' })).data;
+    if (base === 'tasks') assert.equal((await head.del(`/${base}/${id}/comments/${other.id}`)).status, 403);
+    assert.equal((await admin.del(`/${base}/${id}/comments/${other.id}`)).status, 200);
+    assert.equal((await demo.del(`/${base}/${id}/comments/${cm.id}`)).status, 200);
+    const left = (await demo.get(`/${base}/${id}/comments`)).data.map((x) => x.id);
+    assert.ok(!left.includes(cm.id) && !left.includes(other.id));
+    assert.equal((await demo.get(`/${base}/${id}/comment-files/${r.data.files[0].id}`)).status, 404);
+  }
+  const kt = await login('thuhuyen');
+  const n = (await kt.get('/notifications?limit=20')).data.items.filter((x) => x.type === 'mention' && x.title.includes('LDL Demo'));
+  assert.ok(n.length >= targets.length);
+});
+
+function toForm(obj) {
+  const fd = new FormData();
+  for (const [k, v] of Object.entries(obj)) fd.append(k, v);
+  return fd;
+}

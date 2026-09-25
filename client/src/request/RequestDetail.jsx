@@ -4,14 +4,13 @@ import { ArrowLeft, Star, Eye, Pencil, Send, Ban, Trash2, CheckCircle2, XCircle,
 import { api, toFormData } from '../api.js';
 import { useFetch, useToast } from '../context.jsx';
 import { Avatar, Spinner, FileChip, Modal, Field, Tabs, Empty } from '../components/ui.jsx';
-import { fmtDateTime, timeAgo, cx } from '../utils.js';
+import { fmtDateTime, cx } from '../utils.js';
 import { useRequestApp } from './RequestLayout.jsx';
 import { STATUS, fieldDisplay } from './fields.jsx';
 import { StatusSteps } from './RequestForm.jsx';
 import GroupGuide from './GroupGuide.jsx';
 import FileViewer, { InlinePreview } from '../components/FileViewer.jsx';
-import { MentionText } from '../components/Mention.jsx';
-import CommentBox, { CommentFiles } from '../components/CommentBox.jsx';
+import CommentBox, { CommentItem } from '../components/CommentBox.jsx';
 
 const DECIDE = {
   approve: { title: 'Chấp thuận đề xuất', btn: 'Chấp thuận', cls: 'btn-success', need: false },
@@ -105,10 +104,7 @@ export default function RequestDetail() {
             {tab === 'comments' ? (
               <>
                 <div className="comments">
-                  {comments?.map((c) => (
-                    <div key={c.id} className="comment"><Avatar name={c.user_name} color={c.user_color} size={30} />
-                      <div className="grow"><div><b>{c.user_name}</b> <small className="muted">{timeAgo(c.created_at)}</small></div>{c.content && <div className="pre"><MentionText text={c.content} /></div>}<CommentFiles base={`/requests/${id}`} files={c.files} /></div></div>
-                  ))}
+                  {comments?.map((c) => <CommentItem key={c.id} base={`/requests/${id}`} c={c} onChanged={reloadComments} />)}
                   {comments && !comments.length && <Empty icon={MessageSquare} title="Chưa có thảo luận" />}
                 </div>
                 <CommentBox base={`/requests/${id}`} onSent={reloadComments} />
