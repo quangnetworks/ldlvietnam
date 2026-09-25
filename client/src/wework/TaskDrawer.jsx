@@ -304,7 +304,7 @@ export function TaskDetail({ id, onClose, onChanged, standalone }) {
           </div>
           {viewing != null && (
             <FileViewer files={t.attachments} index={viewing} urlOf={(f) => api.url(`/tasks/${id}/attachments/${f.id}`)} onClose={() => setViewing(null)}
-              publicUrlOf={async (f) => (await api.post(`/tasks/${id}/attachments/${f.id}/link`)).url} />
+              publicUrlOf={async (f, share) => (await api.post(`/tasks/${id}/attachments/${f.id}/link${share ? '?share=1' : ''}`)).url} />
           )}
         </section>
 

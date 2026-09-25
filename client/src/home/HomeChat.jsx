@@ -144,7 +144,7 @@ export default function HomeChat() {
       </form>
       {viewing && (
         <FileViewer files={[viewing]} urlOf={(f) => api.url(`/chat/messages/${f.id}/file`)} onClose={() => setViewing(null)}
-          publicUrlOf={async (f) => (await api.post(`/chat/messages/${f.id}/file/link`)).url} />
+          publicUrlOf={async (f, share) => (await api.post(`/chat/messages/${f.id}/file/link${share ? '?share=1' : ''}`)).url} />
       )}
     </section>
   );

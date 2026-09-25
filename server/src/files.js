@@ -15,14 +15,21 @@ const SOURCES = {
   cf: 'comment_files',
 };
 
-/** Tạo liên kết tuyệt đối tới tệp (quyền xem phải được kiểm tra trước khi gọi). */
+const VIEW_TTL = 15 * 60;
+const SHARE_TTL = 7 * 24 * 3600;
+
+/**
+ * Tạo liên kết tuyệt đối tới tệp (quyền xem phải được kiểm tra trước khi gọi).
+ * ?share=1 → liên kết chia sẻ 7 ngày (gửi qua email, Zalo, Viber… cho người nhận tải được tệp); mặc định 15 phút cho trình xem trực tuyến.
+ */
 export async function publicFileLink(c, src, row) {
   if (!SOURCES[src]) throw new Error(`Nguồn tệp không hợp lệ: ${src}`);
-  const token = await signFileToken(c, { src, id: row.id });
+  const ttl = c.req.query('share') === '1' ? SHARE_TTL : VIEW_TTL;
+  const token = await signFileToken(c, { src, id: row.id }, ttl);
   const url = new URL(c.req.url);
   const proto = c.req.header('x-forwarded-proto')?.split(',')[0] || url.protocol.replace(':', '');
   const host = c.req.header('x-forwarded-host') || url.host;
-  return { url: `${proto}://${host}/api/public/files/${token}/${encodeURIComponent(row.original_name || 'tep')}`, expires_in: 900 };
+  return { url: `${proto}://${host}/api/public/files/${token}/${encodeURIComponent(row.original_name || 'tep')}`, expires_in: ttl };
 }
 
 /** GET /api/public/files/:token/:name — tệp theo liên kết tạm. */

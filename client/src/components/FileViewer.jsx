@@ -7,6 +7,7 @@ import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { X, Download, ChevronLeft, ChevronRight, ExternalLink, Loader2 } from 'lucide-react';
 import { fileIcon, fileSize, cx } from '../utils.js';
+import ShareFileButton from './ShareFile.jsx';
 
 const EXT = {
   image: ['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'svg', 'avif', 'ico'],
@@ -247,6 +248,7 @@ export default function FileViewer({ files, index = 0, urlOf, publicUrlOf, onClo
           <div className="grow fv-title"><b className="ellipsis block">{file.original_name}</b>
             <small className="muted">{fileSize(file.size)}{files.length > 1 && ` · ${i + 1}/${files.length}`}</small></div>
           <a className="icon-btn" href={`${url}${url.includes('?') ? '&' : '?'}inline=1`} target="_blank" rel="noreferrer" title="Mở trong tab mới"><ExternalLink size={18} /></a>
+          <ShareFileButton key={file.id ?? i} file={file} url={url} getShareLink={publicUrlOf ? () => publicUrlOf(file, true) : null} />
           <a className="icon-btn" href={url} title="Tải về"><Download size={18} /></a>
           <button className="icon-btn" onClick={onClose} aria-label="Đóng"><X size={20} /></button>
         </header>

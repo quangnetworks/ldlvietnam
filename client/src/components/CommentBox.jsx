@@ -14,6 +14,7 @@ import { Avatar, Dropdown, FileChip } from './ui.jsx';
 import { MentionTextarea } from './Mention.jsx';
 import FileViewer, { fileKind } from './FileViewer.jsx';
 import { cx, timeAgo, fmtDateTime } from '../utils.js';
+import ShareFileButton from './ShareFile.jsx';
 import { MentionText } from './Mention.jsx';
 
 const MAX_FILES = 10;
@@ -26,26 +27,31 @@ export function CommentFiles({ base, files }) {
   const media = files.filter((f) => ['image', 'video'].includes(fileKind(f)));
   const others = files.filter((f) => !media.includes(f));
   const order = [...media, ...others];
+  const shareLink = (f) => async () => (await api.post(`${base}/comment-files/${f.id}/link?share=1`)).url;
+  const share = (f, cls) => <ShareFileButton file={f} url={url(f)} getShareLink={shareLink(f)} size={13} className={cls} align="left" />;
   return (
     <div className="cmt-files">
       {media.length > 0 && (
         <div className="cmt-thumbs">
           {media.map((f) => (
-            <button key={f.id} type="button" className="res-thumb" onClick={() => setOpen(order.indexOf(f))} title={f.original_name}>
-              {fileKind(f) === 'image' ? <img src={`${url(f)}?inline=1`} alt={f.original_name} loading="lazy" />
-                : <><video src={`${url(f)}?inline=1#t=0.5`} preload="metadata" muted /><span className="res-play"><Play size={16} fill="currentColor" /></span></>}
-            </button>
+            <div key={f.id} className="thumb-wrap">
+              <button type="button" className="res-thumb" onClick={() => setOpen(order.indexOf(f))} title={f.original_name}>
+                {fileKind(f) === 'image' ? <img src={`${url(f)}?inline=1`} alt={f.original_name} loading="lazy" />
+                  : <><video src={`${url(f)}?inline=1#t=0.5`} preload="metadata" muted /><span className="res-play"><Play size={16} fill="currentColor" /></span></>}
+              </button>
+              {share(f, 'thumb-share')}
+            </div>
           ))}
         </div>
       )}
       {others.length > 0 && (
         <div className="attach-list">
-          {others.map((f) => <FileChip key={f.id} file={f} onOpen={() => setOpen(order.indexOf(f))} />)}
+          {others.map((f) => <FileChip key={f.id} file={f} onOpen={() => setOpen(order.indexOf(f))} extra={share(f, 'chip-share')} />)}
         </div>
       )}
       {open != null && (
         <FileViewer files={order} index={open} urlOf={url} onClose={() => setOpen(null)}
-          publicUrlOf={async (f) => (await api.post(`${base}/comment-files/${f.id}/link`)).url} />
+          publicUrlOf={async (f, share) => (await api.post(`${base}/comment-files/${f.id}/link${share ? '?share=1' : ''}`)).url} />
       )}
     </div>
   );

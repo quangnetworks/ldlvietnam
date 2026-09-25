@@ -236,6 +236,7 @@ textarea.input { height: auto; resize: vertical; }
   box-shadow: var(--shadow); border: 1px solid var(--line); padding: 4px 0; color: var(--text);
 }
 .dropdown-menu.right { left: auto; right: 0; }
+.dropdown-menu.up { top: auto; bottom: calc(100% + 4px); }
 .menu-scroll { max-height: 320px; overflow: auto; }
 .menu-item {
   display: flex; align-items: center; gap: 8px; width: 100%; padding: 8px 12px; text-align: left; font-size: 13px; color: var(--text);
@@ -1952,3 +1953,19 @@ button.rpt-task:hover { background: var(--hover); }
 .cmt-box.editing { flex-wrap: wrap; }
 .cmt-edit-actions { display: flex; gap: 6px; margin-left: auto; }
 @media (max-width: 800px) { .cmt-box.editing .cmt-edit-actions { width: 100%; justify-content: flex-end; } }
+
+/* Chia sẻ tệp (Zalo, Viber, email…) */
+.share-file .dropdown-menu { z-index: 1200; }
+.share-file .menu-item { display: flex; align-items: center; gap: 10px; text-align: left; }
+.share-file .menu-item small { font-size: 11.5px; line-height: 1.3; }
+.share-ic { display: inline-grid; place-items: center; width: 16px; height: 16px; border-radius: 4px; font-size: 10px; font-weight: 700; color: #fff; flex: none; }
+.share-ic.zalo { background: #0068ff; }
+.share-ic.viber { background: #7360f2; }
+.share-note { display: block; padding: 6px 10px 4px; font-size: 11px; line-height: 1.35; border-top: 1px solid var(--line); margin-top: 4px; }
+.thumb-wrap { position: relative; }
+.thumb-wrap .res-thumb { width: 100%; }
+.thumb-wrap > .thumb-share { position: absolute; top: 4px; left: 4px; }
+.thumb-wrap > .thumb-share > .icon-btn { width: 24px; height: 24px; min-width: 0; padding: 0; border-radius: 50%; background: rgba(0, 0, 0, 0.55); color: #fff; opacity: 0; transition: opacity 0.15s; }
+.thumb-wrap:hover > .thumb-share > .icon-btn, .thumb-wrap > .thumb-share > .icon-btn.active, .thumb-wrap > .thumb-share > .icon-btn:focus-visible { opacity: 1; }
+.chip-share > .icon-btn { width: 24px; height: 24px; min-width: 0; padding: 0; color: var(--muted); }
+@media (hover: none) { .thumb-wrap > .thumb-share > .icon-btn { opacity: 1; } }

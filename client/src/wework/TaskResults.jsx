@@ -4,6 +4,7 @@ import { api, toFormData } from '../api.js';
 import { useApp, useFetch, useToast } from '../context.jsx';
 import { Avatar, SafeHtml, RichEditor, FileChip, Empty } from '../components/ui.jsx';
 import FileViewer, { fileKind } from '../components/FileViewer.jsx';
+import ShareFileButton from '../components/ShareFile.jsx';
 import { fmtDateTime, timeAgo, fileSize, cx } from '../utils.js';
 
 const hostOf = (url) => { try { return new URL(url).hostname.replace(/^www\./, ''); } catch { return url; } };
@@ -86,6 +87,10 @@ function ResultFiles({ taskId, files, canEdit, onRemoved }) {
   const media = files.filter((f) => ['image', 'video'].includes(fileKind(f)));
   const others = files.filter((f) => !media.includes(f));
   const order = [...media, ...others];
+  const share = (f, cls) => (
+    <ShareFileButton file={f} url={url(f)} size={13} className={cls} align="left"
+      getShareLink={async () => (await api.post(`/tasks/${taskId}/attachments/${f.id}/link?share=1`)).url} />
+  );
   const remove = async (f) => {
     if (!window.confirm(`Xoá tệp "${f.original_name}"?`)) return;
     await api.del(`/tasks/${taskId}/attachments/${f.id}`);
@@ -96,22 +101,25 @@ function ResultFiles({ taskId, files, canEdit, onRemoved }) {
       {media.length > 0 && (
         <div className="res-thumbs">
           {media.map((f) => (
-            <button key={f.id} type="button" className="res-thumb" onClick={() => setOpen(order.indexOf(f))} title={f.original_name}>
-              {fileKind(f) === 'image' ? <img src={`${url(f)}?inline=1`} alt={f.original_name} loading="lazy" />
-                : <><video src={`${url(f)}?inline=1#t=0.5`} preload="metadata" muted /><span className="res-play"><Play size={18} fill="currentColor" /></span></>}
-              {canEdit && <span className="res-thumb-x" role="button" tabIndex={0} aria-label="Xoá tệp" onClick={(e) => { e.stopPropagation(); remove(f); }}><X size={12} /></span>}
-            </button>
+            <div key={f.id} className="thumb-wrap">
+              <button type="button" className="res-thumb" onClick={() => setOpen(order.indexOf(f))} title={f.original_name}>
+                {fileKind(f) === 'image' ? <img src={`${url(f)}?inline=1`} alt={f.original_name} loading="lazy" />
+                  : <><video src={`${url(f)}?inline=1#t=0.5`} preload="metadata" muted /><span className="res-play"><Play size={18} fill="currentColor" /></span></>}
+                {canEdit && <span className="res-thumb-x" role="button" tabIndex={0} aria-label="Xoá tệp" onClick={(e) => { e.stopPropagation(); remove(f); }}><X size={12} /></span>}
+              </button>
+              {share(f, 'thumb-share')}
+            </div>
           ))}
         </div>
       )}
       {others.length > 0 && (
         <div className="attach-list">
-          {others.map((f) => <FileChip key={f.id} file={f} onOpen={() => setOpen(order.indexOf(f))} onRemove={canEdit ? () => remove(f) : undefined} />)}
+          {others.map((f) => <FileChip key={f.id} file={f} onOpen={() => setOpen(order.indexOf(f))} onRemove={canEdit ? () => remove(f) : undefined} extra={share(f, 'chip-share')} />)}
         </div>
       )}
       {open != null && (
         <FileViewer files={order} index={open} urlOf={url} onClose={() => setOpen(null)}
-          publicUrlOf={async (f) => (await api.post(`/tasks/${taskId}/attachments/${f.id}/link`)).url} />
+          publicUrlOf={async (f, share) => (await api.post(`/tasks/${taskId}/attachments/${f.id}/link${share ? '?share=1' : ''}`)).url} />
       )}
     </>
   );

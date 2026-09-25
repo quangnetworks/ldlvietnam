@@ -37,7 +37,7 @@ export default function GroupGuide({ groupId, guide, files = [], title = 'Biểu
       })}
       {open != null && (
         <FileViewer files={files} index={open} urlOf={url} onClose={() => setOpen(null)}
-          publicUrlOf={async (f) => (await api.post(`/request-groups/${groupId}/files/${f.id}/link`)).url} />
+          publicUrlOf={async (f, share) => (await api.post(`/request-groups/${groupId}/files/${f.id}/link${share ? '?share=1' : ''}`)).url} />
       )}
     </section>
   );

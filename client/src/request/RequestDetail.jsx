@@ -87,11 +87,11 @@ export default function RequestDetail() {
             {q.content && <><h3 className="card-title">Nội dung</h3><div className="pre">{q.content}</div></>}
             <InlinePreview files={q.attachments} title="Xem trước tệp đính kèm" height={560}
               urlOf={(f) => api.url(`/requests/${id}/attachments/${f.id}`)}
-              publicUrlOf={async (f) => (await api.post(`/requests/${id}/attachments/${f.id}/link`)).url} />
+              publicUrlOf={async (f, share) => (await api.post(`/requests/${id}/attachments/${f.id}/link${share ? '?share=1' : ''}`)).url} />
             <h3 className="card-title">Tệp đính kèm ({q.attachments.length})</h3>
             {viewing != null && (
               <FileViewer files={q.attachments} index={viewing} urlOf={(f) => api.url(`/requests/${id}/attachments/${f.id}`)} onClose={() => setViewing(null)}
-                publicUrlOf={async (f) => (await api.post(`/requests/${id}/attachments/${f.id}/link`)).url} />
+                publicUrlOf={async (f, share) => (await api.post(`/requests/${id}/attachments/${f.id}/link${share ? '?share=1' : ''}`)).url} />
             )}
             <div className="attach-list">
               {q.attachments.map((a, i) => <FileChip key={a.id} file={a} onOpen={() => setViewing(i)} />)}

@@ -281,7 +281,7 @@ export function GroupEditor() {
             {pending.length > 0 && <small className="muted">{pending.length} tệp sẽ được tải lên khi bấm “Lưu nhóm đề xuất”.</small>}
             {viewing != null && (
               <FileViewer files={g.files} index={viewing} urlOf={(f) => api.url(`/request-groups/${g.id}/files/${f.id}`)} onClose={() => setViewing(null)}
-                publicUrlOf={async (f) => (await api.post(`/request-groups/${g.id}/files/${f.id}/link`)).url} />
+                publicUrlOf={async (f, share) => (await api.post(`/request-groups/${g.id}/files/${f.id}/link${share ? '?share=1' : ''}`)).url} />
             )}
           </div>
           <div className="card">

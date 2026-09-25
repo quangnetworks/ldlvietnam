@@ -152,7 +152,7 @@ export default function DocDetail() {
             {doc.content ? <SafeHtml html={doc.content} /> : !doc.attachments.length && <p className="muted">Văn bản không có nội dung soạn thảo.</p>}
             <InlinePreview files={doc.attachments} title="Xem trước tệp" height={doc.content ? 560 : 760}
               urlOf={(f) => api.url(`/documents/${id}/attachments/${f.id}`)}
-              publicUrlOf={async (f) => (await api.post(`/documents/${id}/attachments/${f.id}/link`)).url} />
+              publicUrlOf={async (f, share) => (await api.post(`/documents/${id}/attachments/${f.id}/link${share ? '?share=1' : ''}`)).url} />
             {doc.attachments.length > 0 && (
               <>
                 <h3 className="card-title">Tệp đính kèm ({doc.attachments.length})</h3>
@@ -168,7 +168,7 @@ export default function DocDetail() {
             )}
             {viewing != null && (
               <FileViewer files={doc.attachments} index={viewing} urlOf={(f) => api.url(`/documents/${id}/attachments/${f.id}`)} onClose={() => setViewing(null)}
-                publicUrlOf={async (f) => (await api.post(`/documents/${id}/attachments/${f.id}/link`)).url} />
+                publicUrlOf={async (f, share) => (await api.post(`/documents/${id}/attachments/${f.id}/link${share ? '?share=1' : ''}`)).url} />
             )}
           </div>
 

@@ -347,7 +347,7 @@ function Conversation({ channelId, onActivity }) {
       {showMembers && <ChannelMembers channel={channel} onClose={() => setShowMembers(false)} onSaved={loadChannel} />}
       {viewing != null && viewing >= 0 && (
         <FileViewer files={fileMsgs.map((m) => ({ ...m, id: m.id }))} index={viewing} urlOf={(f) => api.url(`/chat/messages/${f.id}/file`)} onClose={() => setViewing(null)}
-          publicUrlOf={async (f) => (await api.post(`/chat/messages/${f.id}/file/link`)).url} />
+          publicUrlOf={async (f, share) => (await api.post(`/chat/messages/${f.id}/file/link${share ? '?share=1' : ''}`)).url} />
       )}
     </div>
   );

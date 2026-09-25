@@ -89,6 +89,11 @@ Webapp nội bộ gồm 2 phân hệ, giao diện và chức năng mô phỏng *
 - Bình luận công việc (Wework), thảo luận đề xuất (Request) và thảo luận văn bản (Office) đều có nút **đính kèm ảnh / video** và **đính kèm tệp** (Word, Excel, PDF…); có thể **dán ảnh chụp màn hình (Ctrl+V)** hoặc **kéo thả** tệp vào ô bình luận. Xem trước và bỏ bớt trước khi gửi; được gửi chỉ ảnh / tệp mà không cần chữ (tối đa 10 tệp, mỗi tệp 50MB).
 - Ảnh / video hiện dạng hình thu nhỏ, tệp khác dạng thẻ; bấm để **xem ngay** bằng trình xem tích hợp (ảnh, video, PDF, Word, Excel…). Quyền xem tệp theo quyền xem công việc / đề xuất / văn bản; xoá bình luận hoặc xoá bản ghi thì tệp cũng được xoá.
 
+### Chia sẻ tệp sang Zalo, Viber, email…
+- Nút **Chia sẻ** (biểu tượng ⤴) trên từng ảnh / tệp trong bình luận và kết quả công việc, và trên thanh trình xem tệp (mọi tệp đính kèm của công việc, đề xuất, văn bản, tin nhắn).
+- **Chia sẻ qua ứng dụng**: gửi chính tệp qua bảng chia sẻ của thiết bị → Zalo, Viber, Messenger, Telegram, Mail, AirDrop… (iPhone, Android; Edge / Chrome trên Windows, macOS).
+- **Gửi qua Zalo / Viber / Telegram / email**, **Sao chép liên kết tải**: gửi liên kết tải tệp có hạn **7 ngày** (người nhận không cần tài khoản LDL; liên kết chỉ tạo được bởi người đang có quyền xem tệp). Zalo: liên kết được sao chép sẵn và mở Zalo Web để dán gửi.
+
 ### Sửa, xoá bình luận
 - Nút **⋯** trên mỗi bình luận (Wework, Request, Office): **Sửa** — chỉ người viết; sửa nội dung, bỏ ảnh / tệp cũ, thêm ảnh / tệp mới (Esc để huỷ). Bình luận đã sửa hiện nhãn **"đã sửa"** (di chuột để xem thời điểm); người mới được @nhắc tên khi sửa cũng nhận thông báo.
 - **Xoá** — người viết hoặc Quản trị cấp cao / Chủ doanh nghiệp (có xác nhận); ảnh, tệp đính kèm của bình luận bị xoá theo.

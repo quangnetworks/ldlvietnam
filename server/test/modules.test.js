@@ -917,3 +917,18 @@ function toForm(obj) {
   for (const [k, v] of Object.entries(obj)) fd.append(k, v);
   return fd;
 }
+
+test('share links for comment files last 7 days and download without a session', async () => {
+  const admin = await login('admin');
+  const task = (await admin.get('/tasks?limit=1')).data.items[0];
+  const fd = new FormData();
+  fd.append('files', new File(['noi dung chia se'], 'bao-cao.txt', { type: 'text/plain' }));
+  const cm = (await admin.post(`/tasks/${task.id}/comments`, fd)).data;
+  const view = (await admin.post(`/tasks/${task.id}/comment-files/${cm.files[0].id}/link`)).data;
+  assert.equal(view.expires_in, 900);
+  const share = (await admin.post(`/tasks/${task.id}/comment-files/${cm.files[0].id}/link?share=1`)).data;
+  assert.equal(share.expires_in, 7 * 24 * 3600);
+  const r = await app.fetch(new Request(share.url.replace(/^https?:\/\/[^/]+\/api/, base)));
+  assert.equal(r.status, 200);
+  assert.equal(await r.text(), 'noi dung chia se');
+});
