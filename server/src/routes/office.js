@@ -6,7 +6,7 @@ import {
   badRequest, notFound, forbidden, toInt, idList, paginate, today, jsonBody, formBody, storeFiles, removeFile, sendFile,
 } from '../util.js';
 import { publicFileLink } from '../files.js';
-import { readComment, saveCommentFiles, withCommentFiles, commentFileOr404, commentSnippet, purgeCommentFiles, editComment, deleteComment } from '../comments.js';
+import { readComment, saveCommentFiles, withCommentFiles, commentFileOr404, commentSnippet, purgeCommentFiles, editComment, deleteComment, notifyReply } from '../comments.js';
 
 const r = new Hono();
 
@@ -468,17 +468,19 @@ r.post('/documents/:id/comments', async (c) => {
   const id = await requireViewable(c);
   const user = c.get('user');
   const d = await loadDocOr404(id);
-  const { content, files } = await readComment(c);
-  const { lastId } = await run('INSERT INTO document_comments(document_id, user_id, content) VALUES (?,?,?)', id, user.id, content);
+  const { content, files, parent, parentId } = await readComment(c, 'document', id);
+  const { lastId } = await run('INSERT INTO document_comments(document_id, user_id, content, parent_id) VALUES (?,?,?,?)', id, user.id, content, parentId);
   await saveCommentFiles('document', id, lastId, user.id, files);
   const watchers = (await all('SELECT user_id FROM document_follows WHERE document_id = ?', id)).map((x) => x.user_id);
   // @nhắc tên: người được nhắc theo dõi văn bản (được xem để trao đổi) và nhận thông báo riêng
   const mentioned = await findMentions(content, user.id);
   await batch(mentioned.map((uid) => ['INSERT OR IGNORE INTO document_follows(document_id, user_id) VALUES (?,?)', [id, uid]]));
   const snippet = commentSnippet(content, files);
-  await notify(mentioned, { actorId: user.id, app: APP, type: 'mention',
+  // người được trả lời nhận thông báo "đã trả lời bình luận của bạn" (thay cho thông báo nhắc tên)
+  const replied = await notifyReply('document', id, user, parent, snippet);
+  await notify(mentioned.filter((x) => !replied.includes(x)), { actorId: user.id, app: APP, type: 'mention',
     title: `${user.name} đã nhắc đến bạn trong văn bản "${d.title}": ${snippet}`, link: `/office/doc/${id}` });
-  await notify([d.creator_id, ...watchers].filter((x) => !mentioned.includes(x)), {
+  await notify([d.creator_id, ...watchers].filter((x) => !mentioned.includes(x) && !replied.includes(x)), {
     actorId: user.id, app: APP, type: 'comment',
     title: `${user.name} đã bình luận văn bản "${d.title}"`, link: `/office/doc/${id}`,
   });

@@ -6,13 +6,13 @@ import {
 } from 'lucide-react';
 import { api, toFormData } from '../api.js';
 import { useApp, useFetch, useToast } from '../context.jsx';
-import { Drawer, Spinner, Avatar, UserPicker, SafeHtml, RichEditor, FileChip, Progress, Empty } from '../components/ui.jsx';
+import { Drawer, Spinner, Avatar, UserPicker, SafeHtml, RichEditor, FileChip, Progress } from '../components/ui.jsx';
 import { TASK_STATUS, RECURRING, fmtDateTime, timeAgo, cx } from '../utils.js';
 import { useWework } from './WeworkLayout.jsx';
 import { StatusCircle, TaskTags, useAssignable, createTaskList } from './taskParts.jsx';
 import TaskResults from './TaskResults.jsx';
 import FileViewer from '../components/FileViewer.jsx';
-import CommentBox, { CommentItem } from '../components/CommentBox.jsx';
+import CommentBox, { CommentList } from '../components/CommentBox.jsx';
 
 export function TaskDetail({ id, onClose, onChanged, standalone }) {
   const { users } = useApp();
@@ -310,10 +310,7 @@ export function TaskDetail({ id, onClose, onChanged, standalone }) {
 
         <section className="td-section">
           <div className="td-section-head"><b><MessageSquare size={15} /> Thảo luận ({comments?.length || 0})</b></div>
-          <div className="comments">
-            {comments?.map((c) => <CommentItem key={c.id} base={`/tasks/${id}`} c={c} onChanged={() => { reloadComments(); onChanged?.(); }} />)}
-            {comments && !comments.length && <Empty icon={MessageSquare} title="Chưa có thảo luận" />}
-          </div>
+          <CommentList base={`/tasks/${id}`} comments={comments} onChanged={() => { reloadComments(); onChanged?.(); }} />
           <CommentBox base={`/tasks/${id}`} onSent={() => { reloadComments(); reloadActivity(); onChanged?.(); }}
             placeholder="Viết bình luận… gõ @ để nhắc tên · Ctrl+Enter để gửi" />
         </section>

@@ -89,6 +89,10 @@ Webapp nội bộ gồm 2 phân hệ, giao diện và chức năng mô phỏng *
 - Bình luận công việc (Wework), thảo luận đề xuất (Request) và thảo luận văn bản (Office) đều có nút **đính kèm ảnh / video** và **đính kèm tệp** (Word, Excel, PDF…); có thể **dán ảnh chụp màn hình (Ctrl+V)** hoặc **kéo thả** tệp vào ô bình luận. Xem trước và bỏ bớt trước khi gửi; được gửi chỉ ảnh / tệp mà không cần chữ (tối đa 10 tệp, mỗi tệp 50MB).
 - Ảnh / video hiện dạng hình thu nhỏ, tệp khác dạng thẻ; bấm để **xem ngay** bằng trình xem tích hợp (ảnh, video, PDF, Word, Excel…). Quyền xem tệp theo quyền xem công việc / đề xuất / văn bản; xoá bình luận hoặc xoá bản ghi thì tệp cũng được xoá.
 
+### Trả lời bình luận
+- Nút **Trả lời** dưới mỗi bình luận (Wework, Request, Office): trả lời hiện thụt vào ngay dưới bình luận gốc (một cấp — trả lời một trả lời vẫn nằm trong luồng đó, tự điền sẵn **@tên** người được trả lời). Trả lời cũng đính kèm được ảnh / tệp, sửa / xoá như bình luận thường.
+- Người được trả lời (và người viết bình luận gốc) nhận thông báo **"… đã trả lời bình luận của bạn"** kèm thông báo đẩy. Luồng có nhiều trả lời có nút **Ẩn / Xem trả lời**. Xoá bình luận gốc thì các trả lời (và tệp của chúng) cũng bị xoá.
+
 ### Chia sẻ tệp sang Zalo, Viber, email…
 - Nút **Chia sẻ** (biểu tượng ⤴) trên từng ảnh / tệp trong bình luận và kết quả công việc, và trên thanh trình xem tệp (mọi tệp đính kèm của công việc, đề xuất, văn bản, tin nhắn).
 - **Chia sẻ qua ứng dụng**: gửi chính tệp qua bảng chia sẻ của thiết bị → Zalo, Viber, Messenger, Telegram, Mail, AirDrop… (iPhone, Android; Edge / Chrome trên Windows, macOS).

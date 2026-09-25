@@ -7,13 +7,42 @@ import { badRequest, forbidden, formBody, idList, notFound, removeFile, storeFil
 
 export const MAX_COMMENT_FILES = 10;
 
-/** Đọc nội dung + tệp của bình luận mới; lỗi nếu cả hai đều trống. */
-export async function readComment(c, maxLen = 5000) {
+/**
+ * Đọc nội dung + tệp của bình luận mới; lỗi nếu cả hai đều trống.
+ * Trả lời bình luận: parent_id → luôn gắn vào bình luận gốc (một cấp); parent = bình luận được trả lời.
+ */
+export async function readComment(c, entity, entityId, maxLen = 5000) {
   const { fields, files } = await formBody(c);
   const content = String(fields.content || '').trim().slice(0, maxLen);
   if (files.length > MAX_COMMENT_FILES) throw badRequest(`Tối đa ${MAX_COMMENT_FILES} tệp mỗi bình luận`);
   if (!content && !files.length) throw badRequest('Nội dung bình luận trống');
-  return { content, files };
+  let parent = null;
+  let parentId = null;
+  if (toInt(fields.parent_id)) {
+    parent = await commentOr404(entity, entityId, fields.parent_id);
+    parentId = parent.parent_id || parent.id;
+  }
+  return { content, files, parent, parentId };
+}
+
+/**
+ * Thông báo cho người được trả lời (người viết bình luận được trả lời và bình luận gốc).
+ * Trả về danh sách đã thông báo để không gửi trùng thông báo nhắc tên / "bình luận" chung.
+ */
+export async function notifyReply(entity, entityId, user, parent, snippet) {
+  if (!parent) return [];
+  const k = KINDS[entity];
+  const ids = [parent.user_id];
+  if (parent.parent_id) {
+    const root = await get(`SELECT user_id FROM ${k.table} WHERE id = ?`, parent.parent_id);
+    if (root) ids.push(root.user_id);
+  }
+  const to = [...new Set(ids)].filter((id) => id && id !== user.id);
+  if (!to.length) return [];
+  const p = await get(`SELECT title FROM ${k.parent} WHERE id = ?`, entityId);
+  await notify(to, { actorId: user.id, app: k.app, type: 'comment',
+    title: `${user.name} đã trả lời bình luận của bạn trong ${k.noun}"${p?.title || ''}": ${snippet}`, link: k.link(entityId) });
+  return to;
 }
 
 /** Lưu tệp của một bình luận. */
@@ -114,7 +143,9 @@ export async function deleteComment(entity, entityId, cid, user) {
   const k = KINDS[entity];
   const cm = await commentOr404(entity, entityId, cid);
   if (cm.user_id !== user.id && user.role !== 'admin') throw forbidden('Chỉ người viết hoặc quản trị viên mới được xoá bình luận');
-  await run(`DELETE FROM ${k.table} WHERE id = ?`, cm.id);
-  await purgeCommentFiles(entity, { commentId: cm.id });
+  // xoá bình luận gốc → xoá luôn các trả lời của nó
+  const replies = await all(`SELECT id FROM ${k.table} WHERE parent_id = ?`, cm.id);
+  await run(`DELETE FROM ${k.table} WHERE id = ? OR parent_id = ?`, cm.id, cm.id);
+  for (const r of [cm, ...replies]) await purgeCommentFiles(entity, { commentId: r.id });
   return cm;
 }

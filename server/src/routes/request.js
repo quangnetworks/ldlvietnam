@@ -6,7 +6,7 @@ import {
 } from '../util.js';
 import { fireRequestEvent } from './webhooks.js';
 import { publicFileLink } from '../files.js';
-import { readComment, saveCommentFiles, withCommentFiles, commentFileOr404, commentSnippet, purgeCommentFiles, editComment, deleteComment } from '../comments.js';
+import { readComment, saveCommentFiles, withCommentFiles, commentFileOr404, commentSnippet, purgeCommentFiles, editComment, deleteComment, notifyReply } from '../comments.js';
 
 const r = new Hono();
 const APP = 'request';
@@ -469,8 +469,8 @@ r.get('/requests/:id/comments', async (c) => {
 r.post('/requests/:id/comments', async (c) => {
   const user = c.get('user');
   const q = await viewable(c);
-  const { content, files } = await readComment(c);
-  const { lastId } = await run('INSERT INTO request_comments(request_id, user_id, content) VALUES (?,?,?)', q.id, user.id, content);
+  const { content, files, parent, parentId } = await readComment(c, 'request', q.id);
+  const { lastId } = await run('INSERT INTO request_comments(request_id, user_id, content, parent_id) VALUES (?,?,?,?)', q.id, user.id, content, parentId);
   await saveCommentFiles('request', q.id, lastId, user.id, files);
   const approvers = (await all('SELECT user_id FROM request_approvers WHERE request_id = ?', q.id)).map((x) => x.user_id);
   const watchers = (await all('SELECT user_id FROM request_followers WHERE request_id = ?', q.id)).map((x) => x.user_id);
@@ -478,9 +478,11 @@ r.post('/requests/:id/comments', async (c) => {
   const mentioned = await findMentions(content, user.id);
   await batch(mentioned.map((uid) => ['INSERT OR IGNORE INTO request_followers(request_id, user_id) VALUES (?,?)', [q.id, uid]]));
   const snippet = commentSnippet(content, files);
-  await notify(mentioned, { actorId: user.id, app: APP, type: 'mention',
+  // người được trả lời nhận thông báo "đã trả lời bình luận của bạn" (thay cho thông báo nhắc tên)
+  const replied = await notifyReply('request', q.id, user, parent, snippet);
+  await notify(mentioned.filter((x) => !replied.includes(x)), { actorId: user.id, app: APP, type: 'mention',
     title: `${user.name} đã nhắc đến bạn trong đề xuất "${q.title}": ${snippet}`, link: `/request/${q.id}` });
-  await notify([q.creator_id, ...approvers, ...watchers].filter((x) => !mentioned.includes(x)), { actorId: user.id, app: APP, type: 'comment',
+  await notify([q.creator_id, ...approvers, ...watchers].filter((x) => !mentioned.includes(x) && !replied.includes(x)), { actorId: user.id, app: APP, type: 'comment',
     title: `${user.name} bình luận trong đề xuất "${q.title}"`, link: `/request/${q.id}` });
   await fireRequestEvent(c, 'request.commented', q.id, { comment: (content || snippet).slice(0, 1000) });
   return c.json(await withCommentFiles('request', q.id, await get(`${COMMENT_SELECT} WHERE c.id = ?`, lastId)), 201);

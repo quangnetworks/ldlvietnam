@@ -1,16 +1,16 @@
 import { useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { ArrowLeft, Star, Eye, Pencil, Send, Ban, Trash2, CheckCircle2, XCircle, Undo2, Clock, Paperclip, Link2, History, MessageSquare, Printer } from 'lucide-react';
+import { ArrowLeft, Star, Eye, Pencil, Send, Ban, Trash2, CheckCircle2, XCircle, Undo2, Clock, Paperclip, Link2, History, Printer } from 'lucide-react';
 import { api, toFormData } from '../api.js';
 import { useFetch, useToast } from '../context.jsx';
-import { Avatar, Spinner, FileChip, Modal, Field, Tabs, Empty } from '../components/ui.jsx';
+import { Avatar, Spinner, FileChip, Modal, Field, Tabs } from '../components/ui.jsx';
 import { fmtDateTime, cx } from '../utils.js';
 import { useRequestApp } from './RequestLayout.jsx';
 import { STATUS, fieldDisplay } from './fields.jsx';
 import { StatusSteps } from './RequestForm.jsx';
 import GroupGuide from './GroupGuide.jsx';
 import FileViewer, { InlinePreview } from '../components/FileViewer.jsx';
-import CommentBox, { CommentItem } from '../components/CommentBox.jsx';
+import CommentBox, { CommentList } from '../components/CommentBox.jsx';
 
 const DECIDE = {
   approve: { title: 'Chấp thuận đề xuất', btn: 'Chấp thuận', cls: 'btn-success', need: false },
@@ -103,10 +103,7 @@ export default function RequestDetail() {
             <Tabs value={tab} onChange={setTab} tabs={[{ value: 'comments', label: 'Thảo luận', count: comments?.length }, { value: 'activity', label: 'Lịch sử' }]} />
             {tab === 'comments' ? (
               <>
-                <div className="comments">
-                  {comments?.map((c) => <CommentItem key={c.id} base={`/requests/${id}`} c={c} onChanged={reloadComments} />)}
-                  {comments && !comments.length && <Empty icon={MessageSquare} title="Chưa có thảo luận" />}
-                </div>
+                <CommentList base={`/requests/${id}`} comments={comments} onChanged={reloadComments} />
                 <CommentBox base={`/requests/${id}`} onSent={reloadComments} />
               </>
             ) : (

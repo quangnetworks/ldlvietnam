@@ -2,7 +2,7 @@ import { Hono } from 'hono';
 import { all, get, run, batch, logActivity, notify, getSetting, setSetting, markSeen, findMentions } from '../db.js';
 import { requireAdmin, userDeptIds, inDeptSql } from '../auth.js';
 import { publicFileLink } from '../files.js';
-import { readComment, saveCommentFiles, withCommentFiles, commentFileOr404, commentSnippet, purgeCommentFiles, editComment, deleteComment } from '../comments.js';
+import { readComment, saveCommentFiles, withCommentFiles, commentFileOr404, commentSnippet, purgeCommentFiles, editComment, deleteComment, notifyReply } from '../comments.js';
 import { audit } from '../platform.js';
 import {
   badRequest, notFound, forbidden, toInt, idList, paginate, today, jsonBody, formBody, storeFiles, removeFile, sendFile,
@@ -953,8 +953,8 @@ r.get('/tasks/:id/comments', async (c) => {
 r.post('/tasks/:id/comments', async (c) => {
   const user = c.get('user');
   const t = await viewableTask(c);
-  const { content, files } = await readComment(c);
-  const { lastId } = await run('INSERT INTO task_comments(task_id, user_id, content) VALUES (?,?,?)', t.id, user.id, content);
+  const { content, files, parent, parentId } = await readComment(c, 'task', t.id);
+  const { lastId } = await run('INSERT INTO task_comments(task_id, user_id, content, parent_id) VALUES (?,?,?,?)', t.id, user.id, content, parentId);
   await saveCommentFiles('task', t.id, lastId, user.id, files);
   const watchers = (await all('SELECT user_id FROM task_followers WHERE task_id = ?', t.id)).map((x) => x.user_id);
   // @mention: @tên_đăng_nhập (ô bình luận gợi ý người dùng khi gõ @)
@@ -962,9 +962,11 @@ r.post('/tasks/:id/comments', async (c) => {
   // người được nhắc tên được thêm vào người theo dõi để mở được công việc và nhận các cập nhật sau
   await batch(mentioned.map((uid) => ['INSERT OR IGNORE INTO task_followers(task_id, user_id) VALUES (?,?)', [t.id, uid]]));
   const snippet = commentSnippet(content, files);
-  await notify(mentioned, { actorId: user.id, app: APP, type: 'mention',
+  // người được trả lời nhận thông báo "đã trả lời bình luận của bạn" (thay cho thông báo nhắc tên)
+  const replied = await notifyReply('task', t.id, user, parent, snippet);
+  await notify(mentioned.filter((x) => !replied.includes(x)), { actorId: user.id, app: APP, type: 'mention',
     title: `${user.name} đã nhắc đến bạn trong "${t.title}": ${snippet}`, link: `/wework/task/${t.id}` });
-  await notify([t.creator_id, t.assignee_id, ...watchers].filter((x) => !mentioned.includes(x)), { actorId: user.id, app: APP, type: 'comment',
+  await notify([t.creator_id, t.assignee_id, ...watchers].filter((x) => !mentioned.includes(x) && !replied.includes(x)), { actorId: user.id, app: APP, type: 'comment',
     title: `${user.name} đã bình luận trong "${t.title}"`, link: `/wework/task/${t.id}` });
   await run("UPDATE tasks SET updated_at = datetime('now') WHERE id = ?", t.id);
   return c.json(await withCommentFiles('task', t.id, await get(`${TASK_COMMENT_SELECT} WHERE c.id = ?`, lastId)), 201);

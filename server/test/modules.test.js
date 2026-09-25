@@ -932,3 +932,36 @@ test('share links for comment files last 7 days and download without a session',
   assert.equal(r.status, 200);
   assert.equal(await r.text(), 'noi dung chia se');
 });
+
+test('comment replies thread under the root comment, notify the replied author, and go with the root on delete', async () => {
+  const admin = await login('admin');
+  const demo = await login('demo');
+  const task = (await demo.get('/tasks?limit=1')).data.items[0];
+  const reqs = (await demo.get('/requests?limit=1')).data;
+  const docs = (await demo.get('/documents?limit=1')).data;
+  const targets = [['tasks', task?.id], ['requests', (reqs.items || reqs)[0]?.id], ['documents', (docs.items || docs)[0]?.id]].filter(([, id]) => id);
+  for (const [base, id] of targets) {
+    const root = (await demo.post(`/${base}/${id}/comments`, { content: `Câu hỏi ${base}` })).data;
+    assert.equal(root.parent_id, null);
+    const r1 = await admin.post(`/${base}/${id}/comments`, { content: 'Trả lời 1', parent_id: root.id });
+    assert.equal(r1.status, 201, JSON.stringify(r1.data));
+    assert.equal(r1.data.parent_id, root.id);
+    // trả lời một trả lời → vẫn gắn vào bình luận gốc (một cấp)
+    const fd = new FormData();
+    fd.append('content', '');
+    fd.append('parent_id', String(r1.data.id));
+    fd.append('files', new File(['x'], 'tra-loi.txt', { type: 'text/plain' }));
+    const r2 = await demo.post(`/${base}/${id}/comments`, fd);
+    assert.equal(r2.status, 201);
+    assert.equal(r2.data.parent_id, root.id);
+    // bình luận cha không thuộc bản ghi này → 404
+    assert.equal((await demo.post(`/${base}/${id + 999}/comments`, { content: 'x', parent_id: root.id })).status, 404);
+    // xoá bình luận gốc → xoá luôn trả lời và tệp của trả lời
+    assert.equal((await demo.del(`/${base}/${id}/comments/${root.id}`)).status, 200);
+    const left = (await demo.get(`/${base}/${id}/comments`)).data.map((x) => x.id);
+    assert.ok(![root.id, r1.data.id, r2.data.id].some((x) => left.includes(x)));
+    assert.equal((await demo.get(`/${base}/${id}/comment-files/${r2.data.files[0].id}`)).status, 404);
+  }
+  const n = (await demo.get('/notifications?limit=30')).data.items.filter((x) => x.title.includes('đã trả lời bình luận của bạn'));
+  assert.ok(n.length >= targets.length);
+});
