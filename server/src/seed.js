@@ -296,6 +296,41 @@ export async function buildSeed() {
   add(`INSERT INTO hr_careers(user_id, type, effective_date, from_value, to_value, decision_no, created_by) VALUES (?, 'promotion', '2023-01-01', 'Chuyên viên kinh doanh', 'Trưởng phòng Kinh doanh', 'QĐ-01/2023', ?)`, users.kd, users.hr);
   add(`INSERT INTO hr_careers(user_id, type, effective_date, to_value, note, created_by) VALUES (?, 'reward', ?, 'Nhân viên xuất sắc quý', 'Vượt 120% chỉ tiêu doanh số', ?)`, users.nv1, dateOffset(-30), users.hr);
 
+  // ---------- LDL Asset: tài sản gắn với nhân viên, biên bản bàn giao, thủ tục nhận việc
+  const assetRows = [
+    // [code, name, type, kind, serial, location, price, purchase, holder]
+    ['LAP-0001', 'Laptop Dell Latitude 5440', 'Máy tính xách tay', 'asset', 'DL5440-8H2K', 'Văn phòng Hà Nội', 22500000, '2024-03-10', 'nv1'],
+    ['MH-0001', 'Màn hình Dell 24" P2423', 'Màn hình', 'asset', 'P2423-11A', 'Văn phòng Hà Nội', 4200000, '2024-03-10', 'nv1'],
+    ['CC-0001', 'Bộ tai nghe Jabra Evolve2', 'Công cụ dụng cụ', 'tool', null, 'Văn phòng Hà Nội', 1900000, '2025-01-05', 'nv1'],
+    ['LAP-0002', 'Laptop Lenovo ThinkPad E14', 'Máy tính xách tay', 'asset', 'TPE14-77Q', 'Văn phòng Hà Nội', 18900000, '2024-06-01', 'nv2'],
+    ['DT-0001', 'iPhone 13 (điện thoại công ty)', 'Điện thoại', 'asset', 'IMEI 35-8812', 'Văn phòng Hà Nội', 15500000, '2023-09-20', 'kd'],
+    ['LAP-0003', 'MacBook Air M2', 'Máy tính xách tay', 'asset', 'C02HM2', 'Văn phòng TP. Hồ Chí Minh', 26900000, '2024-01-15', 'mkt'],
+    ['LAP-0004', 'Laptop Dell Vostro 3520', 'Máy tính xách tay', 'asset', 'V3520-5KD', 'Kho', 14500000, '2025-02-01', null],
+    ['MH-0002', 'Màn hình LG 27" 27MP400', 'Màn hình', 'asset', 'LG27-889', 'Kho', 3600000, '2025-02-01', null],
+    ['TB-0001', 'Máy chiếu Epson EB-X51', 'Máy in / máy chiếu', 'asset', 'EBX51-2210', 'Văn phòng Hà Nội', 11800000, '2023-05-12', null],
+    ['DP-0001', 'Đồng phục + thẻ nhân viên', 'Đồng phục, thẻ nhân viên', 'tool', null, 'Kho', 650000, '2025-06-01', null],
+  ];
+  const deprOf = { 'Máy tính xách tay': 36, 'Màn hình': 36, 'Điện thoại': 24, 'Máy in / máy chiếu': 60, 'Công cụ dụng cụ': 12 };
+  assetRows.forEach(([code, name, type, kind, serial, loc, price, bought, holder], i) => {
+    add(`INSERT INTO assets(id, code, name, type, kind, serial, location, price, purchase_date, depreciation_months, status, holder_id, assigned_at, condition, created_by)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, i + 1, code, name, type, kind, serial, loc, price, bought, deprOf[type] || null,
+    holder ? 'in_use' : 'available', holder ? users[holder] : null, holder ? datetimeOffset(-60) : null, 'good', users.hr);
+    add('INSERT INTO asset_transactions(asset_id, type, detail, user_id, created_at) VALUES (?, ?, ?, ?, ?)', i + 1, 'create', 'Tạo tài sản', users.hr, datetimeOffset(-90));
+  });
+  add(`INSERT INTO asset_handovers(id, code, kind, reason, employee_id, status, created_by, created_at, confirmed_at, confirmed_by)
+    VALUES (1, 'BG-202607-001', 'issue', 'onboard', ?, 'confirmed', ?, ?, ?, ?)`, users.nv1, users.hr, datetimeOffset(-60), datetimeOffset(-60), users.nv1);
+  for (const aid of [1, 2, 3]) {
+    add("INSERT INTO asset_handover_items(handover_id, asset_id, condition) VALUES (1, ?, 'good')", aid);
+    add(`INSERT INTO asset_transactions(asset_id, type, to_user_id, handover_id, detail, user_id, created_at) VALUES (?, 'assign', ?, 1, ?, ?, ?)`,
+      aid, users.nv1, 'Bàn giao cho LDL Demo 12 (Nhận việc) — tình trạng: Tốt', users.hr, datetimeOffset(-60));
+  }
+  add(`INSERT INTO hr_procedures(kind, user_id, effective_date, steps, created_by) VALUES ('onboard', ?, ?, ?, ?)`, users.nv3, dateOffset(-40),
+    JSON.stringify([
+      { key: 's1', label: 'Ký hợp đồng / thư mời nhận việc', done: true }, { key: 's2', label: 'Cập nhật hồ sơ nhân sự', done: true },
+      { key: 's3', label: 'Cấp tài khoản LDL, email', done: true }, { key: 'assets', label: 'Bàn giao tài sản, công cụ làm việc', done: false },
+      { key: 's5', label: 'Hướng dẫn nội quy, quy trình làm việc', done: false }, { key: 's6', label: 'Giới thiệu với phòng ban', done: false },
+    ]), users.hr);
+
   // ---------- Checkin: vài ngày chấm công gần đây (giờ VN = UTC+7)
   const utcAt = (day, vnMinutes) => {
     const m = vnMinutes - 7 * 60;
@@ -343,7 +378,7 @@ export async function buildSeed() {
   return S;
 }
 
-const TABLES = ['hr_documents', 'hr_careers', 'hr_contracts', 'request_group_members', 'chat_messages', 'chat_members', 'chat_channels', 'drive_shares', 'drive_items', 'leave_quotas', 'checkins', 'hr_profiles',
+const TABLES = ['asset_transactions', 'asset_handover_items', 'asset_handovers', 'assets', 'hr_procedures', 'hr_documents', 'hr_careers', 'hr_contracts', 'request_group_members', 'chat_messages', 'chat_members', 'chat_channels', 'drive_shares', 'drive_items', 'leave_quotas', 'checkins', 'hr_profiles',
   'webhook_logs', 'webhooks', 'request_attachments', 'request_comments', 'request_stars', 'request_followers', 'request_approvers', 'requests',
   'request_group_stars', 'request_group_followers', 'request_group_approvers', 'notes', 'user_prefs', 'login_logs', 'app_access',
   'user_departments', 'user_group_members', 'user_groups', 'notifications', 'activity_logs', 'custom_filters', 'goals', 'task_attachments', 'task_results', 'task_comments', 'request_group_files', 'task_checklist',

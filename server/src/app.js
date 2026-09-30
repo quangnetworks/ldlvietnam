@@ -10,6 +10,7 @@ import webhookRoutes from './routes/webhooks.js';
 import hrmRoutes from './routes/hrm.js';
 import driveRoutes from './routes/drive.js';
 import chatRoutes from './routes/chat.js';
+import assetRoutes from './routes/asset.js';
 import { requireModule } from './platform.js';
 import pushRoutes from './routes/push.js';
 import { backgroundContext } from './push.js';
@@ -36,6 +37,7 @@ export function createApp() {
   app.route('/api', hrmRoutes);
   app.route('/api', driveRoutes);
   app.route('/api', chatRoutes);
+  app.route('/api', assetRoutes);
   app.route('/api', pushRoutes);
   app.all('/api/*', (c) => c.json({ error: 'API không tồn tại' }, 404));
 

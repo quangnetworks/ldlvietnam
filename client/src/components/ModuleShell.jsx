@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link, NavLink, Outlet, useLocation } from 'react-router-dom';
 import {
   LayoutDashboard, Users2, Settings, Fingerprint, UsersRound, Plane, CalendarDays, Scale, FolderOpen, Building2, Share2, Clock3,
-  Trash2, Menu, FileSignature, TrendingUp, BarChart3,
+  Trash2, Menu, FileSignature, TrendingUp, BarChart3, Package, Boxes, UserCheck, Users, UserCog,
 } from 'lucide-react';
 import { api } from '../api.js';
 import { useApp, useFetch } from '../context.jsx';
@@ -18,6 +18,7 @@ const NAV = {
     { to: '/hrm/contracts', label: 'Hợp đồng', icon: FileSignature, hr: true },
     { to: '/hrm/careers', label: 'Phát triển sự nghiệp', icon: TrendingUp, hr: true },
     { to: '/hrm/reports', label: 'Báo cáo nhân sự', icon: BarChart3, hr: true },
+    { to: '/asset/procedures', label: 'Nhận việc / nghỉ việc', icon: UserCheck, hr: true },
     { to: '/hrm/settings', label: 'Cài đặt', icon: Settings, hr: true },
   ],
   checkin: [
@@ -29,6 +30,15 @@ const NAV = {
     { to: '/timeoff', end: true, label: 'Nghỉ phép của tôi', icon: Plane },
     { to: '/timeoff/calendar', label: 'Lịch nghỉ công ty', icon: CalendarDays },
     { to: '/timeoff/balances', label: 'Quỹ phép nhân viên', icon: Scale },
+  ],
+  asset: [
+    { to: '/asset', end: true, label: 'Tài sản của tôi', icon: Package },
+    { to: '/asset/overview', label: 'Tổng quan', icon: LayoutDashboard, mgr: true },
+    { to: '/asset/list', label: 'Tài sản & công cụ', icon: Boxes, mgr: true },
+    { to: '/asset/people', label: 'Theo người sử dụng', icon: Users, mgr: true },
+    { to: '/asset/handovers', label: 'Bàn giao & thu hồi', icon: FileSignature, mgr: true },
+    { to: '/asset/procedures', label: 'Nhận việc / nghỉ việc', icon: UserCog, mgr: true },
+    { to: '/asset/settings', label: 'Cài đặt', icon: Settings, mgr: true },
   ],
   drive: [
     { to: '/drive', end: true, label: 'Tài liệu của tôi', icon: FolderOpen },
@@ -47,6 +57,7 @@ export default function ModuleShell({ app }) {
   const meta = ECOSYSTEM.find((a) => a.key === app);
   // mục chỉ dành cho quản lý nhân sự (HRM)
   const [hrMeta] = useFetch(() => (app === 'hrm' ? api.get('/hrm/meta') : Promise.resolve(null)), [app]);
+  const [assetMeta] = useFetch(() => (app === 'asset' ? api.get('/asset/meta') : Promise.resolve(null)), [app]);
   return (
     <div className="office">
       <header className="topbar">
@@ -62,7 +73,7 @@ export default function ModuleShell({ app }) {
         {open && <div className="side-backdrop" onClick={() => setOpen(false)} />}
         <aside className={cx('office-side', open && 'open')}>
           <div className="mod-title"><AppIcon app={meta} size={30} /><span><b>{meta.name}</b><small className="muted block">{meta.desc}</small></span></div>
-          {NAV[app].filter((n) => (!n.admin || user.role === 'admin') && (!n.hr || hrMeta?.is_manager)).map((n) => (
+          {NAV[app].filter((n) => (!n.admin || user.role === 'admin') && (!n.hr || hrMeta?.is_manager) && (!n.mgr || assetMeta?.is_manager)).map((n) => (
             <NavLink key={n.to} to={n.to} end={n.end} className={({ isActive }) => cx('side-link', isActive && 'active')}>
               <n.icon size={15} /> {n.label}
             </NavLink>

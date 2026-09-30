@@ -12,6 +12,7 @@ export const MODULES = {
   hrm: 'LDL HRM',
   drive: 'LDL Drive',
   message: 'LDL Message',
+  asset: 'LDL Asset',
 };
 
 /** API path prefixes owned by each module (used to enforce app access). */
@@ -21,6 +22,7 @@ const PREFIXES = [
   ['/api/filters', 'wework'], ['/api/search', 'wework'],
   ['/api/requests', 'request'], ['/api/request-groups', 'request'], ['/api/request', 'request'], ['/api/webhooks', 'request'],
   ['/api/checkin', 'checkin'], ['/api/timeoff', 'timeoff'], ['/api/hrm', 'hrm'], ['/api/drive', 'drive'], ['/api/chat', 'message'],
+  ['/api/assets', 'asset'], ['/api/asset', 'asset'],
 ];
 
 export function moduleForPath(path) {

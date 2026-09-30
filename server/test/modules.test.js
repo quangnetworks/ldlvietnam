@@ -1197,3 +1197,76 @@ test('request title follows "Employee name - Request …"', async () => {
   assert.equal((await mk('Đề xuất mua bút, giấy A4')).title, `${demo.user.name} - Đề xuất mua bút, giấy A4`);
   assert.equal((await mk(`${demo.user.name} - Đề xuất mực in`)).title, `${demo.user.name} - Đề xuất mực in`);
 });
+
+test('asset: create, hand over to an employee who confirms, transfer, recover; only managers manage', async () => {
+  const hr = await login('chilan');
+  const demo = await login('demo');
+  const pl = await login('phuonglinh');
+  assert.equal((await demo.post('/assets', { name: 'X' })).status, 403);
+  // tạo 2 laptop cùng lúc → mã tự sinh theo loại
+  const created = (await hr.post('/assets', { name: 'Laptop HP ProBook 440', type: 'Máy tính xách tay', price: '17.500.000', purchase_date: '2026-01-10', quantity: 2 })).data;
+  assert.equal(created.items.length, 2);
+  assert.match(created.items[0].code, /^LAP-\d{4}$/);
+  assert.equal(created.items[0].depreciation_months, 36);
+  const [a1, a2] = created.items;
+  // bàn giao → tài sản đang sử dụng, nhân viên xác nhận
+  const h = (await hr.post('/asset/handovers', { kind: 'issue', employee_id: pl.user.id, asset_ids: [a1.id, a2.id], reason: 'adhoc' })).data;
+  assert.equal(h.status, 'pending');
+  assert.equal(h.items.length, 2);
+  assert.equal((await hr.post('/asset/handovers', { kind: 'issue', employee_id: demo.user.id, asset_ids: [a1.id] })).status, 400); // đang có người giữ
+  assert.equal((await demo.post(`/asset/handovers/${h.id}/confirm`, {})).status, 403);
+  assert.equal((await pl.get(`/asset/handovers/${h.id}`)).data.can_confirm, true);
+  assert.equal((await pl.post(`/asset/handovers/${h.id}/confirm`, {})).data.status, 'confirmed');
+  const mine = (await pl.get(`/asset/people/${pl.user.id}`)).data;
+  assert.ok(mine.assets.some((x) => x.id === a1.id && x.status === 'in_use'));
+  assert.equal((await demo.get(`/asset/people/${pl.user.id}`)).status, 403);
+  // quản lý trực tiếp xem được tài sản của nhân viên
+  assert.equal((await (await login('truongkd')).get(`/asset/people/${pl.user.id}`)).status, 200);
+  // điều chuyển a2 sang demo
+  await hr.post(`/assets/${a2.id}/transfer`, { to_user_id: demo.user.id });
+  assert.equal((await hr.get(`/assets/${a2.id}`)).data.holder_id, demo.user.id);
+  // thu hồi a1 (hỏng) → trạng thái hỏng; huỷ biên bản đang chờ → hoàn tác
+  const back = (await hr.post('/asset/handovers', { kind: 'return', employee_id: pl.user.id, asset_ids: [a1.id], items: { [a1.id]: { condition: 'broken' } } })).data;
+  assert.equal((await hr.get(`/assets/${a1.id}`)).data.status, 'broken');
+  await hr.post(`/asset/handovers/${back.id}/cancel`, {});
+  assert.equal((await hr.get(`/assets/${a1.id}`)).data.holder_id, pl.user.id);
+  const hist = (await hr.get(`/assets/${a1.id}`)).data.history;
+  assert.ok(hist.some((t) => t.type === 'assign') && hist.some((t) => t.type === 'return'));
+  const sum = (await hr.get('/asset/summary')).data;
+  assert.ok(sum.total >= 12 && sum.value > 0 && sum.book_value <= sum.value);
+  assert.equal((await demo.get('/asset/summary')).status, 403);
+  // nhân viên chỉ thấy tài sản của mình
+  assert.ok((await demo.get('/assets')).data.every((x) => x.holder_id === demo.user.id));
+});
+
+test('asset: offboarding cannot complete until every asset is recovered; then the profile is marked resigned', async () => {
+  const hr = await login('chilan');
+  const admin = await login('admin');
+  const demo = await login('demo');
+  const p = (await hr.post('/asset/procedures', { kind: 'offboard', user_id: demo.user.id, effective_date: '2026-12-31', resign_reason: 'Nghỉ theo nguyện vọng cá nhân' })).data;
+  assert.equal((await hr.post('/asset/procedures', { kind: 'offboard', user_id: demo.user.id, effective_date: '2026-12-31' })).status, 400);
+  assert.ok(p.assets.length >= 3);
+  assert.equal(p.steps.find((s) => s.key === 'assets').done, false);
+  for (const s of p.steps.filter((x) => x.key !== 'assets')) await hr.put(`/asset/procedures/${p.id}/steps`, { key: s.key, done: true });
+  assert.equal((await hr.put(`/asset/procedures/${p.id}/steps`, { key: 'assets', done: true })).status, 400);
+  assert.equal((await hr.post(`/asset/procedures/${p.id}/complete`, {})).status, 400);
+  // biên bản thu hồi toàn bộ gắn với thủ tục
+  await hr.post('/asset/handovers', { kind: 'return', employee_id: demo.user.id, asset_ids: p.assets.map((a) => a.id), reason: 'offboard', procedure_id: p.id, auto_confirm: true });
+  const ready = (await hr.get(`/asset/procedures/${p.id}`)).data;
+  assert.equal(ready.assets.length, 0);
+  assert.equal(ready.can_complete, true);
+  assert.equal(ready.handovers.length, 1);
+  const done = (await admin.post(`/asset/procedures/${p.id}/complete`, { lock_account: false })).data;
+  assert.equal(done.status, 'done');
+  const prof = (await hr.get(`/hrm/employees/${demo.user.id}`)).data;
+  assert.equal(prof.work_status, 'resigned');
+  assert.equal(prof.resign_date, '2026-12-31');
+  // khôi phục cho các bài kiểm tra khác
+  await hr.put(`/hrm/employees/${demo.user.id}`, { ...prof, work_status: 'working', resign_date: '', resign_reason: '' });
+  // thủ tục nhận việc: bước tài sản xong khi có biên bản bàn giao được xác nhận
+  const nv = (await hr.get('/asset/procedures?kind=onboard&status=open')).data[0];
+  const full = (await hr.get(`/asset/procedures/${nv.id}`)).data;
+  const free = (await hr.get('/assets?status=available')).data.slice(0, 1);
+  await hr.post('/asset/handovers', { kind: 'issue', employee_id: full.user_id, asset_ids: free.map((a) => a.id), reason: 'onboard', procedure_id: nv.id, auto_confirm: true });
+  assert.equal((await hr.get(`/asset/procedures/${nv.id}`)).data.steps.find((s) => s.key === 'assets').done, true);
+});

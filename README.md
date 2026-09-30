@@ -132,6 +132,14 @@ Webapp nội bộ gồm 2 phân hệ, giao diện và chức năng mô phỏng *
 - **LDL Checkin**: chấm công vào / ra (giờ Việt Nam), đi muộn / về sớm, bảng công tháng dạng lịch, bảng công nhân viên theo ngày, xuất CSV, giới hạn chấm công theo IP văn phòng.
 - **LDL Timeoff**: quỹ phép năm theo nhân viên, đơn nghỉ đi qua **LDL Request** (nhóm "Đề xuất nghỉ phép"), lịch nghỉ công ty.
 
+### LDL Asset — `/asset` (tài sản, công cụ gắn với từng cá nhân)
+- **Tài sản của tôi**: mọi nhân viên xem tài sản, công cụ công ty đang giao cho mình; **xác nhận biên bản** bàn giao / thu hồi ngay trên hệ thống (có thông báo).
+- **Tài sản & công cụ**: mã tự sinh theo loại (VD LAP-0001), tài sản cố định / công cụ dụng cụ, serial, địa điểm, nhà cung cấp, ngày mua, nguyên giá, **khấu hao đường thẳng → giá trị còn lại**, bảo hành, tình trạng; tạo nhiều đơn vị một lần, **nhập / xuất Excel** (có file mẫu, cột "Người sử dụng" giao luôn); trạng thái Sẵn sàng / Đang sử dụng / Bảo trì / Hỏng / Mất / Đã thanh lý; lịch sử giao dịch từng tài sản; **điều chuyển** giữa hai nhân viên.
+- **Bàn giao & thu hồi**: biên bản BG-/TH- theo tháng, chọn nhiều tài sản, tình trạng từng món, lý do (nhận việc / nghỉ việc / điều chuyển / thường xuyên); tài sản chuyển ngay, nhân viên xác nhận điện tử (hoặc ghi nhận "đã ký biên bản giấy"); huỷ biên bản đang chờ sẽ hoàn tác; **in biên bản A4 / PDF** có ô ký, cam kết.
+- **Thủ tục nhận việc / nghỉ việc**: checklist theo Cài đặt; bước **bàn giao tài sản** tự hoàn thành khi nhân viên xác nhận biên bản; bước **thu hồi tài sản** chỉ xong khi nhân viên không còn giữ tài sản nào — **không hoàn tất được thủ tục nghỉ việc nếu chưa thu hồi hết**. Hoàn tất nghỉ việc: hồ sơ HRM chuyển "Đã nghỉ việc" kèm ngày & lý do, tuỳ chọn khoá tài khoản; hoàn tất nhận việc: ghi ngày bắt đầu.
+- **Theo người sử dụng**: ai đang giữ bao nhiêu tài sản, giá trị, biên bản chờ; trang từng người có nút bàn giao thêm / thu hồi. Hồ sơ nhân viên trong LDL HRM có tab **Tài sản**.
+- **Tổng quan & phân quyền**: theo loại, trạng thái, địa điểm, giá trị còn lại, thủ tục đang mở, giao dịch gần đây. Quản trị viên, người quản lý tài sản (Cài đặt) và quản lý nhân sự quản lý; nhân viên chỉ thấy của mình; quản lý trực tiếp xem tài sản của nhân viên cấp dưới.
+
 ### LDL Drive — `/drive`
 - Tài liệu của tôi / tài liệu công ty / được chia sẻ / gần đây / thùng rác; thư mục lồng nhau, tải lên kéo thả, đổi tên, di chuyển, xem trực tuyến, tải xuống.
 - Chia sẻ cho thành viên / phòng ban / nhóm với quyền Xem hoặc Chỉnh sửa (kế thừa theo thư mục cha).

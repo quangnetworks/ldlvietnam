@@ -3,8 +3,9 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 import {
   Search, ArrowLeft, Cake, FileWarning, UserPlus, Hourglass, Download, Upload, Plus, Trash2, Users2, BarChart3, FileSignature, BadgeCheck,
   PauseCircle, Building2, PieChart, CheckCircle2, Briefcase, IdCard, LogOut, StickyNote, Phone, Mail, CalendarDays, UserCog, MapPin, Clock3,
-  FileText, TrendingUp, Save, Settings2, ShieldCheck, ListChecks, CalendarHeart,
+  FileText, TrendingUp, Save, Settings2, ShieldCheck, ListChecks, CalendarHeart, Package,
 } from 'lucide-react';
+import { PersonAssets } from '../asset/AssetPages.jsx';
 import { HrHero, Kpi, HrCard, Pill, HBars, StackBar, WORK_TONE, WORK_COLOR, daysLeft } from './hrUi.jsx';
 import { api } from '../api.js';
 import { useApp, useFetch, useToast } from '../context.jsx';
@@ -221,7 +222,8 @@ export function HrmEmployee({ selfId }) {
     return list && [...new Set([...list, ...(cur && !list.includes(cur) ? [cur] : [])])];
   };
   const dirty = e && f && [...ALL_FIELDS.map(([k]) => k), 'note'].some((k) => String(f[k] ?? '') !== String(e[k] ?? ''));
-  const TABS = [['profile', 'Hồ sơ', IdCard], ['contracts', 'Hợp đồng', FileSignature], ['career', 'Phát triển sự nghiệp', TrendingUp], ['documents', 'Giấy tờ', FileText]];
+  const TABS = [['profile', 'Hồ sơ', IdCard], ['contracts', 'Hợp đồng', FileSignature], ['career', 'Phát triển sự nghiệp', TrendingUp], ['documents', 'Giấy tờ', FileText],
+    ['assets', 'Tài sản', Package]];
   return (
     <div className="page hr">
       <section className="hr-profile hr-rise">
@@ -299,6 +301,7 @@ export function HrmEmployee({ selfId }) {
         )}
         {tab === 'contracts' && (edit || self ? <ContractsPanel userId={id} canEdit={edit} /> : <HrCard><div className="hr-empty"><ShieldCheck size={16} /> Chỉ nhân viên và quản lý nhân sự xem được hợp đồng.</div></HrCard>)}
         {tab === 'career' && <CareersPanel userId={id} canEdit={edit} />}
+        {tab === 'assets' && <PersonAssets userId={id} />}
         {tab === 'documents' && (edit || self ? <DocumentsPanel userId={id} isHr={edit} selfView={self} /> : <HrCard><div className="hr-empty"><ShieldCheck size={16} /> Chỉ nhân viên và quản lý nhân sự xem được giấy tờ.</div></HrCard>)}
       </div>
     </div>

@@ -2247,3 +2247,84 @@ button.rpt-task:hover { background: var(--hover); }
 td .hr-pill { vertical-align: middle; }
 td > span + .hr-pill, td > .hr-pill:not(:first-child) { margin-left: 6px; }
 .hr-after { margin-left: 8px; }
+
+/* =====================================================================
+   LDL Asset — dùng chung bộ giao diện HRM (.hr), thêm các khối riêng
+   ===================================================================== */
+.hr-hero.tone-brown { background: linear-gradient(120deg, #6d4c41 0%, #b7773a 100%); box-shadow: 0 10px 30px rgba(109, 76, 65, .28); }
+.as-cover { background: linear-gradient(120deg, #6d4c41, #b7773a); }
+.as-cover-on { background: linear-gradient(120deg, #0c8599, #12b886); }
+.as-cover-off { background: linear-gradient(120deg, #c2410c, #f59f00); }
+:root[data-theme='dark'] .as-cover, :root[data-theme='dark'] .as-cover-on, :root[data-theme='dark'] .as-cover-off { filter: saturate(.85) brightness(.85); }
+.as-big-icon { width: 84px; height: 84px; border-radius: 50%; display: grid; place-items: center; background: var(--tone-soft); color: var(--tone); }
+.as-mini-icon { width: 30px; height: 30px; border-radius: 9px; display: grid; place-items: center; background: var(--tone-soft); color: var(--tone); flex: none; }
+
+/* thẻ tài sản của tôi */
+.as-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 10px; }
+.as-card { display: flex; align-items: flex-start; gap: 12px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 14px; background: var(--bg);
+  transition: transform .2s var(--ease), box-shadow .2s var(--ease), border-color .2s; color: var(--text); min-width: 0; }
+.as-card:hover { transform: translateY(-2px); box-shadow: var(--hr-card-shadow-hover); border-color: color-mix(in srgb, var(--hr-blue) 35%, var(--line)); }
+.as-card .grow { min-width: 0; }
+.as-card b { font-weight: 600; display: block; }
+.as-card small { margin-top: 3px; }
+.as-card-icon { width: 40px; height: 40px; border-radius: 12px; display: grid; place-items: center; background: var(--tone-soft); color: var(--tone); flex: none; }
+
+/* cảnh báo biên bản chờ xác nhận */
+.as-alert { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; padding: 14px 18px; margin-bottom: 16px; border-radius: 16px;
+  background: linear-gradient(120deg, var(--hr-amber-soft), transparent); border: 1px solid color-mix(in srgb, var(--hr-amber) 40%, var(--line)); color: var(--text); }
+.as-alert > svg { color: var(--hr-amber); flex: none; }
+
+/* chọn tài sản trong biên bản */
+.as-pick { display: flex; flex-direction: column; gap: 6px; max-height: 320px; overflow-y: auto; margin: 4px 0 12px; padding-right: 2px; }
+.as-pick-row { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 10px; transition: border-color .15s, background .15s; }
+.as-pick-row.on { border-color: var(--hr-blue); background: var(--hr-blue-soft); }
+.as-pick-main { display: flex; align-items: center; gap: 10px; flex: 1; min-width: 0; cursor: pointer; }
+.as-pick-row .input-sm { width: auto; }
+
+/* dòng giao dịch gần đây */
+.as-feed { list-style: none; margin: 0; padding: 0; }
+.as-feed li { display: flex; align-items: center; gap: 10px; padding: 9px 10px; margin: 0 -10px; border-radius: 10px; cursor: pointer; transition: background .15s; min-width: 0; }
+.as-feed li:hover { background: var(--hover); }
+.as-feed .grow { min-width: 0; }
+
+/* giá trị & khấu hao */
+.as-value { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin-bottom: 12px; }
+.as-value > div { display: flex; flex-direction: column; gap: 2px; padding: 10px 12px; border-radius: 12px; background: var(--bg-3); }
+.as-value b { font-size: 15px; }
+.as-depr { margin-bottom: 10px; }
+@media (max-width: 700px) { .as-value { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.hr-tl-icon.as-tl-blue { background: var(--hr-blue); } .hr-tl-icon.as-tl-violet { background: var(--hr-violet); }
+.hr-tl-icon.as-tl-aqua { background: var(--hr-aqua); } .hr-tl-icon.as-tl-amber { background: var(--hr-amber); } .hr-tl-icon.as-tl-gray { background: var(--hr-gray); }
+
+/* thủ tục nhận việc / nghỉ việc */
+.as-proc-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 12px; }
+.as-proc { display: flex; flex-direction: column; gap: 10px; padding: 16px; border-radius: 16px; background: var(--bg); border: 1px solid var(--line); color: var(--text);
+  box-shadow: var(--hr-card-shadow); position: relative; overflow: hidden; transition: transform .2s var(--ease), box-shadow .2s var(--ease); }
+.as-proc::before { content: ''; position: absolute; left: 0; top: 0; right: 0; height: 3px; background: var(--tone); }
+.as-proc:hover { transform: translateY(-2px); box-shadow: var(--hr-card-shadow-hover); }
+.as-proc b { font-weight: 600; }
+.as-steps { list-style: none; margin: 14px 0 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.as-steps li { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 12px; transition: background .2s, border-color .2s; }
+.as-steps li.done { background: var(--hr-green-soft); border-color: color-mix(in srgb, var(--hr-green) 30%, var(--line)); }
+.as-steps li.done b { color: color-mix(in srgb, var(--hr-green) 70%, var(--text)); }
+.as-steps li.asset-step:not(.done) { border-style: dashed; border-color: var(--hr-blue); }
+.as-step-check { width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center; flex: none; color: var(--hr-green); }
+.as-step-check:disabled { opacity: 1; cursor: default; }
+.as-step-no { width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center; border: 2px solid var(--line-2); font-size: 12px; font-weight: 600; color: var(--muted); transition: border-color .15s, color .15s; }
+.as-step-check:not(:disabled):hover .as-step-no { border-color: var(--hr-green); color: var(--hr-green); }
+.as-complete { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--line); }
+
+/* cài đặt loại tài sản */
+.as-types { display: flex; flex-direction: column; gap: 6px; }
+.as-type-row { display: grid; grid-template-columns: minmax(0, 2fr) 110px 150px 130px 32px; gap: 8px; align-items: center; }
+.as-type-row.head span { font-size: 12px; color: var(--muted); font-weight: 600; }
+@media (max-width: 700px) { .as-type-row { grid-template-columns: 1fr 1fr; } .as-type-row.head { display: none; } }
+
+/* biên bản in */
+.as-confirm-note { max-width: 260px; }
+.as-print-status { margin-top: 4px; }
+.as-print-link { color: inherit; }
+@media print { .as-print-link { text-decoration: none; } }
+.as-card-foot { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
+.as-card b.ellipsis { display: block; }
+.as-subhead { display: flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 600; color: var(--text-2); margin: 18px 0 10px; padding-top: 14px; border-top: 1px solid var(--line); }
