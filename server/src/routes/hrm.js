@@ -57,8 +57,10 @@ const EMP_SELECT = `SELECT u.id, u.name, u.username, u.email, u.phone, u.title, 
     u.active, u.sales_role, u.sales_industry, d.name AS department_name, m.name AS manager_name, h.*,
     (SELECT c.to_value || ' (' || c.effective_date || ')' FROM hr_careers c WHERE c.user_id = u.id AND c.type = 'promotion'
       ORDER BY c.effective_date DESC, c.id DESC LIMIT 1) AS last_promotion,
-    (SELECT GROUP_CONCAT(t.name || IFNULL(' · ' || tm.industry, '') || CASE WHEN tm.is_concurrent THEN ' (KN)' ELSE '' END, ', ') FROM territory_members tm
-      JOIN territories t ON t.id = tm.territory_id WHERE tm.user_id = u.id) AS territory_names
+    COALESCE((SELECT GROUP_CONCAT(t.name || IFNULL(' · ' || tm.industry, '') || CASE WHEN tm.is_concurrent THEN ' (KN)' ELSE '' END, ', ') FROM territory_members tm
+      JOIN territories t ON t.id = tm.territory_id WHERE tm.user_id = u.id),
+      (SELECT 'Đã rời: ' || GROUP_CONCAT(t.name || IFNULL(' · ' || th.industry, ''), ', ') FROM territory_history th
+        JOIN territories t ON t.id = th.territory_id WHERE th.user_id = u.id AND IFNULL(h.work_status, 'working') = 'resigned')) AS territory_names
   FROM users u LEFT JOIN departments d ON d.id = u.department_id LEFT JOIN users m ON m.id = u.manager_id
   LEFT JOIN hr_profiles h ON h.user_id = u.id`;
 const empView = (e) => ({ ...e, id: e.id ?? e.user_id, work_status: e.work_status || 'working' });
@@ -93,13 +95,15 @@ function employeeFilter(user, q) {
   if (q.sales_role === 'none') where.push('u.sales_role IS NULL');
   else if (q.sales_role) { where.push('u.sales_role = ?'); params.push(q.sales_role); }
   // địa bàn: người phụ trách địa bàn đó và mọi địa bàn con (VD chọn "Miền Bắc" → RSM, ASM, SS, SREP… của miền)
+  // người đã nghỉ việc: tính theo vị trí đã từng phụ trách (lịch sử)
   if (toInt(q.territory_id)) {
-    where.push(`u.id IN (SELECT tm.user_id FROM territory_members tm WHERE tm.territory_id IN (WITH RECURSIVE sub(id) AS (SELECT ?
-      UNION ALL SELECT x.id FROM territories x JOIN sub ON x.parent_id = sub.id) SELECT id FROM sub))`);
-    params.push(toInt(q.territory_id));
+    const sub = `(WITH RECURSIVE sub(id) AS (SELECT ? UNION ALL SELECT x.id FROM territories x JOIN sub ON x.parent_id = sub.id) SELECT id FROM sub)`;
+    where.push(`(u.id IN (SELECT tm.user_id FROM territory_members tm WHERE tm.territory_id IN ${sub})
+      OR (IFNULL(h.work_status, 'working') = 'resigned' AND u.id IN (SELECT th.user_id FROM territory_history th WHERE th.territory_id IN ${sub})))`);
+    params.push(toInt(q.territory_id), toInt(q.territory_id));
   }
   // ngành hàng: người phụ trách ngành đó (tính cả người phụ trách chung khi chọn kèm địa bàn / vị trí thì vẫn lọc đúng ngành)
-  if (q.industry) { where.push('u.id IN (SELECT user_id FROM territory_members WHERE industry = ?)'); params.push(String(q.industry)); }
+  if (q.industry) { where.push('(u.id IN (SELECT user_id FROM territory_members WHERE industry = ?) OR u.sales_industry = ?)'); params.push(String(q.industry), String(q.industry)); }
   if (q.q) { const like = `%${q.q}%`; where.push("(u.name LIKE ? OR IFNULL(h.employee_code,'') LIKE ? OR IFNULL(u.phone,'') LIKE ? OR IFNULL(u.email,'') LIKE ?)"); params.push(like, like, like, like); }
   if (q.contract === 'expiring') { where.push("h.contract_end IS NOT NULL AND h.contract_end BETWEEN date('now') AND date('now', '+30 day')"); }
   return { where, params };
@@ -249,6 +253,9 @@ async function importProfiles(c, body) {
       changed = true;
     }
     if (clean(row.manager_username)) managerLinks.push([i, u, clean(row.manager_username).replace(/^@/, '')]);
+    // nghỉ việc: rời mọi vị trí đang giữ trong cơ cấu (các vị trí đó để trống chờ người mới)
+    const resigned = set.work_status === 'resigned';
+    if (resigned) S.push(...vacateStmts(u.id));
     // vị trí kinh doanh – địa bàn – ngành hàng (phân công chính)
     if (clean(row.sales_role)) {
       const role = SALES_ROLE_BY_TEXT[clean(row.sales_role).toLowerCase().replace(/\s+/g, ' ')];
@@ -257,18 +264,31 @@ async function importProfiles(c, body) {
       const lv = { NSM: ['national'], RSM: ['region'], ASM: ['area'] }[role] || ['province', 'area'];
       const t = cands.sort((a, b) => lv.indexOf(a.level) - lv.indexOf(b.level)).find((x) => lv.includes(x.level)) || cands[0];
       if (!role) err(SH, i, `vị trí kinh doanh "${row.sales_role}" không hợp lệ (NSM, RSM, ASM, SS, PG, SREP, SREP KA)`);
-      else if (!t) err(SH, i, `không tìm thấy địa bàn "${row.territory || ''}" trong Cơ cấu kinh doanh`);
+      else if (!tname) {
+        // chưa rõ địa bàn: chỉ ghi vị trí / ngành hàng lên hồ sơ, phân công trên sơ đồ sau
+        try {
+          S.push(['UPDATE users SET sales_role = ?, sales_industry = ? WHERE id = ?', [role, industryOf(industries, row.industry), u.id]]);
+          res.no_territory = (res.no_territory || 0) + 1;
+        } catch (e) { err(SH, i, e.message); }
+      } else if (!t) err(SH, i, `không tìm thấy địa bàn "${row.territory || ''}" trong Cơ cấu kinh doanh`);
       else {
         try {
           const industry = industryOf(industries, row.industry);
-          S.push(assignStmt(t, u.id, role, { industry, since: isoDate(row.hire_date) || null }), ...fillVacancyStmts(t, u.id, role, { industry }));
-          salesTouched.add(u.id);
-          res.assignments++;
+          if (resigned) {
+            // nhân sự đã nghỉ: chỉ lưu là vị trí ĐÃ TỪNG phụ trách (không chiếm chỗ, không tạo vị trí trống)
+            assignStmt(t, u.id, role, { industry });   // kiểm tra vị trí khớp cấp địa bàn
+            S.push([`INSERT INTO territory_history(territory_id, user_id, role, industry, since, ended_at, reason, closed)
+              VALUES (?,?,?,?,?,?, 'resigned', 1)`, [t.id, u.id, role, industry, isoDate(row.hire_date) || null, set.resign_date || isoDate(row.resign_date) || vnDate()]]);
+            S.push(['UPDATE users SET sales_role = ?, sales_industry = ? WHERE id = ?', [role, industry, u.id]]);
+            res.past_posts = (res.past_posts || 0) + 1;
+          } else {
+            S.push(assignStmt(t, u.id, role, { industry, since: isoDate(row.hire_date) || null }), ...fillVacancyStmts(t, u.id, role, { industry }));
+            salesTouched.add(u.id);
+            res.assignments++;
+          }
         } catch (e) { err(SH, i, e.message); }
       }
     }
-    // nghỉ việc: rời mọi vị trí trong cơ cấu (để trống)
-    if (set.work_status === 'resigned') S.push(...vacateStmts(u.id));
     if (changed && !res.new_accounts.includes(u.username)) res.updated++;
   }
   for (const [i, u, m] of managerLinks) {

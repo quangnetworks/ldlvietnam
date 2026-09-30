@@ -396,7 +396,7 @@ export const PROFILE_COLUMNS = [
   ['hire_date', 'Ngày bắt đầu', 'Ngày vào làm'], ['probation_end', 'Hết thử việc'], ['official_date', 'Ngày chính thức'], ['work_status', 'Trạng thái'],
   ['id_number', 'Số CCCD'], ['id_issue_date', 'Ngày cấp'], ['id_issue_place', 'Nơi cấp'], ['insurance_number', 'Số sổ BHXH'], ['tax_code', 'MST TNCN', 'Mã số thuế'],
   ['bank_account', 'Tài khoản ngân hàng'], ['emergency_contact', 'Liên hệ khẩn cấp'], ['resign_date', 'Ngày nghỉ việc'], ['resign_reason', 'Lý do nghỉ việc'],
-  ['sales_role', 'Vị trí kinh doanh'], ['territory', 'Địa bàn'], ['industry', 'Ngành hàng'],
+  ['sales_role', 'Vị trí kinh doanh'], ['territory', 'Địa bàn'], ['industry', 'Ngành hàng'], ['note', 'Ghi chú'],
 ];
 const CAREER_COLUMNS = [
   ['username', 'Tài khoản'], ['employee_code', 'Mã NV', 'Mã nhân viên'], ['type', 'Loại', 'Loại sự kiện'], ['effective_date', 'Ngày hiệu lực'],
@@ -421,7 +421,7 @@ const TEMPLATE_GUIDE = [
 function splitWorkbook(sheets) {
   const n = (x) => x.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/đ/g, 'd');
   const pick = (re) => sheets.find((x) => re.test(n(x.sheet)))?.rows || [];
-  const profile = sheets.find((x) => !/lich su|hop dong|huong dan/.test(n(x.sheet)))?.rows || [];
+  const profile = sheets.find((x) => !/lich su|hop dong|huong dan|kiem tra|bao cao/.test(n(x.sheet)))?.rows || [];
   const key = (r) => r.username || r.employee_code;
   return {
     rows: rowsToObjects(profile, PROFILE_COLUMNS).filter(key),
@@ -470,19 +470,52 @@ export function ImportProfilesModal({ onClose, onDone }) {
   const newCount = data ? data.rows.filter(isNew).length : 0;
   const total = data ? data.rows.length + data.careers.length + data.contracts.length : 0;
   const needPw = create && newCount > 0;
+  const [progress, setProgress] = useState('');
+  /**
+   * Tệp lớn (hàng trăm nhân sự) gửi theo đợt để mỗi lần gọi API không vượt giới hạn máy chủ:
+   * 1) hồ sơ + tài khoản (chưa gắn quản lý), 2) quản lý trực tiếp (khi mọi tài khoản đã có), 3) lịch sử công tác, hợp đồng.
+   */
   const run = async () => {
     setBusy(true);
+    const total = { created: 0, updated: 0, assignments: 0, past_posts: 0, careers: 0, contracts: 0, skipped: 0, errors: [], new_accounts: [] };
+    const add = (r, rowOffset = 0, sheet = null) => {
+      for (const k of ['created', 'updated', 'assignments', 'past_posts', 'careers', 'contracts', 'skipped']) total[k] += r[k] || 0;
+      total.new_accounts.push(...r.new_accounts);
+      total.errors.push(...r.errors.map((e) => (rowOffset ? e.replace(/dòng (\d+)/, (_, d) => `dòng ${Number(d) + rowOffset}`) : e))
+        .filter((e) => !sheet || e.startsWith(sheet)));
+    };
+    const step = 150;
     try {
-      const r = await api.post('/hrm/employees/import', { ...data, create_accounts: create, password });
-      setResult(r);
+      const plain = data.rows.map(({ manager_username, ...r }) => r);
+      for (let i = 0; i < plain.length; i += step) {
+        setProgress(`Hồ sơ ${Math.min(i + step, plain.length)}/${plain.length}`);
+        add(await api.post('/hrm/employees/import', { rows: plain.slice(i, i + step), create_accounts: create, password }), i);
+      }
+      const links = data.rows.map((r, i) => [i, r]).filter(([, r]) => r.manager_username);
+      for (let i = 0; i < links.length; i += 500) {
+        setProgress('Quản lý trực tiếp');
+        const part = links.slice(i, i + 500);
+        const r = await api.post('/hrm/employees/import', { rows: part.map(([, x]) => ({ username: x.username, employee_code: x.employee_code, manager_username: x.manager_username })) });
+        // dòng lỗi quy về dòng gốc trong tệp
+        total.errors.push(...r.errors.map((e) => e.replace(/dòng (\d+)/, (_, d) => `dòng ${part[Number(d) - 2][0] + 2}`)));
+      }
+      for (const [key, label] of [['careers', 'Lịch sử công tác'], ['contracts', 'Hợp đồng']]) {
+        for (let i = 0; i < data[key].length; i += 400) {
+          setProgress(`${label} ${Math.min(i + 400, data[key].length)}/${data[key].length}`);
+          add(await api.post('/hrm/employees/import', { rows: [], [key]: data[key].slice(i, i + 400) }), i, label);
+        }
+      }
+      setResult(total);
       toast('Đã nhập hồ sơ nhân sự');
-      onDone(); loadDirectory?.();
-    } catch (e) { toast(e.message, 'error'); } finally { setBusy(false); }
+    } catch (e) {
+      toast(e.message, 'error');
+      if (total.created || total.updated) setResult({ ...total, errors: [`Dừng giữa chừng: ${e.message}`, ...total.errors] });
+    } finally { setBusy(false); setProgress(''); onDone(); loadDirectory?.(); }
   };
   return (
     <Modal title="Nhập hồ sơ nhân sự từ Excel" onClose={onClose} width={780}
       footer={<><button className="btn" onClick={onClose}>{result ? 'Xong' : 'Huỷ'}</button>
-        {!result && <button className="btn btn-primary" disabled={!total || busy || (needPw && password.length < 6)} onClick={run}><Upload size={15} /> {busy ? 'Đang nhập…' : `Nhập ${total} dòng`}</button>}</>}>
+        {!result && <button className="btn btn-primary" disabled={!total || busy || (needPw && password.length < 6)} onClick={run}><Upload size={15} /> {busy ? `Đang nhập… ${progress}` : `Nhập ${total} dòng`}</button>}</>}>
       {!result && (
         <>
           <div className="imp-steps">
@@ -541,7 +574,7 @@ export function ImportProfilesModal({ onClose, onDone }) {
           <div className="hr-kpis compact">
             <Kpi icon={UserPlus} tone="green" label="Tài khoản mới" value={result.created} />
             <Kpi icon={Users2} tone="blue" label="Hồ sơ cập nhật" value={result.updated} />
-            <Kpi icon={Network} tone="aqua" label="Phân công kinh doanh" value={result.assignments} />
+            <Kpi icon={Network} tone="aqua" label="Phân công kinh doanh" value={result.assignments} sub={result.past_posts ? `+ ${result.past_posts} vị trí đã từng phụ trách (người đã nghỉ)` : undefined} />
             <Kpi icon={History} tone="violet" label="Lịch sử công tác" value={result.careers} />
             <Kpi icon={FileSignature} tone="amber" label="Hợp đồng" value={result.contracts} />
           </div>

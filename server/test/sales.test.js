@@ -230,6 +230,21 @@ test('resignation leaves sales positions vacant until a new person is assigned; 
   await hr.del(`/sales/vacancies/${v2.id}`);
   assert.ok(!(await hr.get('/sales/structure')).data.vacancies.some((v) => v.id === v2.id));
 
+  // nhập nhân sự ĐÃ NGHỈ kèm vị trí cũ: chỉ lưu lịch sử vị trí, không chiếm chỗ, không tạo vị trí trống
+  const before = (await hr.get('/sales/structure')).data.vacancies.length;
+  const old = (await hr.post('/hrm/employees/import', { create_accounts: true, password: 'Ldl@2026', rows: [
+    { username: 'sr.cu', name: 'SR đã nghỉ', work_status: 'Đã nghỉ việc', hire_date: '01/03/2025', resign_date: '01/06/2025', sales_role: 'SREP', territory: 'Bắc Ninh', industry: 'Thực phẩm' }] })).data;
+  assert.deepEqual([old.created, old.past_posts, old.assignments, old.errors.length], [1, 1, 0, 0]);
+  const s2 = (await hr.get('/sales/structure')).data;
+  assert.equal(s2.vacancies.length, before);
+  assert.ok(!s2.members.some((m) => m.username === 'sr.cu'));
+  const oldId = (await hr.get('/users?all=1')).data.find((u) => u.username === 'sr.cu')?.id
+    ?? (await hr.get('/hrm/employees?view=resigned')).data.find((e) => e.username === 'sr.cu').id;
+  const hist = (await hr.get(`/sales/users/${oldId}?history=1`)).data;
+  assert.deepEqual(hist.map((h) => [h.territory_name, h.role, h.industry, h.since, h.ended_at]), [['Bắc Ninh', 'SREP', 'TP', '2025-03-01', '2025-06-01']]);
+  const resignedRow = (await hr.get('/hrm/employees?view=resigned&industry=TP')).data;
+  assert.ok(resignedRow.some((e) => e.username === 'sr.cu' && e.sales_role === 'SREP'));
+
   // gỡ phân công (điều chuyển) cũng để trống; gỡ nhầm (?vacancy=0) thì không
   await hr.del(`/sales/territories/${bacNinh.id}/members/${id('srep.bn')}?role=SREP&vacancy=0`);
   assert.ok(!(await hr.get('/sales/structure')).data.vacancies.some((v) => v.user_id === id('srep.bn')));
