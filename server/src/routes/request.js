@@ -341,6 +341,14 @@ async function saveFiles(id, files, userId) {
 
 const truthy = (v) => ['1', 'true', true, 1].includes(v);
 
+/** Tên đề xuất theo định dạng "Tên nhân viên - Đề xuất …" (phần sau do người tạo nhập, mặc định là tên nhóm đề xuất). */
+export function requestTitle(creatorName, raw, fallback) {
+  const prefix = `${String(creatorName || '').trim()} - `;
+  let rest = String(raw || '').trim();
+  while (prefix.trim() && rest.toLowerCase().startsWith(prefix.toLowerCase())) rest = rest.slice(prefix.length).trim();
+  return `${prefix}${rest || fallback || 'Đề xuất'}`.slice(0, 300);
+}
+
 r.post('/requests', async (c) => {
   const user = c.get('user');
   const { fields: b, files } = await formBody(c);
@@ -349,12 +357,12 @@ r.post('/requests', async (c) => {
   if (!group.active) throw badRequest('Nhóm đề xuất đang tạm đóng');
   if (!(await canUseGroup(user, group))) throw forbidden('Nhóm đề xuất này chỉ dành cho phòng ban / thành viên được chỉ định');
   const draft = truthy(b.draft);
-  const title = String(b.title || '').trim() || group.name;
+  const title = requestTitle(user.name, b.title, group.name);
   const data = validateData(parseJson(group.fields, []), parseJson(b.data || '{}', {}), !draft);
   const plan = await approverPlan(group, idList(b.approvers).filter((x) => x !== user.id || isAdmin(user)), user.id);
   if (!draft && !plan.length) throw badRequest('Đề xuất cần ít nhất một người duyệt');
   const { lastId: id } = await run(`INSERT INTO requests(group_id, title, content, data, flow, creator_id, status) VALUES (?,?,?,?,?,?, 'draft')`,
-    group.id, title.slice(0, 300), b.content || null, JSON.stringify(data), requestFlow(group), user.id);
+    group.id, title, b.content || null, JSON.stringify(data), requestFlow(group), user.id);
   const groupFollowers = (await all('SELECT user_id FROM request_group_followers WHERE group_id = ?', group.id)).map((x) => x.user_id);
   // "Yêu cầu thông báo tới người quản lý trực tiếp": quản lý của người tạo theo dõi đề xuất
   const manager = group.notify_manager ? await directManagerOf(user.id) : null;
@@ -384,8 +392,9 @@ r.put('/requests/:id', async (c) => {
   const group = q.group_id ? await get('SELECT * FROM request_groups WHERE id = ?', q.group_id) : null;
   const submit = truthy(b.submit);
   const data = validateData(group ? parseJson(group.fields, []) : [], parseJson(b.data || '{}', {}), submit);
+  const creator = await get('SELECT name FROM users WHERE id = ?', q.creator_id);
   await run("UPDATE requests SET title = ?, content = ?, data = ?, updated_at = datetime('now') WHERE id = ?",
-    String(b.title || '').trim().slice(0, 300) || q.title, b.content || null, JSON.stringify(data), q.id);
+    String(b.title || '').trim() ? requestTitle(creator?.name, b.title, group?.name) : q.title, b.content || null, JSON.stringify(data), q.id);
   if (group && b.approvers !== undefined) {
     const plan = await approverPlan(group, idList(b.approvers), q.creator_id);
     await batch([

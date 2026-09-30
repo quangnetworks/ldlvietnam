@@ -13,6 +13,7 @@ import { StatusCircle, TaskTags, useAssignable, createTaskList } from './taskPar
 import TaskResults from './TaskResults.jsx';
 import FileViewer from '../components/FileViewer.jsx';
 import CommentBox, { CommentList } from '../components/CommentBox.jsx';
+import MoveTaskModal from './MoveTaskModal.jsx';
 
 export function TaskDetail({ id, onClose, onChanged, standalone }) {
   const { users } = useApp();
@@ -27,6 +28,7 @@ export function TaskDetail({ id, onClose, onChanged, standalone }) {
   const [comments, reloadComments] = useFetch(() => api.get(`/tasks/${id}/comments`), [id]);
   const [activity, reloadActivity] = useFetch(() => api.get(`/tasks/${id}/activity`), [id]);
   const [viewing, setViewing] = useState(null);
+  const [moving, setMoving] = useState(false);
   const assignable = useAssignable(users, t?.project_id, [t?.assignee_id]);
   const [goals, reloadGoals] = useFetch(() => api.get('/goals'), []);
 
@@ -117,6 +119,10 @@ export function TaskDetail({ id, onClose, onChanged, standalone }) {
         <button className="icon-btn" title="Sao chép liên kết" onClick={() => { navigator.clipboard?.writeText(`${window.location.origin}/wework/task/${id}`); toast('Đã sao chép liên kết'); }}>
           <Link2 size={18} />
         </button>
+        {t.can_manage && !t.locked && (
+          <button className="icon-btn" title={t.parent ? 'Chuyển sang công việc cha khác / tách khỏi công việc cha' : 'Chuyển thành công việc con của công việc khác'}
+            aria-label="Chuyển thành công việc con" onClick={() => setMoving(true)}><GitBranch size={18} /></button>
+        )}
         {t.can_delete && <button className="icon-btn" title="Xóa công việc" onClick={del}><Trash2 size={18} /></button>}
         {!standalone && <button className="icon-btn" onClick={onClose} aria-label="Đóng"><X size={20} /></button>}
       </div>
@@ -332,6 +338,7 @@ export function TaskDetail({ id, onClose, onChanged, standalone }) {
         </ul>
       </aside>
       </div>
+      {moving && <MoveTaskModal task={t} onClose={() => setMoving(false)} onMoved={() => { setMoving(false); reload(); reloadActivity(); onChanged?.(); }} />}
     </div>
   );
 }

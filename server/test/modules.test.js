@@ -522,7 +522,9 @@ test('goals: link related tasks, progress follows completed tasks; critical prio
   assert.equal(after.task_count, 1);
   assert.equal(after.progress, 0);
   // người khác không xem được mục tiêu của tôi
-  assert.equal((await admin.get(`/goals/${g.id}/tasks`)).status, 404);
+  assert.equal((await (await login('minhtrang')).get(`/goals/${g.id}/tasks`)).status, 404);
+  // quản trị tối cao trong Wework quản lý được mục tiêu của mọi người
+  assert.equal((await admin.get(`/goals/${g.id}/tasks`)).status, 200);
   // mức ưu tiên "Quan trọng & khẩn cấp" được tính vào ô "both" và lọc khẩn cấp
   const r = (await admin.get('/wework/reports/overview?from=2020-01-01')).data;
   assert.ok(r.eisenhower.both >= 1);
@@ -1124,4 +1126,74 @@ test('HRM records: contracts sync the profile, career events, documents, views, 
   assert.equal(rep.turnover.length, 12);
   assert.equal(rep.seniority.reduce((s, b) => s + b.c, 0), rep.total);
   assert.equal((await demo.get('/hrm/report')).status, 403);
+});
+
+test('wework: job title "Quản trị…" grants top admin rights; titles are not self-editable', async () => {
+  const admin = await login('admin');
+  const kt = await login('thuhuyen');
+  assert.equal((await kt.get('/wework/meta')).data.is_admin, false);
+  // tự đổi chức danh không có tác dụng
+  await kt.put('/auth/me', { title: 'Quản trị viên' });
+  assert.equal((await kt.get('/wework/meta')).data.is_admin, false);
+  assert.equal((await kt.post('/tasks/bulk', { ids: [1], action: 'priority', priority: 'high' })).status, 403);
+  // quản trị viên đặt chức danh → quyền quản trị tối cao trong Wework
+  await admin.put(`/users/${kt.user.id}`, { title: 'Quản trị Wework' });
+  const meta = (await kt.get('/wework/meta')).data;
+  assert.equal(meta.is_admin, true);
+  assert.equal(meta.is_system_admin, false);
+  assert.equal(meta.can_view_reports, true);
+  const hidden = (await admin.get('/tasks?limit=200')).data.items.find((t) => t.assignee_id !== kt.user.id && t.creator_id !== kt.user.id);
+  assert.equal((await kt.get(`/tasks/${hidden.id}`)).status, 200);
+  assert.ok((await admin.get('/wework/settings/admins')).data.some((u) => u.id === kt.user.id && u.by === 'title'));
+  // đổi danh sách chức danh quản trị → mất quyền
+  await admin.put('/wework/settings', { admin_titles: ['Tổng quản lý'] });
+  assert.equal((await kt.get('/wework/meta')).data.is_admin, false);
+  await admin.put('/wework/settings', { admin_titles: ['Quản trị'] });
+  await admin.put(`/users/${kt.user.id}`, { title: 'Kế toán trưởng' });
+});
+
+test('wework: move a task under another task (with its subtasks), detach, no cycles; goals managed by admins', async () => {
+  const admin = await login('admin');
+  const kd = await login('truongkd');
+  const demo = await login('demo');
+  const parent = (await kd.post('/tasks', { title: 'Chiến dịch Q4', assignee_id: demo.user.id })).data;
+  const child = (await kd.post('/tasks', { title: 'Khảo sát điểm bán', assignee_id: demo.user.id })).data;
+  const grand = (await kd.post('/tasks', { title: 'Lập danh sách', parent_id: child.id })).data;
+  // người chỉ được giao việc không được chuyển
+  assert.equal((await demo.post(`/tasks/${child.id}/move`, { parent_id: parent.id })).status, 403);
+  const moved = (await kd.post(`/tasks/${child.id}/move`, { parent_id: parent.id })).data;
+  assert.equal(moved.parent.id, parent.id);
+  assert.ok((await kd.get(`/tasks/${parent.id}`)).data.subtasks.some((x) => x.id === child.id));
+  // không chuyển vào chính nó / công việc cháu
+  assert.equal((await kd.post(`/tasks/${parent.id}/move`, { parent_id: grand.id })).status, 400);
+  assert.equal((await kd.post(`/tasks/${parent.id}/move`, { parent_id: parent.id })).status, 400);
+  const detached = (await kd.post(`/tasks/${child.id}/move`, { parent_id: null })).data;
+  assert.equal(detached.parent, null);
+  assert.equal((await kd.get(`/tasks/${grand.id}`)).data.parent.id, child.id);
+
+  // mục tiêu: quản trị viên xem tất cả, đặt mục tiêu cho người khác, sửa, xoá
+  const g = (await admin.post('/goals', { title: 'Doanh số 5 tỷ', user_id: demo.user.id })).data;
+  assert.equal(g.user_id, demo.user.id);
+  assert.ok((await demo.get('/goals')).data.some((x) => x.id === g.id));
+  assert.ok((await admin.get(`/goals?scope=all&user_id=${demo.user.id}`)).data.some((x) => x.id === g.id && x.owner_name));
+  assert.ok(!(await kd.get('/goals?scope=all')).data.some((x) => x.id === g.id));
+  assert.equal((await admin.put(`/goals/${g.id}`, { title: 'Doanh số 6 tỷ' })).data.title, 'Doanh số 6 tỷ');
+  assert.equal((await kd.del(`/goals/${g.id}`)).status, 404);
+  assert.equal((await admin.del(`/goals/${g.id}`)).status, 200);
+});
+
+test('request title follows "Employee name - Request …"', async () => {
+  const demo = await login('demo');
+  const groups = (await demo.get('/request-groups')).data;
+  const g = groups.find((x) => x.name === 'Đề xuất cấp văn phòng phẩm');
+  const mk = async (title) => {
+    const fd = new FormData();
+    fd.append('group_id', g.id);
+    if (title !== undefined) fd.append('title', title);
+    fd.append('data', JSON.stringify({ items: 'Bút bi' }));
+    return (await demo.post('/requests', fd)).data;
+  };
+  assert.equal((await mk()).title, `${demo.user.name} - Đề xuất cấp văn phòng phẩm`);
+  assert.equal((await mk('Đề xuất mua bút, giấy A4')).title, `${demo.user.name} - Đề xuất mua bút, giấy A4`);
+  assert.equal((await mk(`${demo.user.name} - Đề xuất mực in`)).title, `${demo.user.name} - Đề xuất mực in`);
 });

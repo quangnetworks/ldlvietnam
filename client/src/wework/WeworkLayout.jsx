@@ -2,7 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useRef, useState } f
 import { Link, NavLink, Outlet, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import {
   Home, CheckSquare, FolderKanban, Building2, Users, BarChart3, PlusSquare, Copy, ListChecks, Settings, PlayCircle,
-  Search, ChevronDown, Menu, FileText,
+  Search, ChevronDown, Menu, FileText, Target, SlidersHorizontal,
 } from 'lucide-react';
 import { api } from '../api.js';
 import { useApp } from '../context.jsx';
@@ -73,7 +73,7 @@ export default function WeworkLayout() {
   const location = useLocation();
   const navigate = useNavigate();
 
-  const [meta, setMeta] = useState({ can_view_reports: user.role === 'admin' });
+  const [meta, setMeta] = useState({ can_view_reports: user.role === 'admin', is_admin: user.role === 'admin' });
   const loadProjects = useCallback(async () => setProjects(await api.get('/projects', { sort: 'name' })), []);
   useEffect(() => { loadProjects(); }, [loadProjects]);
   const loadMeta = useCallback(() => api.get('/wework/meta').then(setMeta).catch(() => {}), []);
@@ -92,6 +92,7 @@ export default function WeworkLayout() {
   const ctx = {
     projects, loadProjects, version, bump,
     canReports: !!meta.can_view_reports, loadMeta,
+    isAdmin: !!meta.is_admin, // quản trị tối cao Wework (quản trị viên hệ thống hoặc chức danh quản trị)
     openTask: setTaskId,
     openCreate: (defaults = {}) => setCreateDefaults(defaults),
     openProjectForm: (opts) => setProjectForm(opts),
@@ -136,6 +137,7 @@ export default function WeworkLayout() {
                   {link('/wework/my', 'Công việc của tôi', CheckSquare)}
                   {link('/wework/projects', 'Dự án', FolderKanban)}
                   {link('/wework/departments', 'Phòng ban', Building2)}
+                  {link('/wework/goals', 'Mục tiêu', Target)}
                   {link('/wework/members', 'Thành viên', Users)}
                   {meta.can_view_reports && link('/wework/reports', 'Báo cáo', BarChart3)}
                   <Link to="/office" className="ww-link"><FileText size={16} /> Văn bản (Office)</Link>
@@ -159,7 +161,8 @@ export default function WeworkLayout() {
                   <button className="ww-link" onClick={() => setProjectForm({ kind: 'project' })}><PlusSquare size={16} /> Tạo dự án mới</button>
                   <button className="ww-link" onClick={() => setProjectForm({ kind: 'department' })}><PlusSquare size={16} /> Tạo phòng ban mới</button>
                   {link('/wework/templates', 'Tạo từ mẫu', Copy)}
-                  {user.role === 'admin' && link('/wework/bulk', 'Tác vụ hàng loạt', ListChecks)}
+                  {meta.is_admin && link('/wework/bulk', 'Tác vụ hàng loạt', ListChecks)}
+                  {user.role === 'admin' && link('/wework/settings', 'Cài đặt Wework', SlidersHorizontal)}
                   {user.role === 'admin' && <Link to="/admin" className="ww-link"><Settings size={16} /> Cài đặt hệ thống</Link>}
                   {link('/wework/guide', 'Video hướng dẫn', PlayCircle)}
                 </>

@@ -1,8 +1,9 @@
 import { useState } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import {
-  Plus, Settings, Copy, Trash2, MoreHorizontal, Pencil, ChevronDown, UserPlus, X, History, Calendar as CalIcon, Search, Users,
+  Plus, Settings, Copy, Trash2, MoreHorizontal, Pencil, ChevronDown, UserPlus, X, History, Calendar as CalIcon, Search, Users, ListTree,
 } from 'lucide-react';
+import ListsManager from './ListsManager.jsx';
 import { api } from '../api.js';
 import { useApp, useFetch, useToast } from '../context.jsx';
 import { Avatar, AvatarStack, Spinner, Empty, Dropdown, MenuItem, UserPicker, Modal, Progress, FilterSelect } from '../components/ui.jsx';
@@ -106,13 +107,14 @@ function Board({ columns, tasks, field, onMove, onOpen, projectId, onAdded, quic
 
 function Members({ project, reload }) {
   const { users, departments, user } = useApp();
+  const { isAdmin } = useWework();
   const toast = useToast();
   const [picked, setPicked] = useState([]);
   const [role, setRole] = useState('member');
   const [dep, setDep] = useState('');
   const [q, setQ] = useState('');
   const [busy, setBusy] = useState(false);
-  const canManage = project.my_role === 'manager' || user.role === 'admin';
+  const canManage = project.my_role === 'manager' || isAdmin;
   const call = async (fn, msg) => {
     setBusy(true);
     try { const r = await fn(); if (msg) toast(typeof msg === 'function' ? msg(r) : msg); reload(); return true; } catch (e) { toast(e.message, 'error'); return false; } finally { setBusy(false); }
@@ -187,7 +189,7 @@ export default function ProjectPage() {
   const navigate = useNavigate();
   const toast = useToast();
   const { user } = useApp();
-  const { openTask, openCreate, version, bump, loadProjects, canReports } = useWework();
+  const { openTask, openCreate, version, bump, loadProjects, canReports, isAdmin } = useWework();
   const [params, setParams] = useSearchParams();
   const view = params.get('view') || 'list';
   const [statusFilter, setStatusFilter] = useState('');
@@ -199,6 +201,7 @@ export default function ProjectPage() {
   const [activity] = useFetch(() => (view === 'activity' ? api.get(`/projects/${id}/activity`) : Promise.resolve(null)), [id, view, version]);
   const [editing, setEditing] = useState(false);
   const [collapsed, setCollapsed] = useState({});
+  const [managingLists, setManagingLists] = useState(false);
 
   if (errP) return <div className="ww-page"><div className="ww-main"><div className="alert alert-error">{errP.message}</div></div></div>;
   if (loadingP && !project) return <div className="ww-page"><div className="ww-main"><Spinner /></div></div>;
@@ -217,7 +220,7 @@ export default function ProjectPage() {
     }
   };
   // mọi thành viên dự án được tạo nhóm công việc (đổi tên / xoá do quản lý dự án)
-  const canAddList = isManager || project.members.some((m) => m.id === user.id) || user.role === 'admin';
+  const canAddList = isManager || project.members.some((m) => m.id === user.id) || isAdmin;
   const createList = async (name) => {
     try { await api.post(`/projects/${id}/lists`, { name }); toast(`Đã tạo nhóm "${name}"`); reloadProject(); return true; } catch (e) { toast(e.message, 'error'); return false; }
   };
@@ -259,6 +262,7 @@ export default function ProjectPage() {
           <Dropdown align="right" trigger={(o, t) => <button className="btn" onClick={t} aria-label="Thêm"><MoreHorizontal size={16} /></button>}>
             {isManager && <MenuItem icon={Settings} onClick={() => setEditing(true)}>Cài đặt</MenuItem>}
             {canAddList && <MenuItem icon={Plus} onClick={addList}>Thêm nhóm công việc</MenuItem>}
+            {canAddList && <MenuItem icon={ListTree} onClick={() => setManagingLists(true)}>Quản lý nhóm công việc</MenuItem>}
             {isManager && !project.is_template && <MenuItem icon={Copy} onClick={async () => {
               const p = await api.post(`/projects/${id}/save-template`, {});
               toast(`Đã lưu thành mẫu "${p.name}"`);
@@ -354,6 +358,7 @@ export default function ProjectPage() {
         {view === 'report' && canReports && <ReportView projectId={project.id} />}
       </div>
       {editing && <ProjectFormModal project={project} onClose={() => setEditing(false)} onSaved={() => { setEditing(false); reloadProject(); loadProjects(); }} />}
+      {managingLists && <ListsManager project={project} tasks={tasks} canDelete={isManager || isAdmin} onClose={() => setManagingLists(false)} onChanged={reload} />}
     </div>
   );
 }

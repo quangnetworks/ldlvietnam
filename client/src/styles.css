@@ -2007,3 +2007,28 @@ button.rpt-task:hover { background: var(--hover); }
 .hr-tl-icon.discipline { background: var(--red); }
 .hr-turnover .bar-row { grid-template-columns: 1fr 32px; padding: 0; }
 .rq-blocks > .btn { align-self: flex-start; }
+
+/* ---------- ô nhập có tiền tố (Tên đề xuất: "Tên nhân viên - …") */
+.input-prefix { display: flex; align-items: stretch; }
+.input-prefix-text { display: inline-flex; align-items: center; padding: 0 10px; background: var(--bg-3); border: 1px solid var(--line-2); border-right: 0;
+  border-radius: 8px 0 0 8px; color: var(--text-2); white-space: nowrap; max-width: 55%; overflow: hidden; text-overflow: ellipsis; font-size: 14px; }
+.input-prefix .input { border-top-left-radius: 0; border-bottom-left-radius: 0; min-width: 0; }
+/* ---------- Wework: chuyển thành công việc con, mục tiêu, nhóm công việc */
+.mv-search { margin: 8px 0; }
+.mv-list { display: flex; flex-direction: column; gap: 4px; max-height: 360px; overflow-y: auto; }
+.mv-item { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; text-align: left; background: var(--bg); min-width: 0; }
+.mv-item:hover { border-color: var(--blue-2); }
+.mv-item.active { border-color: var(--blue-2); background: var(--blue-soft); }
+.goal-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; }
+.goal-card { border: 1px solid var(--line); border-radius: var(--radius); padding: 14px; background: var(--bg); display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.goal-card.done { border-color: #b2f2bb; }
+.goal-card-title { text-align: left; min-width: 0; overflow-wrap: anywhere; }
+.goal-card-desc { margin: 0; }
+.goal-card .progress, .goal-card .row > div:first-child { flex: 1; }
+.goal-card-owner { border-top: 1px solid var(--line); padding-top: 8px; }
+.lm-list { display: flex; flex-direction: column; gap: 6px; margin: 8px 0 12px; }
+.lm-row { display: flex; align-items: center; gap: 6px; }
+.lm-row .input { flex: 1; min-width: 0; }
+.lm-count { white-space: nowrap; min-width: 48px; text-align: right; }
+.lm-new { margin-bottom: 6px; }
+.ws-admins { display: flex; flex-direction: column; }

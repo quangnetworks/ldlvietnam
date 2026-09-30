@@ -52,6 +52,9 @@ export default function RequestForm() {
   const [files, setFiles] = useState([]);
   const [err, setErr] = useState('');
   const [busy, setBusy] = useState(false);
+  // Tên đề xuất: "Tên nhân viên - …" — tiền tố là tên người tạo, người dùng chỉ nhập phần sau
+  const prefix = `${existing?.creator_name || user.name} - `;
+  const stripPrefix = (t, p) => { let x = String(t || ''); while (p && x.toLowerCase().startsWith(p.toLowerCase())) x = x.slice(p.length); return x.trim(); };
 
   useEffect(() => {
     if (!id) return;
@@ -59,7 +62,7 @@ export default function RequestForm() {
       setExisting(q);
       setGroupId(q.group_id);
       setForm({
-        title: q.title, content: q.content || '', data: q.data || {},
+        title: stripPrefix(q.title, `${q.creator_name} - `), content: q.content || '', data: q.data || {},
         approvers: q.approvers.map((a) => a.user_id), followers: q.followers.map((f) => f.id),
       });
     }).catch((e) => setErr(e.message));
@@ -127,7 +130,11 @@ export default function RequestForm() {
           {group.description && <p className="muted">{group.description}</p>}
           <GroupGuide groupId={group.id} guide={group.guide} files={group.files} className="rq-guide-inline" title="Đọc trước khi làm đề xuất: biểu mẫu & quy trình" />
           <div className="form-grid one">
-            <Field label="Tên đề xuất" required><input className="input" value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} /></Field>
+            <Field label="Tên đề xuất" required hint="Định dạng: Tên nhân viên - Đề xuất … (tên nhân viên được thêm tự động)">
+              <div className="input-prefix"><span className="input-prefix-text" title={prefix}>{prefix}</span>
+                <input className="input" value={form.title} placeholder={group.name}
+                  onChange={(e) => { const v = e.target.value; setForm({ ...form, title: v.toLowerCase().startsWith(prefix.toLowerCase()) ? v.slice(prefix.length) : v }); }} /></div>
+            </Field>
             {group.fields.map((f) => (
               <Field key={f.key} label={f.label} required={f.required}>
                 <FieldInput field={f} value={form.data[f.key]} onChange={(v) => setData(f.key, v)} users={users} />

@@ -145,7 +145,8 @@ export function ProfileEdit() {
           <h4>THÔNG TIN CƠ BẢN</h4>
           <div className="form-grid">
             <Field label="Họ tên" required><input className="input" value={f.name} onChange={set('name')} /></Field>
-            <Field label="Chức danh"><input className="input" value={f.title} onChange={set('title')} /></Field>
+            <Field label="Chức danh" hint={user.role === 'admin' ? undefined : 'Chức danh do quản trị viên / phòng Nhân sự cập nhật'}>
+              <input className="input" value={f.title} onChange={set('title')} disabled={user.role !== 'admin'} /></Field>
             <Field label="Ngày sinh"><input type="date" className="input" value={f.birthday} onChange={set('birthday')} /></Field>
           </div>
         </section>

@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Award, Link2, Paperclip, Plus, X, Pencil, Trash2, ExternalLink, Play, Upload } from 'lucide-react';
+import { useWework } from './WeworkLayout.jsx';
 import { api, toFormData } from '../api.js';
 import { useApp, useFetch, useToast } from '../context.jsx';
 import { Avatar, SafeHtml, RichEditor, FileChip, Empty } from '../components/ui.jsx';
@@ -127,6 +128,7 @@ function ResultFiles({ taskId, files, canEdit, onRemoved }) {
 
 export default function TaskResults({ task, onChanged }) {
   const { user } = useApp();
+  const isAdmin = useWework()?.isAdmin || user.role === 'admin';
   const [results, reload] = useFetch(() => api.get(`/tasks/${task.id}/results`), [task.id]);
   const [adding, setAdding] = useState(false);
   const [editing, setEditing] = useState(null);
@@ -150,7 +152,7 @@ export default function TaskResults({ task, onChanged }) {
       )}
       <div className="res-list">
         {list.map((r) => {
-          const mine = (r.user_id === user.id || user.role === 'admin') && !task.locked;
+          const mine = (r.user_id === user.id || isAdmin) && !task.locked;
           if (editing === r.id) {
             return <ResultForm key={r.id} taskId={task.id} initial={r} onDone={() => { setEditing(null); changed(); }} onCancel={() => setEditing(null)} />;
           }

@@ -246,14 +246,14 @@ export async function buildSeed() {
   add(`INSERT OR IGNORE INTO request_group_approvers(group_id, user_id, step) SELECT ${grp('Đề xuất cấp văn phòng phẩm')}, ?, 1 WHERE ${grp('Đề xuất cấp văn phòng phẩm')} IS NOT NULL`, users.hr);
   add(`INSERT OR IGNORE INTO request_group_approvers(group_id, user_id, step) SELECT ${grp('Đề xuất cấp văn phòng phẩm')}, ?, 1 WHERE ${grp('Đề xuất cấp văn phòng phẩm')} IS NOT NULL`, users.nv4);
   add(`INSERT INTO requests(id, group_id, title, content, data, flow, creator_id, status, deadline_at, created_at, updated_at)
-    SELECT 1, ${grp('Đề nghị tạm ứng')}, 'Tạm ứng chi phí khảo sát NPP miền Trung', 'Chi phí đi lại, lưu trú 3 ngày khảo sát thị trường Đà Nẵng.',
+    SELECT 1, ${grp('Đề nghị tạm ứng')}, 'LDL Demo 12 - Đề nghị tạm ứng chi phí khảo sát NPP miền Trung', 'Chi phí đi lại, lưu trú 3 ngày khảo sát thị trường Đà Nẵng.',
       ?, 'sequential', ?, 'pending', ?, ?, ? WHERE ${grp('Đề nghị tạm ứng')} IS NOT NULL`,
   JSON.stringify({ amount: 8500000, purpose: 'Khảo sát và làm việc với NPP khu vực Đà Nẵng, Quảng Nam', refund_date: dateOffset(14) }),
   users.nv1, datetimeOffset(1), datetimeOffset(-1), datetimeOffset(-1));
   add("INSERT OR IGNORE INTO request_approvers(request_id, user_id, step, status) SELECT 1, ?, 1, 'pending' WHERE EXISTS (SELECT 1 FROM requests WHERE id = 1)", users.kt);
   add("INSERT OR IGNORE INTO request_approvers(request_id, user_id, step, status) SELECT 1, ?, 2, 'pending' WHERE EXISTS (SELECT 1 FROM requests WHERE id = 1)", users.gd);
   add(`INSERT INTO requests(id, group_id, title, data, flow, creator_id, status, completed_at, created_at, updated_at)
-    SELECT 2, ${grp('Đề xuất nghỉ phép')}, 'Nghỉ phép năm 2 ngày', ?, 'sequential', ?, 'approved', ?, ?, ? WHERE ${grp('Đề xuất nghỉ phép')} IS NOT NULL`,
+    SELECT 2, ${grp('Đề xuất nghỉ phép')}, 'Nguyễn Phương Linh - Đề xuất nghỉ phép năm 2 ngày', ?, 'sequential', ?, 'approved', ?, ?, ? WHERE ${grp('Đề xuất nghỉ phép')} IS NOT NULL`,
   JSON.stringify({ from: dateOffset(-8), to: dateOffset(-7), kind: 'Nghỉ phép năm', reason: 'Việc gia đình' }),
   users.nv2, datetimeOffset(-9), datetimeOffset(-10), datetimeOffset(-9));
   add("INSERT OR IGNORE INTO request_approvers(request_id, user_id, step, status, comment, acted_at) SELECT 2, ?, 1, 'approved', 'Đồng ý', ? WHERE EXISTS (SELECT 1 FROM requests WHERE id = 2)", users.kd, datetimeOffset(-9));

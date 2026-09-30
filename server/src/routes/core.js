@@ -75,7 +75,8 @@ r.put('/auth/me', async (c) => {
     `UPDATE users SET name = COALESCE(?, name), email = COALESCE(?, email), phone = COALESCE(?, phone),
      title = COALESCE(?, title), color = COALESCE(?, color), birthday = COALESCE(?, birthday),
      address = COALESCE(?, address), bio = COALESCE(?, bio), profile = COALESCE(?, profile) WHERE id = ?`,
-    name ?? null, email ?? null, phone ?? null, title ?? null, color ?? null, birthday ?? null,
+    // chức danh do quản trị viên / HR quản lý (chức danh quản trị mang quyền quản trị Wework) — nhân viên không tự đổi
+    name ?? null, email ?? null, phone ?? null, c.get('user').role === 'admin' ? title ?? null : null, color ?? null, birthday ?? null,
     address ?? null, bio ?? null, cleanProfile(profile) ?? null, c.get('user').id
   );
   return c.json({ user: await loadUser(c.get('user').id) });

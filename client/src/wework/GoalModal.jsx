@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { Target, Trash2, Plus, X, Search, Link2 } from 'lucide-react';
 import { api } from '../api.js';
-import { useFetch, useToast } from '../context.jsx';
-import { Modal, Field, Progress, Avatar } from '../components/ui.jsx';
+import { useApp, useFetch, useToast } from '../context.jsx';
+import { Modal, Field, Progress, Avatar, UserPicker } from '../components/ui.jsx';
 import { useDebounced } from '../components/shell.jsx';
 import { fmtDate, cx } from '../utils.js';
 import { useWework } from './WeworkLayout.jsx';
@@ -49,10 +49,11 @@ function TaskSearch({ exclude, onPick }) {
  * Mục tiêu: tên, mô tả, hạn, tiến độ (tự tính theo công việc gắn kèm hoặc nhập tay)
  * và danh sách công việc liên quan (gắn thêm / bỏ gắn / tạo công việc mới cho mục tiêu).
  */
-export default function GoalModal({ goal, onClose, onSaved }) {
-  const { openTask, openCreate, version } = useWework();
+export default function GoalModal({ goal, onClose, onSaved, defaultOwner }) {
+  const { openTask, openCreate, version, isAdmin } = useWework();
+  const { users, user } = useApp();
   const toast = useToast();
-  const [f, setF] = useState({ title: '', description: '', progress: 0, due_date: '', auto_progress: true, ...goal,
+  const [f, setF] = useState({ title: '', description: '', progress: 0, due_date: '', auto_progress: true, user_id: defaultOwner || user.id, ...goal,
     auto_progress: goal?.auto_progress === undefined ? true : !!goal.auto_progress, due_date: goal?.due_date || '' });
   const [pending, setPending] = useState([]); // công việc chọn trước khi lưu mục tiêu mới
   const [tasks, reloadTasks] = useFetch(() => (goal?.id ? api.get(`/goals/${goal.id}/tasks`) : Promise.resolve([])), [goal?.id, version]);
@@ -63,7 +64,8 @@ export default function GoalModal({ goal, onClose, onSaved }) {
 
   const save = async () => {
     try {
-      const body = { title: f.title, description: f.description, due_date: f.due_date, progress: f.progress, auto_progress: f.auto_progress };
+      const body = { title: f.title, description: f.description, due_date: f.due_date, progress: f.progress, auto_progress: f.auto_progress,
+        ...(isAdmin ? { user_id: f.user_id } : {}) };
       if (goal?.id) await api.put(`/goals/${goal.id}`, body);
       else await api.post('/goals', { ...body, task_ids: pending.map((t) => t.id) });
       toast('Đã lưu mục tiêu');
@@ -99,6 +101,11 @@ export default function GoalModal({ goal, onClose, onSaved }) {
       </>}>
       <div className="form-grid one">
         <Field label="Tên mục tiêu" required><input className="input" autoFocus value={f.title} onChange={(e) => setF({ ...f, title: e.target.value })} placeholder="Ví dụ: Mở 20 điểm bán mới trong Q4" /></Field>
+        {isAdmin && (
+          <Field label="Người phụ trách mục tiêu" hint="Quản trị Wework đặt / chuyển mục tiêu cho bất kỳ ai">
+            <UserPicker users={users} value={f.user_id} onChange={(v) => setF({ ...f, user_id: v || user.id })} />
+          </Field>
+        )}
         <Field label="Mô tả / chỉ tiêu"><textarea className="input" rows={2} value={f.description || ''} onChange={(e) => setF({ ...f, description: e.target.value })} /></Field>
         <div className="form-grid">
           <Field label="Hạn hoàn thành"><input type="date" className="input" value={f.due_date} onChange={(e) => setF({ ...f, due_date: e.target.value })} /></Field>

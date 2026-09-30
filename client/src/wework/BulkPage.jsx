@@ -7,8 +7,9 @@ import { useWework } from './WeworkLayout.jsx';
 import { TaskRow } from './taskParts.jsx';
 
 export default function BulkPage() {
-  const { users, user } = useApp();
-  if (user.role !== 'admin') return <BulkDenied />;
+  const { users } = useApp();
+  const { isAdmin } = useWework();
+  if (!isAdmin) return <BulkDenied />;
   return <BulkInner users={users} />;
 }
 
@@ -17,7 +18,7 @@ function BulkDenied() {
     <div className="ww-page">
       <div className="ww-main wide">
         <div className="page-head"><h1>Tác vụ hàng loạt</h1></div>
-        <Empty title="Không có quyền truy cập">Chỉ Quản trị cấp cao hoặc Chủ doanh nghiệp mới được thao tác hàng loạt công việc.</Empty>
+        <Empty title="Không có quyền truy cập">Chỉ Quản trị cấp cao, Chủ doanh nghiệp hoặc người có chức danh quản trị mới được thao tác hàng loạt công việc.</Empty>
       </div>
     </div>
   );

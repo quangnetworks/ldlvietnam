@@ -18,6 +18,7 @@ import ReportsPage from './wework/ReportsPage.jsx';
 import BulkPage from './wework/BulkPage.jsx';
 import TaskPage from './wework/TaskPage.jsx';
 import GuidePage from './wework/GuidePage.jsx';
+import GoalsPage, { WeworkSettingsPage } from './wework/GoalsPage.jsx';
 import Home from './pages/Home.jsx';
 import AccountLayout from './account/AccountLayout.jsx';
 import { ProfileView, ProfileEdit, PasswordPage, ColorPage, LoginHistory } from './account/ProfilePages.jsx';
@@ -119,6 +120,8 @@ export default function App() {
         <Route path="members" element={<AccountMembers />} />
         <Route path="reports" element={<ReportsPage />} />
         <Route path="bulk" element={<BulkPage />} />
+        <Route path="goals" element={<GoalsPage />} />
+        <Route path="settings" element={<WeworkSettingsPage />} />
         <Route path="guide" element={<GuidePage />} />
       </Route>
       <Route path="/account" element={<AccountLayout />}>

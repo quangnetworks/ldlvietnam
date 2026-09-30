@@ -19,7 +19,26 @@ const STATUS_LABEL = { todo: 'Cần làm', doing: 'Đang làm', review: 'Chờ �
 const RECURRING = ['daily', 'weekly', 'monthly'];
 
 // ================================================================ access helpers
-const isAdmin = (u) => u.role === 'admin';
+/**
+ * Quản trị tối cao trong Wework: quản trị viên hệ thống (Quản trị cấp cao / Chủ doanh nghiệp) và người có chức danh quản trị
+ * (Cài đặt Wework → "Chức danh quản trị", mặc định mọi chức danh bắt đầu bằng "Quản trị").
+ */
+const isAdmin = (u) => u.role === 'admin' || !!u.wework_admin;
+const normTitle = (t) => String(t || '').normalize('NFC').trim().toLowerCase().replace(/\s+/g, ' ');
+export function titleIsWeworkAdmin(title, list) {
+  const t = normTitle(title);
+  return !!t && (list || []).some((x) => { const k = normTitle(x); return k && (t === k || t.startsWith(`${k} `)); });
+}
+const WEWORK_PATHS = ['/tasks', '/tasks/*', '/projects', '/projects/*', '/goals', '/goals/*', '/wework/*', '/filters', '/filters/*', '/search'];
+for (const path of WEWORK_PATHS) {
+  r.use(path, async (c, next) => {
+    const u = c.get('user');
+    if (u && u.role !== 'admin' && u.role !== 'guest' && !u.wework_admin && titleIsWeworkAdmin(u.title, (await weworkSettings()).admin_titles)) {
+      c.set('user', { ...u, wework_admin: true });
+    }
+    await next();
+  });
+}
 
 async function projectRole(user, projectId) {
   if (!projectId) return null;
@@ -45,7 +64,7 @@ function taskVisibilitySql(user) {
 }
 
 // ---------------- report permission (Cài đặt Wework → Quyền xem báo cáo)
-const DEFAULT_SETTINGS = { report_users: [], report_groups: [], report_departments: [] };
+const DEFAULT_SETTINGS = { report_users: [], report_groups: [], report_departments: [], admin_titles: ['Quản trị'] };
 
 async function weworkSettings() {
   try { return { ...DEFAULT_SETTINGS, ...JSON.parse((await getSetting('wework_settings')) || '{}') }; } catch { return { ...DEFAULT_SETTINGS }; }
@@ -422,16 +441,32 @@ function reportScope(q) {
 /** Danh sách người mà tài khoản hiện tại được giao việc (theo dự án nếu có). */
 r.get('/wework/assignable', async (c) => c.json(await assignableScope(c.get('user'), toInt(c.req.query('project_id')))));
 
-r.get('/wework/meta', async (c) => c.json({ can_view_reports: await canViewReports(c.get('user')), is_admin: isAdmin(c.get('user')) }));
+r.get('/wework/meta', async (c) => c.json({ can_view_reports: await canViewReports(c.get('user')), is_admin: isAdmin(c.get('user')),
+  is_system_admin: c.get('user').role === 'admin' }));
 
 r.get('/wework/settings', requireAdmin, async (c) => c.json(await weworkSettings()));
 r.put('/wework/settings', requireAdmin, async (c) => {
   const b = await jsonBody(c);
-  const next = { report_users: idList(b.report_users), report_groups: idList(b.report_groups), report_departments: idList(b.report_departments) };
+  const cur = await weworkSettings();
+  const next = {
+    ...(b.admin_titles !== undefined && b.report_users === undefined && b.report_groups === undefined && b.report_departments === undefined
+      ? { report_users: cur.report_users, report_groups: cur.report_groups, report_departments: cur.report_departments } // chỉ đổi chức danh quản trị
+      : { report_users: idList(b.report_users), report_groups: idList(b.report_groups), report_departments: idList(b.report_departments) }),
+    admin_titles: b.admin_titles === undefined ? cur.admin_titles
+      : [...new Set((Array.isArray(b.admin_titles) ? b.admin_titles : String(b.admin_titles).split('\n')).map((x) => String(x).trim()).filter(Boolean))].slice(0, 30),
+  };
   await setSetting('wework_settings', JSON.stringify(next));
   await audit(c.get('user').id, 'wework.settings',
-    `Cập nhật quyền xem báo cáo Wework (${next.report_users.length} người, ${next.report_groups.length} nhóm, ${next.report_departments.length} phòng ban)`);
+    `Cập nhật cài đặt Wework: quyền xem báo cáo (${next.report_users.length} người, ${next.report_groups.length} nhóm, ${next.report_departments.length} phòng ban), chức danh quản trị: ${next.admin_titles.join(', ') || 'không có'}`);
   return c.json(next);
+});
+
+/** Người đang có quyền quản trị Wework theo chức danh (để quản trị viên đối chiếu khi cài đặt). */
+r.get('/wework/settings/admins', requireAdmin, async (c) => {
+  const titles = c.req.query('titles') !== undefined ? String(c.req.query('titles')).split('\n') : (await weworkSettings()).admin_titles;
+  const users = await all("SELECT id, name, username, title, color, role FROM users WHERE active = 1 AND role <> 'guest' ORDER BY name COLLATE NOCASE");
+  return c.json(users.filter((u) => u.role === 'admin' || titleIsWeworkAdmin(u.title, titles))
+    .map((u) => ({ ...u, by: u.role === 'admin' ? 'role' : 'title' })));
 });
 
 r.get('/wework/reports/overview', async (c) => {
@@ -752,7 +787,11 @@ async function applyTaskUpdate(user, t, data) {
     await checkProjectAccess(user, data.project_id);
     if (data.list_id === undefined) data.list_id = null;
   }
-  if (data.parent_id !== undefined && data.parent_id === t.id) throw badRequest('Công việc cha không hợp lệ');
+  if (data.parent_id !== undefined && data.parent_id !== t.parent_id && data.parent_id) {
+    await checkParent(user, t, data.parent_id);
+    const parent = await get('SELECT project_id, list_id FROM tasks WHERE id = ?', data.parent_id);
+    if (data.project_id === undefined && parent.project_id !== t.project_id) { data.project_id = parent.project_id; data.list_id = parent.list_id; }
+  }
   const start = data.start_date !== undefined ? data.start_date : t.start_date;
   const due = data.due_date !== undefined ? data.due_date : t.due_date;
   if (start && due && start.slice(0, 10) > due.slice(0, 10)) throw badRequest('Thời hạn phải sau ngày bắt đầu');
@@ -847,10 +886,56 @@ r.delete('/tasks/:id', async (c) => {
   return c.json({ ok: true });
 });
 
+/** Công việc cha hợp lệ: tồn tại, xem được, không phải chính nó hay công việc con / cháu của nó. */
+async function checkParent(user, t, parentId) {
+  if (parentId === t.id) throw badRequest('Không thể chọn chính công việc này làm công việc cha');
+  const parent = await get('SELECT id FROM tasks WHERE id = ?', parentId);
+  if (!parent || !(await canViewTask(user, parentId))) throw badRequest('Công việc cha không tồn tại hoặc bạn không có quyền xem');
+  const loop = await get(`WITH RECURSIVE sub(id) AS (SELECT ? UNION ALL SELECT x.id FROM tasks x JOIN sub ON x.parent_id = sub.id)
+    SELECT 1 FROM sub WHERE id = ?`, t.id, parentId);
+  if (loop) throw badRequest('Không thể chuyển vào công việc con của chính nó');
+}
+
+/**
+ * Chuyển công việc thành công việc con của công việc khác (parent_id = null: tách thành công việc độc lập).
+ * Công việc (và các công việc con của nó) đi theo dự án / nhóm công việc của công việc cha.
+ */
+r.post('/tasks/:id/move', async (c) => {
+  const user = c.get('user');
+  const t = await viewableTask(c);
+  if (!(await isTaskOwner(user, t))) throw forbidden('Chỉ người giao việc, quản lý dự án hoặc quản trị viên mới được chuyển công việc');
+  const parentId = toInt((await jsonBody(c)).parent_id) || null;
+  if (parentId === (t.parent_id || null)) return c.json(await fullTask(t.id, user));
+  let parent = null;
+  if (parentId) {
+    await checkParent(user, t, parentId);
+    parent = await get('SELECT id, title, project_id, list_id FROM tasks WHERE id = ?', parentId);
+    if (parent.project_id && parent.project_id !== t.project_id) await checkProjectAccess(user, parent.project_id);
+  }
+  const projectId = parent ? parent.project_id : t.project_id;
+  const listId = parent ? (parent.project_id === t.project_id && t.list_id ? t.list_id : parent.list_id) : t.list_id;
+  const pos = (await get('SELECT COALESCE(MAX(position), 0) + 1 AS p FROM tasks WHERE IFNULL(parent_id, 0) = IFNULL(?, 0)', parentId)).p;
+  await run("UPDATE tasks SET parent_id = ?, project_id = ?, list_id = ?, position = ?, updated_at = datetime('now') WHERE id = ?",
+    parentId, projectId ?? null, listId ?? null, pos, t.id);
+  if ((projectId ?? null) !== (t.project_id ?? null)) {
+    // các công việc con / cháu đi cùng sang dự án mới
+    await run(`WITH RECURSIVE sub(id) AS (SELECT id FROM tasks WHERE parent_id = ? UNION ALL SELECT x.id FROM tasks x JOIN sub ON x.parent_id = sub.id)
+      UPDATE tasks SET project_id = ?, list_id = NULL WHERE id IN (SELECT id FROM sub)`, t.id, projectId ?? null);
+  }
+  const old = t.parent_id ? await get('SELECT title FROM tasks WHERE id = ?', t.parent_id) : null;
+  await logActivity('task', t.id, user.id, 'moved', parent ? `Chuyển thành công việc con của "${parent.title}"` : `Tách khỏi công việc cha "${old?.title || ''}"`);
+  if (parent) await logActivity('task', parent.id, user.id, 'subtask', `Thêm công việc con "${t.title}" (chuyển từ công việc khác)`);
+  const watchers = (await all('SELECT user_id FROM task_followers WHERE task_id = ?', t.id)).map((x) => x.user_id);
+  await notify([t.assignee_id, t.creator_id, ...watchers], { actorId: user.id, app: APP, type: 'updated',
+    title: parent ? `${user.name} đã chuyển "${t.title}" thành công việc con của "${parent.title}"` : `${user.name} đã tách "${t.title}" thành công việc độc lập`,
+    link: `/wework/task/${t.id}` });
+  return c.json(await fullTask(t.id, user));
+});
+
 /** Tác vụ hàng loạt: chỉ Quản trị cấp cao / Chủ doanh nghiệp (trưởng phòng, nhân viên không được dùng). */
 r.post('/tasks/bulk', async (c) => {
   const user = c.get('user');
-  if (user.role !== 'admin') throw forbidden('Chỉ Quản trị cấp cao hoặc Chủ doanh nghiệp mới được thao tác hàng loạt công việc');
+  if (!isAdmin(user)) throw forbidden('Chỉ Quản trị cấp cao, Chủ doanh nghiệp hoặc chức danh quản trị mới được thao tác hàng loạt công việc');
   const b = await jsonBody(c);
   let affected = 0;
   const data = b.action === 'update' ? parseTaskBody(b.data || {}, true) : null;
@@ -1440,25 +1525,47 @@ const GOAL_SELECT = `SELECT g.*, (SELECT COUNT(*) FROM tasks t WHERE t.goal_id =
     (SELECT COUNT(*) FROM tasks t WHERE t.goal_id = g.id AND t.status = 'done') AS task_done,
     (SELECT COUNT(*) FROM tasks t WHERE t.goal_id = g.id AND t.status IN ('todo','doing') AND t.due_date IS NOT NULL AND date(t.due_date) < date('now')) AS task_overdue
   FROM goals g`;
+/** Mục tiêu của chính mình; quản trị Wework quản lý (sửa, xoá, gắn công việc) mục tiêu của mọi người. */
 async function ownGoal(c) {
-  const g = await get('SELECT * FROM goals WHERE id = ? AND user_id = ?', toInt(c.req.param('id')), c.get('user').id);
-  if (!g) throw notFound('Mục tiêu không tồn tại');
+  const user = c.get('user');
+  const g = await get('SELECT * FROM goals WHERE id = ?', toInt(c.req.param('id')));
+  if (!g || (g.user_id !== user.id && !isAdmin(user))) throw notFound('Mục tiêu không tồn tại');
   return g;
 }
+const GOAL_LIST = `SELECT x.*, u.name AS owner_name, u.color AS owner_color, d.name AS department_name FROM (${GOAL_SELECT}) x
+  JOIN users u ON u.id = x.user_id LEFT JOIN departments d ON d.id = u.department_id`;
 
-r.get('/goals', async (c) => c.json(await all(`${GOAL_SELECT} WHERE g.user_id = ? ORDER BY g.id DESC`, c.get('user').id)));
+/** ?scope=all (quản trị Wework): mục tiêu của mọi người, lọc theo user_id / trạng thái. Mặc định: mục tiêu của tôi. */
+r.get('/goals', async (c) => {
+  const user = c.get('user');
+  const q = c.req.query();
+  const where = [];
+  const params = [];
+  if (q.scope === 'all' && isAdmin(user)) {
+    if (toInt(q.user_id)) { where.push('x.user_id = ?'); params.push(toInt(q.user_id)); }
+  } else { where.push('x.user_id = ?'); params.push(user.id); }
+  if (q.status === 'active') where.push('x.progress < 100');
+  else if (q.status === 'done') where.push('x.progress >= 100');
+  if (q.q) { where.push('x.title LIKE ?'); params.push(`%${q.q}%`); }
+  return c.json(await all(`${GOAL_LIST} ${where.length ? `WHERE ${where.join(' AND ')}` : ''} ORDER BY x.progress >= 100, x.due_date IS NULL, x.due_date, x.id DESC`, ...params));
+});
 r.post('/goals', async (c) => {
   const b = await jsonBody(c);
   const title = String(b.title || '').trim();
   if (!title) throw badRequest('Tên mục tiêu là bắt buộc');
+  // quản trị Wework đặt mục tiêu cho người khác
+  const owner = isAdmin(c.get('user')) && toInt(b.user_id) && (await get('SELECT id FROM users WHERE id = ? AND active = 1', toInt(b.user_id)))
+    ? toInt(b.user_id) : c.get('user').id;
   const { lastId } = await run('INSERT INTO goals(user_id, title, progress, due_date, auto_progress, description) VALUES (?,?,?,?,?,?)',
-    c.get('user').id, title, clampPct(b.progress), b.due_date || null, b.auto_progress === false ? 0 : 1, b.description || null);
+    owner, title, clampPct(b.progress), b.due_date || null, b.auto_progress === false ? 0 : 1, b.description || null);
   await linkGoalTasks(c.get('user'), lastId, idList(b.task_ids));
   return c.json(await get(`${GOAL_SELECT} WHERE g.id = ?`, lastId), 201);
 });
 r.put('/goals/:id', async (c) => {
   const g = await ownGoal(c);
   const b = await jsonBody(c);
+  const owner = isAdmin(c.get('user')) && toInt(b.user_id) && (await get('SELECT id FROM users WHERE id = ? AND active = 1', toInt(b.user_id))) ? toInt(b.user_id) : g.user_id;
+  if (owner !== g.user_id) await run('UPDATE goals SET user_id = ? WHERE id = ?', owner, g.id);
   await run('UPDATE goals SET title = COALESCE(?, title), progress = COALESCE(?, progress), due_date = ?, auto_progress = ?, description = ? WHERE id = ?',
     b.title?.trim() || null, b.progress === undefined ? null : clampPct(b.progress),
     b.due_date === undefined ? g.due_date : b.due_date || null,
