@@ -249,3 +249,36 @@ test('resignation leaves sales positions vacant until a new person is assigned; 
   await hr.del(`/sales/territories/${bacNinh.id}/members/${id('srep.bn')}?role=SREP&vacancy=0`);
   assert.ok(!(await hr.get('/sales/structure')).data.vacancies.some((v) => v.user_id === id('srep.bn')));
 });
+
+test('HRM: phòng ban vs văn phòng — đổi phòng ban trên hồ sơ, cập nhật hàng loạt, danh mục gồm giá trị đang dùng', async () => {
+  const hr = await login('chilan');
+  const users = (await hr.get('/users')).data;
+  const id = (u) => users.find((x) => x.username === u).id;
+  const deps = (await hr.get('/departments')).data;
+  const kt = deps.find((d) => d.name === 'Phòng Kế toán').id;
+  // hồ sơ HRM đổi được phòng ban (đơn vị tổ chức) độc lập với văn phòng (nơi / khối làm việc)
+  const e = (await hr.put(`/hrm/employees/${id('hoangcong')}`, { department_id: kt, office: 'Văn phòng' })).data;
+  assert.deepEqual([e.department_id, e.department_name, e.office], [kt, 'Phòng Kế toán', 'Văn phòng']);
+  // quản lý nhân sự không đổi được phòng ban của quản trị viên
+  assert.equal((await hr.put(`/hrm/employees/${id('admin')}`, { department_id: kt })).status, 403);
+
+  // cập nhật hàng loạt: phòng ban + văn phòng + phân loại
+  const ids = ['demo', 'phuonglinh', 'duylinh'].map(id);
+  const r = (await hr.post('/hrm/employees/bulk', { ids, department_id: kt, office: 'Đội sales', employee_type: 'Toàn thời gian' })).data;
+  assert.deepEqual([r.updated, r.fields], [3, ['phòng ban', 'văn phòng', 'phân loại nhân sự']]);
+  const list = (await hr.get('/hrm/employees?office=Đội sales')).data.map((x) => x.username).sort();
+  assert.deepEqual(list, ['demo', 'duylinh', 'phuonglinh']);
+  assert.ok((await hr.get(`/hrm/employees?department_id=${kt}`)).data.some((x) => x.username === 'demo'));
+  assert.equal((await hr.post('/hrm/employees/bulk', { ids, office: 'x' })).status === 200, true);
+  assert.equal((await hr.post('/hrm/employees/bulk', { ids })).status, 400);
+  assert.equal((await (await login('demo')).post('/hrm/employees/bulk', { ids, office: 'x' })).status, 403);
+  // danh mục văn phòng gồm cả giá trị đang dùng trên hồ sơ để lọc / chọn
+  const cat = (await hr.get('/hrm/catalog')).data;
+  assert.ok(cat.offices.includes('Văn phòng') && cat.offices.includes('x'));
+
+  // nhập lại người đã nghỉ có vị trí cũ: không nhân đôi lịch sử vị trí
+  const row = { username: 'sr.cu', work_status: 'Đã nghỉ việc', hire_date: '01/03/2025', resign_date: '01/06/2025', sales_role: 'SREP', territory: 'Bắc Ninh', industry: 'TP' };
+  await hr.post('/hrm/employees/import', { rows: [row] });
+  const oldId = (await hr.get('/hrm/employees?view=resigned')).data.find((x) => x.username === 'sr.cu').id;
+  assert.equal((await hr.get(`/sales/users/${oldId}?history=1`)).data.length, 1);
+});

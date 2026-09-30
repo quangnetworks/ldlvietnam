@@ -657,7 +657,7 @@ export function HrmReports() {
 }
 
 export const CATALOG_LABELS = {
-  offices: ['Văn phòng', 'Văn phòng / chi nhánh làm việc'],
+  offices: ['Văn phòng', 'Nơi / khối làm việc (VD Văn phòng, Đội sales, Chi nhánh HCM) — khác Phòng ban: phòng ban là đơn vị tổ chức, quản lý ở Tài khoản → Phòng ban'],
   positions: ['Vị trí công việc', 'Dùng cho vị trí và thăng tiến'],
   employee_types: ['Phân loại nhân sự', 'VD: Toàn thời gian, Bán thời gian'],
   contract_types: ['Phân loại hợp đồng', 'Loại hợp đồng lao động'],

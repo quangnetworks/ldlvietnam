@@ -277,8 +277,10 @@ async function importProfiles(c, body) {
           if (resigned) {
             // nhân sự đã nghỉ: chỉ lưu là vị trí ĐÃ TỪNG phụ trách (không chiếm chỗ, không tạo vị trí trống)
             assignStmt(t, u.id, role, { industry });   // kiểm tra vị trí khớp cấp địa bàn
+            const since = isoDate(row.hire_date) || null; const ended = set.resign_date || isoDate(row.resign_date) || vnDate();
             S.push([`INSERT INTO territory_history(territory_id, user_id, role, industry, since, ended_at, reason, closed)
-              VALUES (?,?,?,?,?,?, 'resigned', 1)`, [t.id, u.id, role, industry, isoDate(row.hire_date) || null, set.resign_date || isoDate(row.resign_date) || vnDate()]]);
+              SELECT ?,?,?,?,?,?, 'resigned', 1 WHERE NOT EXISTS (SELECT 1 FROM territory_history WHERE territory_id = ? AND user_id = ? AND role = ?
+                AND IFNULL(since, '') = IFNULL(?, '') AND ended_at = ?)`, [t.id, u.id, role, industry, since, ended, t.id, u.id, role, since, ended]]);
             S.push(['UPDATE users SET sales_role = ?, sales_industry = ? WHERE id = ?', [role, industry, u.id]]);
             res.past_posts = (res.past_posts || 0) + 1;
           } else {
@@ -361,9 +363,14 @@ r.get('/hrm/employees/:id', async (c) => {
 r.put('/hrm/employees/:id', async (c) => {
   await requireHr(c);
   const id = toInt(c.req.param('id'));
-  const u = await get("SELECT u.id, u.username, IFNULL(h.work_status, 'working') AS work_status FROM users u LEFT JOIN hr_profiles h ON h.user_id = u.id WHERE u.id = ?", id);
+  const u = await get(`SELECT u.id, u.username, u.role, u.is_owner, u.department_id, IFNULL(h.work_status, 'working') AS work_status
+    FROM users u LEFT JOIN hr_profiles h ON h.user_id = u.id WHERE u.id = ?`, id);
   if (!u) throw notFound();
   const b = await jsonBody(c);
+  // Phòng ban (đơn vị tổ chức, dùng chung toàn hệ thống) — khác "Văn phòng" (nơi / khối làm việc trên hồ sơ HRM)
+  if (b.department_id !== undefined && toInt(b.department_id) !== u.department_id) {
+    await setDepartment(c.get('user'), [u], toInt(b.department_id));
+  }
   if (b.work_status && !WORK_STATUS.includes(b.work_status)) throw badRequest('Trạng thái không hợp lệ');
   for (const k of DATE_FIELDS) {
     if (b[k] && !/^\d{4}-\d{2}-\d{2}$/.test(b[k])) throw badRequest('Ngày không hợp lệ');
@@ -376,6 +383,44 @@ r.put('/hrm/employees/:id', async (c) => {
   const vacated = b.work_status === 'resigned' && u.work_status !== 'resigned' ? await vacateUser(id) : 0;
   await audit(c.get('user').id, 'hrm.update', `Cập nhật hồ sơ nhân sự @${u.username}${vacated ? ` (nghỉ việc, để trống ${vacated} vị trí)` : ''}`);
   return c.json({ ...empView(await get(`${EMP_SELECT} WHERE u.id = ?`, id)), vacated });
+});
+
+async function setDepartment(actor, targets, depId) {
+  if (depId && !(await get('SELECT 1 FROM departments WHERE id = ?', depId))) throw badRequest('Phòng ban không tồn tại');
+  if (actor.role !== 'admin' && targets.some((t) => t.role === 'admin' || t.is_owner)) {
+    throw forbidden('Chỉ quản trị viên mới đổi phòng ban của tài khoản quản trị');
+  }
+  await run('UPDATE users SET department_id = ? WHERE id IN (SELECT value FROM json_each(?))', depId || null, JSON.stringify(targets.map((t) => t.id)));
+}
+
+/**
+ * Cập nhật hàng loạt các nhân sự đã chọn: phòng ban, văn phòng, phân loại nhân sự, vị trí công việc, quản lý trực tiếp.
+ * Chỉ trường được gửi mới thay đổi.
+ */
+r.post('/hrm/employees/bulk', async (c) => {
+  await requireHr(c);
+  const b = await jsonBody(c);
+  const ids = idList(b.ids).slice(0, 2000);
+  if (!ids.length) throw badRequest('Chưa chọn nhân sự');
+  const targets = await all('SELECT id, role, is_owner FROM users WHERE id IN (SELECT value FROM json_each(?))', JSON.stringify(ids));
+  const done = [];
+  if (b.department_id !== undefined) { await setDepartment(c.get('user'), targets, toInt(b.department_id)); done.push('phòng ban'); }
+  if (b.manager_id !== undefined) {
+    const m = toInt(b.manager_id);
+    if (m && !(await get('SELECT 1 FROM users WHERE id = ?', m))) throw badRequest('Quản lý không tồn tại');
+    await run('UPDATE users SET manager_id = ? WHERE id IN (SELECT value FROM json_each(?)) AND id <> IFNULL(?, 0)', m || null, JSON.stringify(ids), m);
+    done.push('quản lý trực tiếp');
+  }
+  for (const [k, label] of [['office', 'văn phòng'], ['employee_type', 'phân loại nhân sự'], ['job_position', 'vị trí công việc']]) {
+    if (b[k] === undefined) continue;
+    const v = String(b[k] ?? '').trim().slice(0, 200) || null;
+    await run(`INSERT INTO hr_profiles(user_id, ${k}, updated_at) SELECT value, ?, datetime('now') FROM json_each(?) WHERE true
+      ON CONFLICT(user_id) DO UPDATE SET ${k} = excluded.${k}, updated_at = datetime('now')`, v, JSON.stringify(targets.map((t) => t.id)));
+    done.push(label);
+  }
+  if (!done.length) throw badRequest('Chọn thông tin cần cập nhật');
+  await audit(c.get('user').id, 'hrm.bulk', `Cập nhật ${done.join(', ')} cho ${targets.length} nhân sự`);
+  return c.json({ updated: targets.length, fields: done });
 });
 
 r.get('/hrm/stats', async (c) => {
@@ -418,7 +463,15 @@ export const CATALOG_DEFAULTS = {
 const catalog = () => jsonSetting('hrm_catalog', CATALOG_DEFAULTS);
 const cleanList = (v, max = 60) => [...new Set((Array.isArray(v) ? v : String(v || '').split('\n')).map((x) => String(x).trim()).filter(Boolean))].slice(0, max);
 
-r.get('/hrm/catalog', async (c) => c.json(await catalog()));
+/** Danh mục + các giá trị đang dùng trên hồ sơ (VD văn phòng nhập từ Excel chưa có trong danh mục) để lọc / chọn được. */
+r.get('/hrm/catalog', async (c) => {
+  const cat = await catalog();
+  for (const [k, col] of [['offices', 'office'], ['positions', 'job_position'], ['employee_types', 'employee_type']]) {
+    const used = (await all(`SELECT DISTINCT ${col} AS v FROM hr_profiles WHERE IFNULL(${col}, '') <> ''`)).map((x) => x.v);
+    cat[k] = [...new Set([...(cat[k] || []), ...used])];
+  }
+  return c.json(cat);
+});
 r.put('/hrm/catalog', async (c) => {
   await requireHr(c);
   const b = await jsonBody(c);

@@ -3,14 +3,14 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 import {
   Search, ArrowLeft, Cake, FileWarning, UserPlus, Hourglass, Download, Upload, Plus, Trash2, Users2, BarChart3, FileSignature, BadgeCheck,
   PauseCircle, Building2, PieChart, CheckCircle2, Briefcase, IdCard, LogOut, StickyNote, Phone, Mail, CalendarDays, UserCog, MapPin, Clock3,
-  FileText, TrendingUp, Save, Settings2, ShieldCheck, ListChecks, CalendarHeart, Package,
+  FileText, TrendingUp, Save, Settings2, ShieldCheck, ListChecks, CalendarHeart, Package, Pencil,
 } from 'lucide-react';
 import { PersonAssets } from '../asset/AssetPages.jsx';
 import { SalesFacts, RoleBadge } from './SalesOrg.jsx';
 import { HrHero, Kpi, HrCard, Pill, HBars, StackBar, WORK_TONE, WORK_COLOR, daysLeft } from './hrUi.jsx';
 import { api } from '../api.js';
 import { useApp, useFetch, useToast } from '../context.jsx';
-import { Avatar, Spinner, Field, Empty, UserPicker, FilterSelect, Tabs, useShowMore } from '../components/ui.jsx';
+import { Avatar, Spinner, Field, Empty, UserPicker, FilterSelect, Tabs, useShowMore, Modal } from '../components/ui.jsx';
 import { ContractsPanel, CareersPanel, DocumentsPanel, ImportProfilesModal, useHrCatalog, CATALOG_LABELS } from './HrmRecords.jsx';
 import { useDebounced } from '../components/shell.jsx';
 import { fmtDate, cx } from '../utils.js';
@@ -111,7 +111,7 @@ const VIEWS = [
 export const StatusPill = ({ status }) => <Pill tone={WORK_TONE[status] || 'gray'}>{WORK_STATUS[status] || status}</Pill>;
 /** Nhóm cột như Base HRM: Tổng quan, Công việc, Hợp đồng & pháp lý, Hồ sơ & liên hệ. */
 const COLUMN_SETS = {
-  overview: { label: 'Tổng quan', cols: [['department_name', 'Phòng ban'], ['job_position', 'Vị trí'], ['hire_date', 'Ngày bắt đầu', 'date'], ['seniority', 'Thâm niên'], ['work_status', 'Trạng thái']] },
+  overview: { label: 'Tổng quan', cols: [['department_name', 'Phòng ban'], ['office', 'Văn phòng'], ['job_position', 'Vị trí'], ['hire_date', 'Ngày bắt đầu', 'date'], ['seniority', 'Thâm niên'], ['work_status', 'Trạng thái']] },
   work: { label: 'Công việc', cols: [['title', 'Chức danh'], ['manager_name', 'Quản lý trực tiếp'], ['office', 'Văn phòng'], ['employee_type', 'Phân loại nhân sự'],
     ['official_date', 'Ngày chính thức', 'date'], ['last_promotion', 'Thăng tiến gần nhất']] },
   legal: { label: 'Hợp đồng & pháp lý', cols: [['contract_type', 'Hợp đồng'], ['contract_end', 'Hết hạn HĐ', 'date'], ['id_number', 'Số CCCD'], ['insurance_number', 'Số sổ BHXH'], ['tax_code', 'MST TNCN']] },
@@ -148,6 +148,10 @@ export function HrmEmployees() {
   const [items, reload, loading, error] = useFetch(() => api.get('/hrm/employees', params), [dq, view, dep, office, type, contract, salesRole, territory, industry]);
   const pickSales = (setter) => (v) => { setter(v); if (v) setColSet('sales'); };
   const [shown, more] = useShowMore(items, 60, JSON.stringify(params));
+  const [picked, setPicked] = useState(() => new Set());
+  const [bulk, setBulk] = useState(false);
+  const togglePick = (id) => setPicked((p) => { const n = new Set(p); if (n.has(id)) n.delete(id); else n.add(id); return n; });
+  const allPicked = !!items?.length && items.every((e) => picked.has(e.id));
   const indent = { national: '', region: '— ', area: '—— ', province: '——— ' };
   if (error) return <div className="page"><div className="alert alert-error">{error.message}</div></div>;
   const cell = (e, [k, , kind]) => {
@@ -185,15 +189,28 @@ export function HrmEmployees() {
           ...sales.industries.map((x) => ({ value: x.code, label: x.name }))]} />}
         <FilterSelect value={contract} onChange={setContract} options={[{ value: '', label: 'Mọi hợp đồng' }, { value: 'expiring', label: 'HĐ sắp hết hạn (30 ngày)' }]} />
       </div>
+      {picked.size > 0 && (
+        <div className="hr-bulkbar hr-rise">
+          <b>Đã chọn {picked.size} nhân sự</b>
+          {!allPicked && items?.length > picked.size && <button className="link-btn small" onClick={() => setPicked(new Set(items.map((e) => e.id)))}>Chọn cả {items.length} nhân sự theo bộ lọc</button>}
+          <div className="grow" />
+          <button className="btn btn-sm" onClick={() => setPicked(new Set())}>Bỏ chọn</button>
+          <button className="btn btn-primary btn-sm" onClick={() => setBulk(true)}><Pencil size={14} /> Cập nhật hàng loạt</button>
+        </div>
+      )}
       <div className="hr-colsets">
         {Object.entries(COLUMN_SETS).map(([k, c]) => <button key={k} className={cx('chip-btn', colSet === k && 'active')} onClick={() => setColSet(k)}>{c.label}</button>)}
       </div>
       {loading && !items ? <Spinner /> : !items.length ? <div className="hr-table-card"><Empty title="Không có nhân sự phù hợp bộ lọc" /></div> : (
         <div className="hr-table-card hr-rise">
           <div className="table-wrap"><table className="table nowrap-cells">
-            <thead><tr><th>Mã NV</th><th>Nhân sự</th>{COLUMN_SETS[colSet].cols.map(([k, l]) => <th key={k}>{l}</th>)}</tr></thead>
+            <thead><tr>
+              <th className="hr-pick"><input type="checkbox" aria-label="Chọn tất cả nhân sự theo bộ lọc" checked={allPicked}
+                onChange={() => setPicked(allPicked ? new Set() : new Set(items.map((e) => e.id)))} /></th>
+              <th>Mã NV</th><th>Nhân sự</th>{COLUMN_SETS[colSet].cols.map(([k, l]) => <th key={k}>{l}</th>)}</tr></thead>
             <tbody>{shown.map((e) => (
-              <tr key={e.id} className="clickable hr-row" onClick={() => navigate(`/hrm/employees/${e.id}`)}>
+              <tr key={e.id} className={cx('clickable hr-row', picked.has(e.id) && 'picked')} onClick={() => navigate(`/hrm/employees/${e.id}`)}>
+                <td className="hr-pick" onClick={(ev) => ev.stopPropagation()}><input type="checkbox" aria-label={`Chọn ${e.name}`} checked={picked.has(e.id)} onChange={() => togglePick(e.id)} /></td>
                 <td>{e.employee_code ? <span className="hr-code">{e.employee_code}</span> : <span className="muted">—</span>}</td>
                 <td><span className="hr-name"><Avatar name={e.name} color={e.color} uid={e.id} size={32} /><span><b>{e.name}</b><small className="muted block">{e.title}</small></span></span></td>
                 {COLUMN_SETS[colSet].cols.map((c) => <td key={c[0]}>{cell(e, c)}</td>)}
@@ -204,15 +221,62 @@ export function HrmEmployees() {
         </div>
       )}
       {importing && <ImportProfilesModal onClose={() => setImporting(false)} onDone={reload} />}
+      {bulk && <BulkEditModal ids={[...picked]} cat={cat} onClose={() => setBulk(false)} onDone={() => { setBulk(false); setPicked(new Set()); reload(); }} />}
     </div>
+  );
+}
+
+/**
+ * Cập nhật hàng loạt nhân sự đã chọn. Phòng ban = đơn vị tổ chức (Tài khoản → Phòng ban);
+ * Văn phòng = nơi / khối làm việc trên hồ sơ HRM (VD Văn phòng, Đội sales). Ô để trống = giữ nguyên.
+ */
+function BulkEditModal({ ids, cat, onClose, onDone }) {
+  const { departments, users } = useApp();
+  const toast = useToast();
+  const [f, setF] = useState({ department_id: '', office: '', employee_type: '', job_position: '', manager_id: null });
+  const [busy, setBusy] = useState(false);
+  const body = Object.fromEntries(Object.entries(f).filter(([, v]) => v !== '' && v !== null));
+  const save = async () => {
+    setBusy(true);
+    try {
+      const r = await api.post('/hrm/employees/bulk', { ids, ...body });
+      toast(`Đã cập nhật ${r.fields.join(', ')} cho ${r.updated} nhân sự`);
+      onDone();
+    } catch (e) { toast(e.message, 'error'); } finally { setBusy(false); }
+  };
+  const text = (k, label, list, hint) => (
+    <Field label={label} hint={hint}>
+      <input className="input" list={`bulk-${k}`} value={f[k]} onChange={(e) => setF({ ...f, [k]: e.target.value })} placeholder="— Giữ nguyên —" />
+      <datalist id={`bulk-${k}`}>{(list || []).map((o) => <option key={o} value={o} />)}</datalist>
+    </Field>
+  );
+  return (
+    <Modal title={`Cập nhật hàng loạt · ${ids.length} nhân sự`} onClose={onClose} width={560}
+      footer={<><button className="btn" onClick={onClose}>Huỷ</button><button className="btn btn-primary" disabled={busy || !Object.keys(body).length} onClick={save}>Cập nhật {ids.length} nhân sự</button></>}>
+      <p className="muted small">Chỉ những ô có chọn / nhập mới được thay đổi; ô để trống giữ nguyên thông tin hiện tại.</p>
+      <div className="form-grid">
+        <Field label="Phòng ban" hint="Đơn vị tổ chức, dùng chung toàn hệ thống (phân quyền, duyệt, giao việc)">
+          <select className="input" value={f.department_id} onChange={(e) => setF({ ...f, department_id: e.target.value })}>
+            <option value="">— Giữ nguyên —</option>
+            {departments.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
+          </select>
+        </Field>
+        {text('office', 'Văn phòng', cat?.offices, 'Nơi / khối làm việc, VD Văn phòng, Đội sales')}
+        {text('employee_type', 'Phân loại nhân sự', cat?.employee_types)}
+        {text('job_position', 'Vị trí công việc', cat?.positions)}
+      </div>
+      <Field label="Quản lý trực tiếp"><UserPicker users={users.filter((u) => u.role !== 'guest')} value={f.manager_id} onChange={(v) => setF({ ...f, manager_id: v })} placeholder="— Giữ nguyên —" /></Field>
+    </Modal>
   );
 }
 
 /** Nhóm trường hồ sơ; list = lấy lựa chọn từ danh mục HRM (Cài đặt). */
 const FIELD_GROUPS = [
   ['Thông tin công việc', [
+    ['department_id', 'Phòng ban', 'department', 'Đơn vị tổ chức (dùng chung toàn hệ thống: phân quyền, duyệt, giao việc)'],
+    ['office', 'Văn phòng', 'list:offices', 'Nơi / khối làm việc, VD Văn phòng, Đội sales — khác Phòng ban'],
     ['employee_code', 'Mã nhân viên'], ['work_status', 'Trạng thái', Object.keys(WORK_STATUS)], ['job_position', 'Vị trí công việc', 'list:positions'],
-    ['employee_type', 'Phân loại nhân sự', 'list:employee_types'], ['office', 'Văn phòng', 'list:offices'], ['hire_date', 'Ngày bắt đầu', 'date'],
+    ['employee_type', 'Phân loại nhân sự', 'list:employee_types'], ['hire_date', 'Ngày bắt đầu', 'date'],
     ['probation_end', 'Hết thử việc', 'date'], ['official_date', 'Ngày chính thức', 'date'],
     ['contract_type', 'Loại hợp đồng', 'list:contract_types'], ['contract_end', 'Ngày hết hạn HĐ', 'date'],
   ]],
@@ -229,13 +293,13 @@ export function HrmEmployee({ selfId }) {
   const id = selfId || Number(params.id);
   const navigate = useNavigate();
   const toast = useToast();
-  const { user } = useApp();
+  const { user, departments } = useApp();
   const meta = useHrMeta();
   const [cat] = useHrCatalog();
   const [tab, setTab] = useState('profile');
   const [e, reload, loading, error] = useFetch(() => api.get(`/hrm/employees/${id}`), [id]);
   const [f, setF] = useState(null);
-  useEffect(() => { if (e) setF(Object.fromEntries([...ALL_FIELDS.map(([k]) => [k, e[k] || '']), ['note', e.note || '']])); }, [e]);
+  useEffect(() => { if (e) setF(Object.fromEntries([...ALL_FIELDS.map(([k]) => [k, e[k] == null ? '' : String(e[k])]), ['note', e.note || '']])); }, [e]);
   if (error) return <div className="page hr"><div className="alert alert-error">{error.message}</div></div>;
   if (loading && !e) return <div className="page hr"><Spinner /></div>;
   const edit = meta?.is_manager;
@@ -303,11 +367,16 @@ export function HrmEmployee({ selfId }) {
               return (
                 <HrCard key={title} icon={Icon} tone={tone} title={title} i={gi + 1}>
                   <div className="hr-field-grid">
-                    {fields.map(([k, label, type]) => {
+                    {fields.map(([k, label, type, hint]) => {
                       const opts = options(type, f[k]);
                       return (
-                        <Field key={k} label={label}>
-                          {opts ? (
+                        <Field key={k} label={label} hint={hint}>
+                          {type === 'department' ? (
+                            <select className="input" disabled={!edit} value={f[k]} onChange={(ev) => setF({ ...f, [k]: ev.target.value })}>
+                              <option value="">— Chưa có phòng ban —</option>
+                              {departments.map((d) => <option key={d.id} value={String(d.id)}>{d.name}</option>)}
+                            </select>
+                          ) : opts ? (
                             <select className="input" disabled={!edit} value={f[k]} onChange={(ev) => setF({ ...f, [k]: ev.target.value })}>
                               <option value="">—</option>
                               {opts.map((o) => <option key={o} value={o}>{WORK_STATUS[o] || o}</option>)}
@@ -326,7 +395,7 @@ export function HrmEmployee({ selfId }) {
             {edit && dirty && (
               <div className="hr-savebar hr-rise">
                 <span className="grow small"><b>Có thay đổi chưa lưu</b></span>
-                {dirty && <button className="btn" onClick={() => setF(Object.fromEntries([...ALL_FIELDS.map(([k]) => [k, e[k] || '']), ['note', e.note || '']]))}>Hoàn tác</button>}
+                {dirty && <button className="btn" onClick={() => setF(Object.fromEntries([...ALL_FIELDS.map(([k]) => [k, e[k] == null ? '' : String(e[k])]), ['note', e.note || '']]))}>Hoàn tác</button>}
                 <button className="btn btn-primary" disabled={!dirty} onClick={save}><Save size={15} /> Lưu hồ sơ</button>
               </div>
             )}
