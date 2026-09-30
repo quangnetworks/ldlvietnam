@@ -7,14 +7,14 @@ import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
   Network, Search, Plus, Pencil, Trash2, UserPlus, X, ChevronDown, ChevronRight, RefreshCw, MapPinned, Map as MapIcon, Crown, Users2, UserRound,
-  ListTree, Rows3, AlertTriangle, Tags,
+  ListTree, Rows3, AlertTriangle, Tags, UserMinus,
 } from 'lucide-react';
 import { api } from '../api.js';
 import { useApp, useFetch, useToast } from '../context.jsx';
 import { Avatar, Spinner, Field, Modal, UserPicker, Empty, useShowMore, foldVi } from '../components/ui.jsx';
 import { HrHero, Kpi, HrCard } from './hrUi.jsx';
 import { useDebounced } from '../components/shell.jsx';
-import { cx } from '../utils.js';
+import { cx, fmtDate } from '../utils.js';
 
 /** Màu cố định theo vị trí (không theo thứ hạng hiển thị). */
 export const ROLE_TONE = { NSM: 'amber', RSM: 'orange', ASM: 'violet', SS: 'blue', PG: 'pink', SREP: 'green', SREP_KA: 'aqua' };
@@ -63,9 +63,30 @@ function NodeTools({ t, data, onAction }) {
 }
 const CHILD_LABEL = { national: 'miền', region: 'khu vực', area: 'tỉnh / thành' };
 
-function Members({ list, data, onRemove, match, empty }) {
-  if (!list.length) return empty ? <span className="so-vacant"><AlertTriangle size={12} /> {empty}</span> : null;
-  return <div className="so-members">{list.map((m) => <MemberChip key={`${m.user_id}-${m.role}`} m={m} manage={data.can_manage} onRemove={onRemove} hit={match(m)} industries={data.industries} />)}</div>;
+const VACANCY_REASON = { resigned: 'nghỉ việc', removed: 'điều chuyển / gỡ phân công', disabled: 'khoá tài khoản' };
+
+/** Vị trí đang trống (người cũ nghỉ việc / điều chuyển) — giữ chỗ trên sơ đồ cho đến khi có người mới. */
+function VacancyChip({ v, data, onFill, onDismiss }) {
+  return (
+    <span className="so-member so-vacancy" title={`Trống từ ${fmtDate(v.ended_at)}${v.prev_name ? ` · trước: ${v.prev_name} (${VACANCY_REASON[v.reason] || v.reason})` : ''}`}>
+      <span className="so-vacancy-icon"><UserMinus size={13} /></span>
+      <span className="ellipsis">Trống{v.prev_name ? ` · trước: ${v.prev_name}` : ''}</span>
+      <RoleBadge role={v.role} />
+      <IndustryTag code={v.industry} industries={data.industries} />
+      {data.can_manage && <button className="so-fill" onClick={() => onFill(v)} title="Phân công người mới"><UserPlus size={12} /> Phân công</button>}
+      {data.can_manage && <button className="so-x" aria-label="Không tuyển lại vị trí này" title="Không tuyển lại vị trí này" onClick={() => onDismiss(v)}><X size={12} /></button>}
+    </span>
+  );
+}
+
+function Members({ list, vacancies = [], data, onRemove, onFill, onDismiss, match, empty }) {
+  if (!list.length && !vacancies.length) return empty ? <span className="so-vacant"><AlertTriangle size={12} /> {empty}</span> : null;
+  return (
+    <div className="so-members">
+      {list.map((m) => <MemberChip key={`${m.user_id}-${m.role}`} m={m} manage={data.can_manage} onRemove={onRemove} hit={match(m)} industries={data.industries} />)}
+      {vacancies.map((v) => <VacancyChip key={`v${v.id}`} v={v} data={data} onFill={onFill} onDismiss={onDismiss} />)}
+    </div>
+  );
 }
 
 export function SalesOrg() {
@@ -77,6 +98,7 @@ export function SalesOrg() {
   const [ind, setInd] = useState('');
   const [open, setOpen] = useState({});
   const [dialog, setDialog] = useState(null);
+  const [allVac, setAllVac] = useState(false);
 
   const idx = useMemo(() => {
     if (!data) return null;
@@ -86,7 +108,10 @@ export function SalesOrg() {
     const shown = data.members.filter((m) => !ind || !m.industry || m.industry === ind);
     for (const m of shown) (members[m.territory_id] ||= []).push(m);
     for (const k in members) members[k].sort((a, b) => RANK[a.role] - RANK[b.role] || a.is_concurrent - b.is_concurrent || a.name.localeCompare(b.name));
-    return { children, members, shown, byId: Object.fromEntries(data.territories.map((t) => [t.id, t])) };
+    const vacancies = (data.vacancies || []).filter((v) => !ind || !v.industry || v.industry === ind);
+    const vac = {};
+    for (const v of vacancies) (vac[v.territory_id] ||= []).push(v);
+    return { children, members, shown, vacancies, vac, byId: Object.fromEntries(data.territories.map((t) => [t.id, t])) };
   }, [data, ind]);
 
   if (error) return <div className="page hr"><div className="alert alert-error">{error.message}</div></div>;
@@ -94,9 +119,10 @@ export function SalesOrg() {
 
   const kids = (t) => idx.children[t.id] || [];
   const mem = (t) => idx.members[t.id] || [];
+  const vac = (t) => idx.vac[t.id] || [];
   const match = (m) => !!dq && foldVi(m.name).includes(dq);
   /** địa bàn khớp tìm kiếm: tên địa bàn hoặc có người phụ trách khớp, tính cả địa bàn con */
-  const hits = (t) => !dq || foldVi(t.name).includes(dq) || mem(t).some(match) || kids(t).some(hits);
+  const hits = (t) => !dq || foldVi(t.name).includes(dq) || mem(t).some(match) || vac(t).some((v) => foldVi(v.prev_name).includes(dq)) || kids(t).some(hits);
   const isOpen = (t) => (dq ? hits(t) : open[t.id] ?? t.level !== 'area');
   const toggle = (t) => setOpen({ ...open, [t.id]: !isOpen(t) });
   const root = (idx.children[0] || [])[0];
@@ -107,9 +133,16 @@ export function SalesOrg() {
   const vacant = data.territories.filter((t) => leaderOf[t.level] && !mem(t).some((m) => leaderOf[t.level].includes(m.role))).length;
 
   const remove = async (m) => {
-    if (!window.confirm(`Gỡ ${m.name} (${ROLE_SHORT[m.role]}) khỏi ${idx.byId[m.territory_id]?.name}?`)) return;
+    if (!window.confirm(`Gỡ ${m.name} (${ROLE_SHORT[m.role]}) khỏi ${idx.byId[m.territory_id]?.name}? Vị trí sẽ được để trống cho đến khi phân công người mới.`)) return;
     try { await api.del(`/sales/territories/${m.territory_id}/members/${m.user_id}?role=${m.role}`); toast('Đã gỡ phân công'); reload(); } catch (e) { toast(e.message, 'error'); }
   };
+  const fill = (v) => setDialog({ kind: 'assign', t: idx.byId[v.territory_id], vacancy: v });
+  const dismiss = async (v) => {
+    if (!window.confirm(`Không tuyển lại vị trí ${ROLE_SHORT[v.role]} ${idx.byId[v.territory_id]?.name}? Vị trí sẽ bỏ khỏi danh sách trống.`)) return;
+    try { await api.del(`/sales/vacancies/${v.id}`); toast('Đã bỏ vị trí trống'); reload(); } catch (e) { toast(e.message, 'error'); }
+  };
+  const path = (tid) => { const out = []; for (let t = idx.byId[tid]; t && t.level !== 'national'; t = idx.byId[t.parent_id]) out.unshift(t.name); return out.join(' › '); };
+  const M = (props) => Members({ data, onRemove: remove, onFill: fill, onDismiss: dismiss, match, ...props });   // hàm thường (không tạo component mới mỗi lần vẽ)
   const onAction = async (kind, t) => {
     if (kind === 'delete') {
       const n = kids(t).length;
@@ -130,13 +163,13 @@ export function SalesOrg() {
         </button>
         <NodeTools t={a} data={data} onAction={onAction} />
       </div>
-      <Members list={mem(a)} data={data} onRemove={remove} match={match} empty="Chưa có ASM" />
+      {M({ list: mem(a), vacancies: vac(a), empty: 'Chưa có ASM' })}
       {isOpen(a) && (
         <div className="so-provinces">
           {kids(a).filter(hits).map((p) => (
             <div key={p.id} className="so-province">
               <div className="so-province-head"><MapPinned size={13} /><b className="ellipsis">{p.name}</b><NodeTools t={p} data={data} onAction={onAction} /></div>
-              <Members list={mem(p)} data={data} onRemove={remove} match={match} empty="Chưa có SS" />
+              {M({ list: mem(p), vacancies: vac(p), empty: 'Chưa có SS' })}
             </div>
           ))}
           {!kids(a).length && <span className="muted small">Chưa có tỉnh / thành. {data.can_manage && 'Bấm + để thêm.'}</span>}
@@ -157,7 +190,9 @@ export function SalesOrg() {
         <Kpi i={1} icon={MapIcon} tone="violet" label="ASM" value={countRole(['ASM'])} sub={`${data.territories.filter((t) => t.level === 'area').length} khu vực`} />
         <Kpi i={2} icon={UserRound} tone="blue" label="SS" value={countRole(['SS'])} sub={`${data.territories.filter((t) => t.level === 'province').length} tỉnh / thành`} />
         <Kpi i={3} icon={Users2} tone="green" label="PG / SREP / SREP KA" value={countRole(FIELD_ROLES)} sub={`${people} nhân sự trong cơ cấu`} />
-        <Kpi i={4} icon={AlertTriangle} tone={vacant ? 'red' : 'gray'} label="Địa bàn chưa có người phụ trách" value={vacant} sub="Khu vực chưa có ASM, tỉnh chưa có SS" />
+        <Kpi i={4} icon={UserMinus} tone={idx.vacancies.length ? 'red' : 'gray'} label="Vị trí đang trống" value={idx.vacancies.length}
+          sub={`Nghỉ việc / điều chuyển chưa có người mới · ${vacant} địa bàn chưa có ASM / SS`}
+          onClick={idx.vacancies.length ? () => document.getElementById('so-vacancies')?.scrollIntoView({ behavior: 'smooth', block: 'start' }) : undefined} />
       </div>
       <div className="hr-seg" role="tablist" aria-label="Ngành hàng">
         {[{ code: '', name: 'Tất cả ngành hàng' }, ...data.industries].map((x) => (
@@ -174,17 +209,39 @@ export function SalesOrg() {
           <button role="tab" aria-selected={mode === 'people'} className={cx(mode === 'people' && 'active')} onClick={() => setMode('people')}><Rows3 size={14} /> Theo nhân sự</button>
         </div>
       </div>
+      {idx.vacancies.length > 0 && (
+        <div id="so-vacancies">
+          <HrCard icon={UserMinus} tone="red" title="Vị trí đang trống" count={idx.vacancies.length}
+            action={idx.vacancies.length > 6 && <button className="link-btn small" onClick={() => setAllVac(!allVac)}>{allVac ? 'Thu gọn' : 'Xem tất cả'}</button>}>
+            <p className="muted small">Nhân sự nghỉ việc / điều chuyển: vị trí được giữ trống trên sơ đồ cho đến khi phân công người mới. Trong thời gian trống, đề xuất của cấp dưới được chuyển lên cấp quản lý kế tiếp.</p>
+            <div className="so-vac-list">
+              {(allVac ? idx.vacancies : idx.vacancies.slice(0, 6)).map((v) => (
+                <div key={v.id} className="so-vac-row">
+                  <RoleBadge role={v.role} /><IndustryTag code={v.industry} industries={data.industries} />
+                  <div className="grow so-vac-main">
+                    <b>{path(v.territory_id)}</b>
+                    <small className="muted block">Trống từ {fmtDate(v.ended_at)}{v.prev_name ? ` · trước: ${v.prev_name} (${VACANCY_REASON[v.reason] || v.reason})` : ''}
+                      {v.reports > 0 ? ` · ${v.reports} nhân sự cấp dưới chờ quản lý mới` : ''}</small>
+                  </div>
+                  {data.can_manage && <button className="btn btn-sm" onClick={() => fill(v)}><UserPlus size={14} /> Phân công người mới</button>}
+                  {data.can_manage && <button className="icon-btn sm" title="Không tuyển lại" aria-label="Không tuyển lại" onClick={() => dismiss(v)}><X size={14} /></button>}
+                </div>
+              ))}
+            </div>
+          </HrCard>
+        </div>
+      )}
       {mode === 'people' ? <PeopleView data={data} idx={idx} q={dq} /> : root ? (
         <div className="so-tree">
           <section className="so-national hr-rise">
             <div className="so-node-head"><span className="so-level tone-amber"><Crown size={14} /> {root.name}</span><NodeTools t={root} data={data} onAction={onAction} /></div>
-            <Members list={mem(root)} data={data} onRemove={remove} match={match} empty="Chưa có NSM" />
+            {M({ list: mem(root), vacancies: vac(root), empty: 'Chưa có NSM' })}
           </section>
           <div className="so-regions">
             {kids(root).filter(hits).map((rg, i) => (
               <HrCard key={rg.id} icon={MapIcon} tone={['orange', 'violet', 'aqua', 'pink'][i % 4]} title={rg.name} count={kids(rg).length} i={i + 1}
                 action={<NodeTools t={rg} data={data} onAction={onAction} />} className="so-region">
-                <Members list={mem(rg)} data={data} onRemove={remove} match={match} empty="Chưa có RSM" />
+                {M({ list: mem(rg), vacancies: vac(rg), empty: 'Chưa có RSM' })}
                 <div className="so-areas">{kids(rg).filter(hits).map(area)}</div>
               </HrCard>
             ))}
@@ -192,7 +249,7 @@ export function SalesOrg() {
           {dq && !hits(root) && <Empty title="Không tìm thấy nhân sự hoặc địa bàn phù hợp" />}
         </div>
       ) : <Empty title="Chưa có địa bàn" />}
-      {dialog?.kind === 'assign' && <AssignModal t={dialog.t} data={data} industry={ind} onClose={() => setDialog(null)} onDone={reload} />}
+      {dialog?.kind === 'assign' && <AssignModal t={dialog.t} data={data} industry={ind} vacancy={dialog.vacancy} onClose={() => setDialog(null)} onDone={reload} />}
       {dialog?.kind === 'industries' && <IndustriesModal data={data} onClose={() => setDialog(null)} onDone={reload} />}
       {dialog?.kind === 'add' && <AddChildrenModal t={dialog.t} onClose={() => setDialog(null)} onDone={reload} />}
       {dialog?.kind === 'edit' && <EditTerritoryModal t={dialog.t} data={data} onClose={() => setDialog(null)} onDone={reload} />}
@@ -235,16 +292,20 @@ function PeopleView({ data, idx, q }) {
   );
 }
 
-function AssignModal({ t, data, industry, onClose, onDone }) {
+function AssignModal({ t, data, industry, vacancy, onClose, onDone }) {
   const { users } = useApp();
   const toast = useToast();
   const roles = Object.entries(data.roles).filter(([, r]) => r.levels.includes(t.level));
-  const [f, setF] = useState({ role: roles[0]?.[0] || '', user_id: null, is_concurrent: false, since: '', industry: industry || '' });
+  const [f, setF] = useState({ role: vacancy?.role || roles[0]?.[0] || '', user_id: null, is_concurrent: false, since: '',
+    industry: vacancy ? vacancy.industry || '' : industry || '', take_over: true });
+  // vị trí trống sẽ được lấp (cùng địa bàn, vị trí, ngành hàng tương thích — trống lâu nhất trước)
+  const open = (data.vacancies || []).filter((v) => v.territory_id === t.id && v.role === f.role && (!v.industry || !f.industry || v.industry === f.industry))
+    .sort((a, b) => a.ended_at.localeCompare(b.ended_at) || a.id - b.id)[0];
   const taken = (data.members.filter((m) => m.territory_id === t.id && m.role === f.role)).map((m) => m.user_id);
   const elsewhere = f.user_id && data.members.filter((m) => m.user_id === f.user_id && !m.is_concurrent && m.territory_id !== t.id);
   const save = async () => {
     try {
-      await api.post(`/sales/territories/${t.id}/members`, f);
+      await api.post(`/sales/territories/${t.id}/members`, { ...f, take_over: !!(open && f.take_over && !f.is_concurrent) });
       toast('Đã phân công'); onDone(); onClose();
     } catch (e) { toast(e.message, 'error'); }
   };
@@ -274,6 +335,15 @@ function AssignModal({ t, data, industry, onClose, onDone }) {
       {elsewhere?.length > 0 && !f.is_concurrent && (
         <div className="alert alert-info mt-xs small">Người này đang phụ trách chính: {elsewhere.map((m) => `${ROLE_SHORT[m.role]} ${data.territories.find((x) => x.id === m.territory_id)?.name}`).join(', ')}.
           Chọn "Kiêm nhiệm" nếu đây là địa bàn phụ trách thêm (VD 1 SS phụ trách 2 tỉnh).</div>
+      )}
+      {open && !f.is_concurrent && (
+        <div className="so-fill-box mt-xs">
+          <div className="small"><UserMinus size={13} /> Lấp vị trí trống từ <b>{fmtDate(open.ended_at)}</b>{open.prev_name ? <> (trước: <b>{open.prev_name}</b>, {VACANCY_REASON[open.reason] || open.reason})</> : null}</div>
+          {open.reports > 0 && (
+            <label className="check mt-xs small"><input type="checkbox" checked={f.take_over} onChange={(e) => setF({ ...f, take_over: e.target.checked })} />
+              Nhận quản lý {open.reports} nhân sự cấp dưới của {open.prev_name}</label>
+          )}
+        </div>
       )}
       <Field label="Từ ngày"><input className="input" type="date" value={f.since} onChange={(e) => setF({ ...f, since: e.target.value })} /></Field>
     </Modal>
@@ -360,11 +430,14 @@ function SyncModal({ industries, onClose, onDone }) {
 
 /** Chip vị trí & địa bàn trên hồ sơ nhân sự. */
 export function SalesFacts({ userId }) {
-  const [rows] = useFetch(() => api.get(`/sales/users/${userId}`), [userId]);
+  const [rows] = useFetch(() => api.get(`/sales/users/${userId}`, { history: 1 }), [userId]);
   if (!rows?.length) return null;
-  return rows.map((r) => (
-    <span key={`${r.territory_id}-${r.role}`} className={cx('hr-fact', r.is_concurrent ? 'tone-gray' : `tone-${ROLE_TONE[r.role]}`)}>
-      <Network size={13} /> {ROLE_SHORT[r.role]} {r.territory_name}{r.industry ? ` · ${r.industry}` : ''}{r.is_concurrent ? ' (kiêm nhiệm)' : ''}
+  const now = rows.filter((r) => !r.ended_at);
+  // đang phụ trách; nếu không còn vị trí nào (đã nghỉ / điều chuyển) thì hiện vị trí gần nhất đã rời
+  return [...now, ...(now.length ? [] : rows.filter((r) => r.ended_at).slice(0, 2))].map((r, i) => (
+    <span key={`${r.territory_id}-${r.role}-${i}`} className={cx('hr-fact', r.is_concurrent || r.ended_at ? 'tone-gray' : `tone-${ROLE_TONE[r.role]}`)}>
+      <Network size={13} /> {r.ended_at ? 'Đã rời ' : ''}{ROLE_SHORT[r.role]} {r.territory_name}{r.industry ? ` · ${r.industry}` : ''}{r.is_concurrent ? ' (kiêm nhiệm)' : ''}
+      {r.ended_at ? ` (${fmtDate(r.ended_at)})` : ''}
     </span>
   ));
 }

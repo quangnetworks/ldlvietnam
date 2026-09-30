@@ -2398,3 +2398,18 @@ button.stat-tile { text-align: left; font: inherit; color: inherit; cursor: poin
 button.stat-tile:hover { border-color: var(--blue); }
 button.stat-tile.active { border-color: var(--blue); box-shadow: 0 0 0 3px var(--blue-soft); }
 .toolbar.wrap { flex-wrap: wrap; }
+.so-vacancy { background: transparent; border: 1px dashed color-mix(in srgb, var(--hr-red) 55%, var(--line)); color: var(--text-2); padding-left: 4px; }
+.so-vacancy:hover { background: var(--hr-red-soft); border-color: var(--hr-red); transform: none; }
+.so-vacancy > .ellipsis { font-size: 12.5px; max-width: 220px; }
+.so-vacancy-icon { width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; background: var(--hr-red-soft); color: var(--hr-red); flex: none; }
+.so-fill { display: inline-flex; align-items: center; gap: 3px; font-size: 11.5px; font-weight: 600; color: var(--hr-red); padding: 1px 6px; border-radius: 6px; }
+.so-fill:hover { background: var(--hr-red-soft); }
+.so-vac-list { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
+.so-vac-row { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border: 1px dashed color-mix(in srgb, var(--hr-red) 40%, var(--line)); border-radius: 10px; flex-wrap: wrap; }
+.so-vac-main { min-width: 200px; }
+.so-fill-box { padding: 10px 12px; border-radius: 10px; background: var(--hr-red-soft); color: var(--text); }
+.so-fill-box svg { vertical-align: -2px; color: var(--hr-red); }
+#so-vacancies { scroll-margin-top: 70px; }
+.so-vacancy { flex-wrap: wrap; border-radius: 10px; width: 100%; row-gap: 4px; padding: 4px 6px 4px 4px; }
+.so-vacancy > .ellipsis { flex: 1 1 140px; max-width: none; min-width: 0; }
+.so-fill { white-space: nowrap; margin-left: auto; }

@@ -5,7 +5,7 @@ import { requireAdmin, underSql, isSubordinate, hashPassword } from '../auth.js'
 import { badRequest, notFound, forbidden, toInt, idList, jsonBody, formBody, storeFiles, removeFile, sendFile } from '../util.js';
 import { publicFileLink } from '../files.js';
 import { audit } from '../platform.js';
-import { assignStmt, industryOf, refreshSalesRoleStmt, salesSettings } from './territory.js';
+import { assignStmt, fillVacancyStmts, industryOf, refreshSalesRoleStmt, salesSettings, vacateStmts, vacateUser } from './territory.js';
 import { clientIp, ipMatches, validIpRule } from '../security.js';
 
 const r = new Hono();
@@ -260,12 +260,15 @@ async function importProfiles(c, body) {
       else if (!t) err(SH, i, `không tìm thấy địa bàn "${row.territory || ''}" trong Cơ cấu kinh doanh`);
       else {
         try {
-          S.push(assignStmt(t, u.id, role, { industry: industryOf(industries, row.industry), since: isoDate(row.hire_date) || null }));
+          const industry = industryOf(industries, row.industry);
+          S.push(assignStmt(t, u.id, role, { industry, since: isoDate(row.hire_date) || null }), ...fillVacancyStmts(t, u.id, role, { industry }));
           salesTouched.add(u.id);
           res.assignments++;
         } catch (e) { err(SH, i, e.message); }
       }
     }
+    // nghỉ việc: rời mọi vị trí trong cơ cấu (để trống)
+    if (set.work_status === 'resigned') S.push(...vacateStmts(u.id));
     if (changed && !res.new_accounts.includes(u.username)) res.updated++;
   }
   for (const [i, u, m] of managerLinks) {
@@ -338,7 +341,7 @@ r.get('/hrm/employees/:id', async (c) => {
 r.put('/hrm/employees/:id', async (c) => {
   await requireHr(c);
   const id = toInt(c.req.param('id'));
-  const u = await get('SELECT id, username FROM users WHERE id = ?', id);
+  const u = await get("SELECT u.id, u.username, IFNULL(h.work_status, 'working') AS work_status FROM users u LEFT JOIN hr_profiles h ON h.user_id = u.id WHERE u.id = ?", id);
   if (!u) throw notFound();
   const b = await jsonBody(c);
   if (b.work_status && !WORK_STATUS.includes(b.work_status)) throw badRequest('Trạng thái không hợp lệ');
@@ -349,8 +352,10 @@ r.put('/hrm/employees/:id', async (c) => {
   vals[HR_FIELDS.indexOf('work_status')] ||= 'working';
   await run(`INSERT INTO hr_profiles(user_id, ${HR_FIELDS.join(', ')}, updated_at) VALUES (?, ${HR_FIELDS.map(() => '?').join(', ')}, datetime('now'))
     ON CONFLICT(user_id) DO UPDATE SET ${HR_FIELDS.map((k) => `${k} = excluded.${k}`).join(', ')}, updated_at = datetime('now')`, id, ...vals);
-  await audit(c.get('user').id, 'hrm.update', `Cập nhật hồ sơ nhân sự @${u.username}`);
-  return c.json(empView(await get(`${EMP_SELECT} WHERE u.id = ?`, id)));
+  // chuyển sang "Đã nghỉ việc": vị trí trong cơ cấu kinh doanh / trưởng phòng để trống cho đến khi có người mới
+  const vacated = b.work_status === 'resigned' && u.work_status !== 'resigned' ? await vacateUser(id) : 0;
+  await audit(c.get('user').id, 'hrm.update', `Cập nhật hồ sơ nhân sự @${u.username}${vacated ? ` (nghỉ việc, để trống ${vacated} vị trí)` : ''}`);
+  return c.json({ ...empView(await get(`${EMP_SELECT} WHERE u.id = ?`, id)), vacated });
 });
 
 r.get('/hrm/stats', async (c) => {

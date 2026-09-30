@@ -11,6 +11,7 @@ import { all, get, run, batch, notify, getSetting, setSetting } from '../db.js';
 import { badRequest, notFound, forbidden, toInt, idList, jsonBody } from '../util.js';
 import { audit } from '../platform.js';
 import { isSubordinate } from '../auth.js';
+import { vacateUser } from './territory.js';
 
 const r = new Hono();
 const APP = 'asset';
@@ -595,6 +596,7 @@ r.post('/asset/procedures/:id/complete', async (c) => {
     await run(`INSERT INTO hr_profiles(user_id, work_status, resign_date, resign_reason, updated_at) VALUES (?, 'resigned', ?, ?, datetime('now'))
       ON CONFLICT(user_id) DO UPDATE SET work_status = 'resigned', resign_date = excluded.resign_date,
         resign_reason = COALESCE(excluded.resign_reason, hr_profiles.resign_reason), updated_at = datetime('now')`, p.user_id, p.effective_date, p.resign_reason);
+    await vacateUser(p.user_id);   // vị trí trong cơ cấu để trống cho đến khi có người mới
     if (b.lock_account && user.role === 'admin' && p.user_id !== user.id) {
       const target = await get('SELECT is_owner FROM users WHERE id = ?', p.user_id);
       if (!target?.is_owner) await run('UPDATE users SET active = 0 WHERE id = ?', p.user_id);

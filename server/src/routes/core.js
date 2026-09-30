@@ -9,6 +9,7 @@ import { userApps, grantApps, audit, recordLogin, MODULES } from '../platform.js
 import { verifyTotp, ipAllowed } from '../security.js';
 import { isExpired } from '../auth.js';
 import { servePublicFile } from '../files.js';
+import { vacateUser } from './territory.js';
 
 const r = new Hono();
 
@@ -222,6 +223,7 @@ r.put('/users/:id', requireAdmin, async (c) => {
   if (b.active !== undefined) {
     if (id === c.get('user').id && !b.active) throw badRequest('Không thể vô hiệu hóa chính mình');
     await run('UPDATE users SET active = ? WHERE id = ?', b.active ? 1 : 0, id);
+    if (!b.active) await vacateUser(id, 'disabled');   // tài khoản khoá: vị trí trong cơ cấu để trống
   }
   const target = await get('SELECT username FROM users WHERE id = ?', id);
   await audit(c.get('user').id, 'user.update', b.active === true ? `Kích hoạt lại @${target.username}` : `Cập nhật tài khoản @${target.username}`);
@@ -237,6 +239,7 @@ r.delete('/users/:id', requireAdmin, async (c) => {
   if (id === c.get('user').id) throw badRequest('Không thể vô hiệu hóa chính mình');
   await assertCanManage(c.get('user'), id);
   await run('UPDATE users SET active = 0 WHERE id = ?', id);
+  await vacateUser(id, 'disabled');
   const target = await get('SELECT username FROM users WHERE id = ?', id);
   await audit(c.get('user').id, 'user.disable', `Vô hiệu hoá @${target?.username}`);
   return c.json({ ok: true });

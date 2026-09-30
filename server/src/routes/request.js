@@ -249,8 +249,17 @@ function deadlineFrom(slaHours) {
 async function directManagerOf(userId) {
   const u = await get('SELECT id, manager_id, department_id FROM users WHERE id = ?', userId);
   if (!u) return null;
-  if (u.manager_id && u.manager_id !== u.id) return u.manager_id;
-  const d = u.department_id ? await get('SELECT head_id FROM departments WHERE id = ?', u.department_id) : null;
+  // quản lý đã nghỉ việc / bị khoá (vị trí đang trống): chuyển lên cấp trên kế tiếp của người đó
+  let m = u.manager_id && u.manager_id !== u.id ? u.manager_id : null;
+  for (let i = 0; m && i < 10; i++) {
+    const x = await get(`SELECT u.id, u.manager_id, u.active, IFNULL(h.work_status, 'working') AS ws FROM users u
+      LEFT JOIN hr_profiles h ON h.user_id = u.id WHERE u.id = ?`, m);
+    if (!x) break;
+    if (x.active && x.ws !== 'resigned') return x.id;
+    m = x.manager_id && x.manager_id !== x.id && x.manager_id !== userId ? x.manager_id : null;
+  }
+  const d = u.department_id ? await get(`SELECT d.head_id FROM departments d JOIN users h ON h.id = d.head_id AND h.active = 1
+    WHERE d.id = ?`, u.department_id) : null;
   return d?.head_id && d.head_id !== u.id ? d.head_id : null;
 }
 

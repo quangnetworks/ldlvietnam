@@ -80,8 +80,21 @@ r.get('/sales/structure', async (c) => {
   requireStaff(c);
   const territories = await all('SELECT id, name, code, level, parent_id, sort FROM territories ORDER BY sort, name COLLATE NOCASE');
   const members = await all(`${MEMBER_SELECT} ORDER BY u.name COLLATE NOCASE`);
-  return c.json({ territories, members, roles: SALES_ROLES, levels: LEVELS, industries: (await salesSettings()).industries,
+  // vị trí đang trống: người cũ nghỉ việc / bị gỡ, chưa có người mới; reports = số nhân sự còn trỏ quản lý về người cũ
+  const vacancies = await all(`SELECT h.id, h.territory_id, h.role, h.industry, h.is_concurrent, h.ended_at, h.reason, h.user_id,
+      u.name AS prev_name, u.color AS prev_color, u.active AS prev_active,
+      (SELECT COUNT(*) FROM users s WHERE s.manager_id = h.user_id AND s.active = 1) AS reports
+    FROM territory_history h LEFT JOIN users u ON u.id = h.user_id WHERE h.closed = 0 ORDER BY h.ended_at DESC, h.id DESC`);
+  return c.json({ territories, members, vacancies, roles: SALES_ROLES, levels: LEVELS, industries: (await salesSettings()).industries,
     can_manage: await canManage(c.get('user')) });
+});
+
+/** Không tuyển lại vị trí trống này (bỏ khỏi danh sách vị trí trống). */
+r.delete('/sales/vacancies/:id', async (c) => {
+  await requireManage(c);
+  const { changes } = await run('UPDATE territory_history SET closed = 1 WHERE id = ? AND closed = 0', toInt(c.req.param('id')));
+  if (!changes) throw notFound('Không tìm thấy vị trí trống');
+  return c.json({ ok: true });
 });
 
 /** Danh mục ngành hàng (mã ngắn + tên), VD HMP – Hóa mỹ phẩm, TP – Thực phẩm. */
@@ -106,6 +119,12 @@ r.get('/sales/users/:id', async (c) => {
   const rows = await all(`SELECT m.role, m.is_concurrent, m.since, m.industry, t.id AS territory_id, t.name AS territory_name, t.level
     FROM territory_members m JOIN territories t ON t.id = m.territory_id WHERE m.user_id = ?`, toInt(c.req.param('id')));
   rows.sort((a, b) => a.is_concurrent - b.is_concurrent || SALES_ROLES[a.role].rank - SALES_ROLES[b.role].rank);
+  // ?history=1: kèm các vị trí đã từng phụ trách (hồ sơ nhân sự đã nghỉ / điều chuyển)
+  if (c.req.query('history') === '1') {
+    const past = await all(`SELECT h.role, h.is_concurrent, h.since, h.industry, h.ended_at, h.reason, t.id AS territory_id, t.name AS territory_name, t.level
+      FROM territory_history h JOIN territories t ON t.id = h.territory_id WHERE h.user_id = ? ORDER BY h.ended_at DESC, h.id DESC LIMIT 10`, toInt(c.req.param('id')));
+    return c.json([...rows, ...past]);
+  }
   return c.json(rows);
 });
 
@@ -186,8 +205,43 @@ export function assignStmt(t, userId, role, { industry = null, concurrent = fals
     ON CONFLICT(territory_id, user_id, role) DO UPDATE SET is_concurrent = excluded.is_concurrent, since = excluded.since, industry = excluded.industry`,
   [t.id, userId, role, concurrent ? 1 : 0, /^\d{4}-\d{2}-\d{2}$/.test(since || '') ? since : null, industry]];
 }
+/**
+ * Người mới vào vị trí đang trống (cùng địa bàn, vị trí, ngành hàng tương thích): đóng vị trí trống lâu nhất;
+ * takeOver = nhận quản lý các nhân sự cấp dưới của người cũ (quản lý trực tiếp đang trỏ tới người đã nghỉ).
+ */
+export function fillVacancyStmts(t, userId, role, { industry = null, takeOver = false } = {}) {
+  const pick = `(SELECT id FROM territory_history WHERE territory_id = ? AND role = ? AND closed = 0
+    AND (industry IS ? OR industry IS NULL OR ? IS NULL) ORDER BY ended_at, id LIMIT 1)`;
+  const args = [t.id, role, industry, industry];
+  return [
+    ...(takeOver ? [[`UPDATE users SET manager_id = ? WHERE id <> ? AND manager_id IS NOT NULL
+      AND manager_id = (SELECT user_id FROM territory_history WHERE id = ${pick})`, [userId, userId, ...args]]] : []),
+    [`UPDATE territory_history SET closed = 1, filled_by = ? WHERE id = ${pick}`, [userId, ...args]],
+  ];
+}
 export async function assignMember(t, userId, role, opts = {}) {
-  await batch([assignStmt(t, userId, role, opts), refreshSalesRoleStmt(userId)]);
+  await batch([assignStmt(t, userId, role, opts), ...fillVacancyStmts(t, userId, role, opts), refreshSalesRoleStmt(userId)]);
+}
+
+/**
+ * Nhân sự nghỉ việc / bị khoá tài khoản: rời mọi vị trí trong cơ cấu — vị trí được lưu lịch sử và để TRỐNG
+ * cho đến khi phân công người mới; bỏ vai trò trưởng phòng ban. Quản lý trực tiếp của cấp dưới giữ nguyên
+ * (duyệt đề xuất tự chuyển lên cấp trên kế tiếp khi quản lý đã nghỉ).
+ */
+export function vacateStmts(userId, reason = 'resigned') {
+  return [
+    [`INSERT INTO territory_history(territory_id, user_id, role, industry, is_concurrent, since, reason)
+      SELECT territory_id, user_id, role, industry, is_concurrent, since, ? FROM territory_members WHERE user_id = ?`, [reason, userId]],
+    ['DELETE FROM territory_members WHERE user_id = ?', [userId]],
+    ['UPDATE departments SET head_id = NULL WHERE head_id = ?', [userId]],
+    refreshSalesRoleStmt(userId),
+  ];
+}
+/** Trả về số vị trí vừa được để trống. */
+export async function vacateUser(userId, reason = 'resigned') {
+  const n = (await get('SELECT COUNT(*) AS n FROM territory_members WHERE user_id = ?', userId)).n;
+  await batch(vacateStmts(userId, reason));
+  return n;
 }
 
 r.post('/sales/territories/:id/members', async (c) => {
@@ -197,7 +251,7 @@ r.post('/sales/territories/:id/members', async (c) => {
   const u = await get("SELECT id, name FROM users WHERE id = ? AND role <> 'guest'", toInt(b.user_id));
   if (!u) throw badRequest('Chọn nhân sự');
   const industry = await industryCode(b.industry);
-  await assignMember(t, u.id, String(b.role || ''), { industry, concurrent: !!b.is_concurrent, since: b.since });
+  await assignMember(t, u.id, String(b.role || ''), { industry, concurrent: !!b.is_concurrent, since: b.since, takeOver: !!b.take_over });
   await audit(c.get('user').id, 'sales.member', `${u.name}: ${SALES_ROLES[b.role].short} ${t.name}${industry ? ` (${industry})` : ''}${b.is_concurrent ? ' (kiêm nhiệm)' : ''}`);
   return c.json({ ok: true }, 201);
 });
@@ -206,12 +260,17 @@ r.delete('/sales/territories/:id/members/:userId', async (c) => {
   await requireManage(c);
   const t = await territoryOr404(c.req.param('id'));
   const uid = toInt(c.req.param('userId'));
-  const role = c.req.query('role');
-  const res = role
-    ? await run('DELETE FROM territory_members WHERE territory_id = ? AND user_id = ? AND role = ?', t.id, uid, role)
-    : await run('DELETE FROM territory_members WHERE territory_id = ? AND user_id = ?', t.id, uid);
-  if (!res.changes) throw notFound('Không tìm thấy phân công');
-  await refreshSalesRole(uid);
+  const role = c.req.query('role') || null;
+  const where = `territory_id = ? AND user_id = ?${role ? ' AND role = ?' : ''}`;
+  const args = [t.id, uid, ...(role ? [role] : [])];
+  if (!(await get(`SELECT 1 FROM territory_members WHERE ${where}`, ...args))) throw notFound('Không tìm thấy phân công');
+  // gỡ phân công (điều chuyển…): vị trí để trống; ?vacancy=0 khi gỡ nhầm / không tuyển lại
+  await batch([
+    ...(c.req.query('vacancy') === '0' ? [] : [[`INSERT INTO territory_history(territory_id, user_id, role, industry, is_concurrent, since, reason)
+      SELECT territory_id, user_id, role, industry, is_concurrent, since, 'removed' FROM territory_members WHERE ${where}`, args]]),
+    [`DELETE FROM territory_members WHERE ${where}`, args],
+    refreshSalesRoleStmt(uid),
+  ]);
   await audit(c.get('user').id, 'sales.member', `Gỡ phân công #${uid} khỏi ${t.name}`);
   return c.json({ ok: true });
 });

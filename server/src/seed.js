@@ -297,17 +297,8 @@ export async function buildSeed() {
   add(`INSERT INTO hr_careers(user_id, type, effective_date, to_value, note, created_by) VALUES (?, 'reward', ?, 'Nhân viên xuất sắc quý', 'Vượt 120% chỉ tiêu doanh số', ?)`, users.nv1, dateOffset(-30), users.hr);
 
   // ---------- Cơ cấu kinh doanh: khung Toàn quốc / Miền Bắc, Trung, Nam / Khu vực có sẵn từ migration 0022–0023;
-  // seed thêm tỉnh mẫu và phân công theo ngành hàng (HMP = Hóa mỹ phẩm, TP = Thực phẩm; không ghi = phụ trách chung)
-  add("DELETE FROM territories WHERE level = 'province'");
-  const provinces = {
-    HN: ['Hà Nội'], NHN: ['Hà Nam', 'Nam Định', 'Ninh Bình'], DTB: ['Thái Nguyên', 'Lào Cai', 'Sơn La'], DH: ['Hải Phòng', 'Quảng Ninh', 'Hải Dương'],
-    BMT: ['Thanh Hóa', 'Nghệ An', 'Hà Tĩnh'], NMT: ['Đà Nẵng', 'Quảng Nam', 'Khánh Hòa'], DNB: ['Đồng Nai', 'Bình Dương', 'Bà Rịa - Vũng Tàu'],
-    HCM: ['TP. Hồ Chí Minh'], BMK: ['Long An', 'Tiền Giang', 'Đồng Tháp'], NMK: ['Cần Thơ', 'Kiên Giang', 'Cà Mau'],
-  };
-  for (const [code, names] of Object.entries(provinces)) {
-    names.forEach((n, i) => add(`INSERT INTO territories(name, level, parent_id, sort) SELECT ?, 'province', id, ? FROM territories
-      WHERE code = ? AND level = 'area'`, n, i + 1, code));
-  }
+  // seed phân công mẫu theo ngành hàng (HMP = Hóa mỹ phẩm, TP = Thực phẩm; không ghi = phụ trách chung)
+  // 63 tỉnh / thành phố theo khu vực có sẵn từ migration 0025
   const assign = (uk, role, name, level, industry, concurrent = 0) => add(`INSERT INTO territory_members(territory_id, user_id, role, is_concurrent, since, industry)
     SELECT id, ?, ?, ?, '2024-01-01', ? FROM territories WHERE name = ? AND level = ? LIMIT 1`, users[uk], role, concurrent, industry, name, level);
   assign('kd', 'NSM', 'Toàn quốc', 'national', null);          // NSM phụ trách chung cả hai ngành hàng

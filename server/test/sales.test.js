@@ -39,15 +39,16 @@ test('sales structure: territory tree, members with concurrent posts, manager sy
   const T = (name, level) => s.territories.find((t) => t.name === name && (!level || t.level === level));
   assert.equal(T('Toàn quốc').level, 'national');
   assert.equal(s.territories.filter((t) => t.level === 'region').length, 3);
-  assert.equal(s.territories.filter((t) => t.level === 'area').length, 10);
+  assert.equal(s.territories.filter((t) => t.level === 'area').length, 11);   // 9 khu vực + 2 nhánh trải 2 miền
+  assert.equal(s.territories.filter((t) => t.level === 'province').length, 63);
   assert.ok(s.members.some((m) => m.username === 'demo' && m.role === 'SS' && m.is_concurrent === 1));
   assert.equal((await demo.post('/sales/territories', { parent_id: T('Đông Tây Bắc').id, name: 'Phú Thọ' })).status, 403);
   assert.equal((await (await login('npp.hanam')).get('/sales/structure')).status, 403);
 
   const hr = await login('chilan');
   // thêm nhiều tỉnh một lần; trùng tên bị bỏ qua
-  assert.equal((await hr.post('/sales/territories', { parent_id: T('Đông Tây Bắc').id, names: 'Phú Thọ\nHòa Bình\nThái Nguyên' })).data.added, 2);
-  assert.equal((await hr.post('/sales/territories', { parent_id: T('Đông Tây Bắc').id, names: 'Phú Thọ' })).status, 400);
+  assert.equal((await hr.post('/sales/territories', { parent_id: T('Đông Tây Bắc').id, names: 'Điểm bán A\nĐiểm bán B\nThái Nguyên' })).data.added, 2);
+  assert.equal((await hr.post('/sales/territories', { parent_id: T('Đông Tây Bắc').id, names: 'Điểm bán A' })).status, 400);
   const users = (await hr.get('/users')).data;
   const id = (u) => users.find((x) => x.username === u).id;
   // vị trí phải khớp cấp địa bàn
@@ -105,16 +106,18 @@ test('sales by industry (HMP / TP) on 3 regions; HRM import creates accounts wit
   const T = (name) => s.territories.find((t) => t.name === name);
   assert.deepEqual(s.territories.filter((t) => t.level === 'region').map((t) => t.name), ['Miền Bắc', 'Miền Trung', 'Miền Nam']);
   assert.equal(T('Bắc Miền Trung').parent_id, T('Miền Trung').id);
-  assert.equal(T('Hồ Chí Minh').parent_id, T('Miền Nam').id);
+  assert.equal(T('Hồ Chí Minh').parent_id, T('Đông Nam Bộ').id);     // TP.HCM thuộc khu vực Đông Nam Bộ
+  assert.equal(T('Đồng Nai').parent_id, T('Nam Miền Trung (Miền Nam)').id);
+  assert.equal(T('Quảng Trị').parent_id, T('Nam Hà Nội (Miền Trung)').id);
   assert.deepEqual(s.industries.map((x) => x.code), ['HMP', 'TP']);
   assert.equal(s.members.find((m) => m.role === 'SS').industry, 'HMP');
 
   const rows = [
     { username: 'asm.dnb.tp', name: 'Phạm ASM Thực phẩm', department: 'Phòng Kinh doanh', sales_role: 'ASM', territory: 'Đông Nam Bộ', industry: 'Thực phẩm' },
     { username: 'asm.dnb.hmp', name: 'Phạm ASM Hóa mỹ phẩm', sales_role: 'ASM', territory: 'Đông Nam Bộ', industry: 'HMP' },
-    { username: 'ss.dn', name: 'Lê SS Đồng Nai', sales_role: 'SS', territory: 'Đồng Nai', industry: 'HMP' },
+    { username: 'ss.dn', name: 'Lê SS Bình Dương', sales_role: 'SS', territory: 'Bình Dương', industry: 'HMP' },
     { employee_code: 'LDL100', name: 'Nguyễn Văn SREP', email: 'srep100@ldlvietnam.vn', manager_username: 'truongkd', hire_date: '01/03/2024',
-      work_status: 'Chính thức', gender: 'Nam', sales_role: 'SREP', territory: 'Đồng Nai', industry: 'TP', title: 'Quản trị kho' },
+      work_status: 'Chính thức', gender: 'Nam', sales_role: 'SREP', territory: 'Bình Dương', industry: 'TP', title: 'Quản trị kho' },
     { username: 'cu.nv', name: 'Nhân viên cũ', work_status: 'Đã nghỉ việc', resign_date: '2023-12-31' },
     { username: 'demo', phone: '0909 000 111' },
     { username: 'loi', name: 'Sai địa bàn', sales_role: 'SS', territory: 'Không có' },
@@ -178,4 +181,56 @@ test('sales by industry (HMP / TP) on 3 regions; HRM import creates accounts wit
   assert.equal((await hr.put('/sales/settings', { industries: [{ code: 'HMP', name: 'Hóa mỹ phẩm' }] })).status, 400);
   const next = (await hr.put('/sales/settings', { industries: [...s.industries, { code: 'dl', name: 'Đồ uống' }] })).data;
   assert.deepEqual(next.industries.map((x) => x.code), ['HMP', 'TP', 'DL']);
+});
+
+test('resignation leaves sales positions vacant until a new person is assigned; approvals skip the vacant manager', async () => {
+  const hr = await login('chilan');
+  const imp = (await hr.post('/hrm/employees/import', { create_accounts: true, password: 'Ldl@2026', rows: [
+    { username: 'ss.old', name: 'SS Bắc Ninh cũ', manager_username: 'truongkd', sales_role: 'SS', territory: 'Bắc Ninh', industry: 'HMP' },
+    { username: 'srep.bn', name: 'SREP Bắc Ninh', manager_username: 'ss.old', sales_role: 'SREP', territory: 'Bắc Ninh', industry: 'HMP' },
+    { username: 'ss.new', name: 'SS Bắc Ninh mới' },
+    { username: 'asm.off', name: 'ASM bị khoá', sales_role: 'ASM', territory: 'Duyên Hải', industry: 'HMP' },
+  ] })).data;
+  assert.equal(imp.errors.length, 0);
+  const users = (await hr.get('/users')).data;
+  const id = (u) => users.find((x) => x.username === u).id;
+  const T = (await hr.get('/sales/structure')).data.territories;
+  const bacNinh = T.find((t) => t.name === 'Bắc Ninh');
+
+  // nghỉ việc → rời vị trí, vị trí để trống (ghi người cũ), cấp dưới vẫn trỏ về người cũ
+  const upd = (await hr.put(`/hrm/employees/${id('ss.old')}`, { work_status: 'resigned', resign_date: '2026-09-30' })).data;
+  assert.equal(upd.vacated, 1);
+  let s = (await hr.get('/sales/structure')).data;
+  assert.ok(!s.members.some((m) => m.user_id === id('ss.old')));
+  const vac = s.vacancies.find((v) => v.territory_id === bacNinh.id && v.role === 'SS');
+  assert.equal(vac.prev_name, 'SS Bắc Ninh cũ');
+  assert.equal(vac.industry, 'HMP');
+  assert.equal(vac.reports, 1);
+  assert.equal((await hr.get('/users')).data.find((u) => u.username === 'ss.old').sales_role, null);
+  const past = (await hr.get(`/sales/users/${id('ss.old')}?history=1`)).data;
+  assert.ok(past.some((p) => p.territory_name === 'Bắc Ninh' && p.ended_at));
+
+  // duyệt đề xuất: quản lý trực tiếp đã nghỉ → chuyển lên cấp trên kế tiếp
+  const admin = await login('admin');
+  const g = (await admin.post('/request-groups', { name: 'Đề xuất trưng bày', fields: [], approvers: [], manager_approval: true })).data;
+  const steps = (await (await login('srep.bn', { password: 'Ldl@2026' })).get(`/request-groups/${g.id}/plan`)).data.steps;
+  assert.deepEqual(steps.map((x) => x.user_id), [id('truongkd')]);
+
+  // người mới vào đúng vị trí trống: đóng vị trí trống, nhận quản lý cấp dưới của người cũ
+  await hr.post(`/sales/territories/${bacNinh.id}/members`, { user_id: id('ss.new'), role: 'SS', industry: 'HMP', take_over: true });
+  s = (await hr.get('/sales/structure')).data;
+  assert.ok(!s.vacancies.some((v) => v.id === vac.id));
+  assert.equal((await hr.get(`/hrm/employees/${id('srep.bn')}`)).data.manager_id, id('ss.new'));
+
+  // khoá tài khoản cũng để trống vị trí; không tuyển lại → bỏ khỏi danh sách
+  assert.equal((await admin.put(`/users/${id('asm.off')}`, { active: false })).status, 200);
+  const v2 = (await hr.get('/sales/structure')).data.vacancies.find((v) => v.user_id === id('asm.off'));
+  assert.equal(v2.role, 'ASM');
+  assert.equal((await (await login('demo')).del(`/sales/vacancies/${v2.id}`)).status, 403);
+  await hr.del(`/sales/vacancies/${v2.id}`);
+  assert.ok(!(await hr.get('/sales/structure')).data.vacancies.some((v) => v.id === v2.id));
+
+  // gỡ phân công (điều chuyển) cũng để trống; gỡ nhầm (?vacancy=0) thì không
+  await hr.del(`/sales/territories/${bacNinh.id}/members/${id('srep.bn')}?role=SREP&vacancy=0`);
+  assert.ok(!(await hr.get('/sales/structure')).data.vacancies.some((v) => v.user_id === id('srep.bn')));
 });

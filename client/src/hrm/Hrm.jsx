@@ -241,7 +241,13 @@ export function HrmEmployee({ selfId }) {
   const edit = meta?.is_manager;
   const self = e.id === user.id;
   const save = async () => {
-    try { await api.put(`/hrm/employees/${id}`, f); toast('Đã lưu hồ sơ nhân sự'); reload(); } catch (err) { toast(err.message, 'error'); }
+    if (f.work_status === 'resigned' && e.work_status !== 'resigned'
+      && !window.confirm(`Chuyển ${e.name} sang "Đã nghỉ việc"? Các vị trí trong cơ cấu kinh doanh / trưởng phòng của người này sẽ được để trống cho đến khi có người mới.`)) return;
+    try {
+      const r = await api.put(`/hrm/employees/${id}`, f);
+      toast(r.vacated ? `Đã lưu hồ sơ — ${r.vacated} vị trí trong cơ cấu kinh doanh đang để trống` : 'Đã lưu hồ sơ nhân sự');
+      reload();
+    } catch (err) { toast(err.message, 'error'); }
   };
   const options = (type, cur) => {
     const list = Array.isArray(type) ? type : type?.startsWith('list:') ? cat?.[type.slice(5)] || [] : null;
