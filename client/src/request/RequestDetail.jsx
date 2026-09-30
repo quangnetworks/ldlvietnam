@@ -6,7 +6,7 @@ import { useFetch, useToast } from '../context.jsx';
 import { Avatar, Spinner, FileChip, Modal, Field, Tabs } from '../components/ui.jsx';
 import { fmtDateTime, cx } from '../utils.js';
 import { useRequestApp } from './RequestLayout.jsx';
-import { STATUS, fieldDisplay } from './fields.jsx';
+import { STATUS, fieldDisplay, flowLabel } from './fields.jsx';
 import { StatusSteps } from './RequestForm.jsx';
 import GroupGuide from './GroupGuide.jsx';
 import FileViewer, { InlinePreview } from '../components/FileViewer.jsx';
@@ -115,7 +115,7 @@ export default function RequestDetail() {
         </div>
         <aside>
           <div className="card">
-            <h3 className="card-title">Tiến trình duyệt · {q.flow === 'any' ? 'Chỉ cần một người duyệt' : 'Duyệt lần lượt'}</h3>
+            <h3 className="card-title">Tiến trình duyệt · {flowLabel(q.group_flow || q.flow)}</h3>
             <StatusSteps approvers={q.approvers} flow={q.flow} />
             {q.deadline_at && q.status === 'pending' && <p className={cx('small', q.is_overdue ? 'text-red' : 'muted')}>Hạn xử lý: {fmtDateTime(q.deadline_at)}</p>}
             {q.completed_at && <p className="small muted">Hoàn tất: {fmtDateTime(q.completed_at)}</p>}

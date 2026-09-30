@@ -10,7 +10,7 @@ import { api } from '../api.js';
 import { useApp, useFetch } from '../context.jsx';
 import { Spinner } from '../components/ui.jsx';
 import { fmtDateTime } from '../utils.js';
-import { STATUS, fieldDisplay } from './fields.jsx';
+import { STATUS, fieldDisplay, flowLabel } from './fields.jsx';
 import { STAGE_LABEL } from './RequestForm.jsx';
 
 const SIGN_LABEL = { manager: 'Quản lý trực tiếp', dept: 'Phòng ban liên quan', final: 'Người duyệt cuối cùng' };
@@ -104,7 +104,7 @@ export default function RequestPrint() {
         </section>
 
         <section>
-          <h2>III. Phê duyệt theo luồng {q.flow === 'any' ? '(chỉ cần một người duyệt)' : '(duyệt lần lượt)'}</h2>
+          <h2>III. Phê duyệt theo luồng ({flowLabel(q.group_flow || q.flow).toLowerCase()})</h2>
           <table className="print-grid">
             <thead><tr><th>Bước</th><th>Chặng</th><th>Người duyệt</th><th>Kết quả</th><th>Thời gian</th><th>Ý kiến</th></tr></thead>
             <tbody>

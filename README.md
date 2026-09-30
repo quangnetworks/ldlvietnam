@@ -39,10 +39,13 @@ Webapp nội bộ gồm 2 phân hệ, giao diện và chức năng mô phỏng *
 - Chỉnh sửa công ty, lịch sử hệ thống (audit), đổi mật khẩu hàng loạt.
 
 ### Đề xuất (Request) — `/request`
-- **Luồng duyệt 3 chặng** (cài trong nhóm đề xuất): ① **Quản lý trực tiếp** duyệt trước (tự lấy quản lý của người tạo, hoặc trưởng phòng; người không có cấp trên bỏ qua) → ② **Phòng ban / người duyệt liên quan** theo thứ tự → ③ **Người duyệt cuối cùng**. Luôn duyệt lần lượt; mỗi người chỉ duyệt một lần (VD trưởng phòng gửi mà quản lý chính là giám đốc duyệt cuối thì không duyệt hai lần). Màn hình tạo đề xuất hiển thị trước luồng duyệt của chính người tạo.
+- **Luồng duyệt 3 chặng** (cài trong nhóm đề xuất): ① **Quản lý trực tiếp** duyệt trước (tự lấy quản lý của người tạo, hoặc trưởng phòng; người không có cấp trên bỏ qua) → ② **Phòng ban / người duyệt liên quan** theo quy trình xử lý của nhóm → ③ **Người duyệt cuối cùng**. Các chặng nối tiếp nhau; mỗi người chỉ duyệt một lần (VD trưởng phòng gửi mà quản lý chính là giám đốc duyệt cuối thì không duyệt hai lần). Màn hình tạo đề xuất hiển thị trước luồng duyệt của chính người tạo.
 - **Phiếu in / PDF theo mẫu** (nút máy in ở chi tiết đề xuất): tiêu đề & mã biểu mẫu cấu hình theo nhóm, thông tin người đề nghị, các trường đã điền, thời gian tạo / gửi / hoàn tất, bảng phê duyệt theo luồng (☑ đã duyệt / ☒ từ chối / ↩ trả lại / ☐ chờ, người duyệt, thời gian, ý kiến), ô ký xác nhận điện tử, ghi chú cam kết; dấu mờ "ĐANG CHỜ DUYỆT / BẢN NHÁP…" khi chưa hoàn tất. In A4 hoặc "Lưu dưới dạng PDF".
 - Nhóm đề xuất theo danh mục, **biểu mẫu tuỳ chỉnh** (văn bản, đoạn văn, số, số tiền, ngày, danh sách chọn, ô tích, nhân sự).
-- Quy trình **duyệt lần lượt** hoặc **chỉ cần một người duyệt**, người duyệt mặc định + người tạo tự chọn thêm, người theo dõi mặc định, **SLA**.
+- **4 quy trình xử lý** (như Base Request): **Duyệt đồng thời** (tất cả người duyệt nhận cùng lúc, tất cả đồng ý mới được chấp thuận), **Duyệt lần lượt**, **Chỉ cần một người duyệt**, **Luồng duyệt trong khối người duyệt** (các khối nối tiếp nhau; mỗi khối chọn "tất cả phải đồng ý" hoặc "chỉ cần một người đồng ý" — người đầu tiên duyệt thì những người còn lại trong khối được bỏ qua). Người duyệt mặc định + người tạo tự chọn thêm, người theo dõi mặc định, **SLA**.
+- **Phạm vi sử dụng** của nhóm: Công khai (mọi người) hoặc **Riêng tư** — chỉ phòng ban (kể cả kiêm nhiệm) / thành viên được chọn mới thấy và tạo được đề xuất.
+- **Yêu cầu thông báo tới người quản lý trực tiếp**: bật Có thì quản lý của người tạo tự động theo dõi mọi đề xuất trong nhóm.
+- **Công cụ quản trị** (menu "Công cụ" ở Quản lý nhóm đề xuất): **Cài đặt SLA** và **đổi quy trình** hàng loạt, **Thay thế người duyệt** (chuyển vai trò duyệt / duyệt cuối / theo dõi của một người sang người khác trong mọi nhóm, kèm các đề xuất đang chờ), **Nhập nhóm đề xuất từ Excel** (.xlsx / .csv, có **file mẫu**), **Xuất thiết lập ra JSON** và **Nhập thiết lập từ JSON** (chuyển cấu hình giữa các hệ thống), **Nhân bản nhóm**.
 - Tab Tất cả / Đến lượt duyệt / Quá hạn / Chờ xử lý / Đã chấp thuận / Đã từ chối / Đã trả lại / Đã đánh dấu / Đã lưu nháp; Gửi đến tôi / Tôi gửi đi / Đang theo dõi.
 - Chấp thuận, từ chối, trả lại (kèm lý do), gửi lại, huỷ; bình luận, tệp đính kèm (**xem trước ngay trong trang**), lịch sử, thông báo.
 - **Biểu mẫu & quy trình của nhóm đề xuất**: quản trị viên đính kèm biểu mẫu, tài liệu quy trình và hướng dẫn thực hiện; người làm đề xuất thấy ngay khi tạo đề xuất (xem trước / tải về), người duyệt đối chiếu trong trang chi tiết.
@@ -112,6 +115,13 @@ Webapp nội bộ gồm 2 phân hệ, giao diện và chức năng mô phỏng *
 
 ### HRM+ — `/hrm`, `/checkin`, `/timeoff`
 - **LDL HRM**: hồ sơ nhân sự (mã NV, CCCD, hợp đồng, BHXH, MST, ngân hàng...), tổng quan theo phòng ban, cảnh báo hết hạn hợp đồng / thử việc, sinh nhật, nhân sự mới.
+  - **Danh sách nhân sự** theo view như Base HRM: Đang làm việc / Tất cả / Tôi quản lý / Đang thử việc / Đang tạm nghỉ / Nghỉ việc; lọc theo phòng ban, văn phòng, phân loại, hợp đồng sắp hết hạn; nhóm cột Tổng quan · Công việc · Hợp đồng & pháp lý · Hồ sơ & liên hệ (thâm niên, thăng tiến gần nhất…); **Trích xuất** Excel (CSV) và **Cập nhật hàng loạt** từ Excel theo tài khoản / mã NV (có file mẫu).
+  - Hồ sơ nhân viên có tab **Hồ sơ · Hợp đồng · Phát triển sự nghiệp · Giấy tờ**; thêm văn phòng, vị trí công việc, phân loại nhân sự, ngày chính thức, ngày & lý do nghỉ việc.
+  - **Hợp đồng lao động**: nhiều hợp đồng mỗi người (số HĐ, loại, thời hạn, mức lương, tệp scan), tự kết thúc hợp đồng cũ, hồ sơ tự cập nhật loại / hạn hợp đồng; trang tổng hợp lọc đang hiệu lực / sắp hết hạn / đã hết hạn / đã chấm dứt, trích xuất Excel. Lương chỉ nhân viên và quản lý nhân sự xem được.
+  - **Phát triển sự nghiệp**: thăng tiến (tự đổi chức danh), điều chỉnh lương, điều chuyển (tự đổi phòng ban), khen thưởng, kỷ luật — kèm số quyết định, ngày hiệu lực.
+  - **Hồ sơ giấy tờ**: CCCD, sơ yếu lý lịch, bằng cấp, giấy khám sức khoẻ… theo loại, ngày hết hạn, xem trước trong trang; nhân viên tự bổ sung giấy tờ của mình.
+  - **Báo cáo nhân sự**: tổng nhân sự, tuyển mới / nghỉ việc 12 tháng, tỷ lệ nghỉ việc, thâm niên trung bình; cơ cấu theo giới tính, phân loại, thâm niên, độ tuổi, văn phòng, loại hợp đồng, vị trí; xuất Excel.
+  - **Cài đặt**: phân quyền quản lý nhân sự; danh mục văn phòng, vị trí công việc, phân loại nhân sự, loại hợp đồng, loại giấy tờ, lý do nghỉ việc, ngày lễ.
 - **LDL Checkin**: chấm công vào / ra (giờ Việt Nam), đi muộn / về sớm, bảng công tháng dạng lịch, bảng công nhân viên theo ngày, xuất CSV, giới hạn chấm công theo IP văn phòng.
 - **LDL Timeoff**: quỹ phép năm theo nhân viên, đơn nghỉ đi qua **LDL Request** (nhóm "Đề xuất nghỉ phép"), lịch nghỉ công ty.
 

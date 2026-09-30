@@ -965,3 +965,163 @@ test('comment replies thread under the root comment, notify the replied author, 
   const n = (await demo.get('/notifications?limit=30')).data.items.filter((x) => x.title.includes('đã trả lời bình luận của bạn'));
   assert.ok(n.length >= targets.length);
 });
+
+test('request flows: parallel (all at once), approver blocks with any-one block, visibility, notify manager', async () => {
+  const admin = await login('admin');
+  const demo = await login('demo');
+  const users = (await admin.get('/users')).data;
+  const id = (u) => users.find((x) => x.username === u).id;
+  const deps = (await admin.get('/departments')).data;
+  const kdDep = deps.find((d) => d.name === 'Phòng Kinh doanh').id;
+  const fields = [{ label: 'Nội dung', type: 'textarea', required: true }];
+  // duyệt đồng thời: cả hai cùng nhận, cả hai phải đồng ý
+  const par = (await admin.post('/request-groups', { name: 'Test đồng thời', category: 'Test', flow: 'parallel', fields,
+    approvers: [id('thuhuyen'), id('giamdoc')], custom_approvers: false, notify_manager: true })).data.id;
+  const fd = new FormData();
+  fd.append('group_id', par);
+  fd.append('data', JSON.stringify({ f1: 'x' }));
+  const q = (await demo.post('/requests', fd)).data;
+  assert.deepEqual(q.approvers.map((a) => a.step), [1, 1]);
+  assert.ok(q.followers.some((f) => f.id === id('truongkd')), 'quản lý trực tiếp được thêm vào người theo dõi');
+  const kt = await login('thuhuyen');
+  const gd = await login('giamdoc');
+  assert.equal((await gd.get(`/requests/${q.id}`)).data.my_turn, true);
+  assert.equal((await kt.post(`/requests/${q.id}/decide`, { action: 'approve' })).data.status, 'pending');
+  assert.equal((await gd.post(`/requests/${q.id}/decide`, { action: 'approve' })).data.status, 'approved');
+
+  // khối người duyệt: khối 1 "một người đồng ý" (kế toán / HCNS), khối 2 "tất cả" (giám đốc)
+  const blk = (await admin.post('/request-groups', { name: 'Test khối', category: 'Test', flow: 'blocks', fields, custom_approvers: false,
+    blocks: [{ mode: 'any', users: [id('thuhuyen'), id('chilan')] }, { mode: 'all', users: [id('giamdoc')] }] })).data.id;
+  const g = (await admin.get(`/request-groups/${blk}`)).data;
+  assert.deepEqual(g.blocks.map((b) => b.mode), ['any', 'all']);
+  const fd2 = new FormData();
+  fd2.append('group_id', blk);
+  fd2.append('data', JSON.stringify({ f1: 'y' }));
+  const q2 = (await demo.post('/requests', fd2)).data;
+  const hr = await login('chilan');
+  assert.equal((await gd.get(`/requests/${q2.id}`)).data.my_turn, false);
+  await hr.post(`/requests/${q2.id}/decide`, { action: 'approve' });
+  const after = (await gd.get(`/requests/${q2.id}`)).data;
+  assert.equal(after.approvers.find((a) => a.user_id === id('thuhuyen')).status, 'skipped');
+  assert.equal(after.my_turn, true);
+  assert.equal((await gd.post(`/requests/${q2.id}/decide`, { action: 'approve' })).data.status, 'approved');
+
+  // phạm vi riêng tư: chỉ Phòng Kinh doanh tạo được
+  const pri = (await admin.post('/request-groups', { name: 'Test riêng KD', category: 'Test', flow: 'any', fields, approvers: [id('truongkd')],
+    visibility: 'private', member_departments: [kdDep] })).data.id;
+  assert.ok((await demo.get('/request-groups')).data.some((x) => x.id === pri));
+  assert.ok(!(await kt.get('/request-groups')).data.some((x) => x.id === pri));
+  const fd3 = new FormData();
+  fd3.append('group_id', pri);
+  fd3.append('data', JSON.stringify({ f1: 'z' }));
+  assert.equal((await kt.post('/requests', fd3)).status, 403);
+});
+
+test('request group admin tools: bulk SLA, replace approver, export / import, duplicate', async () => {
+  const admin = await login('admin');
+  const demo = await login('demo');
+  const users = (await admin.get('/users')).data;
+  const id = (u) => users.find((x) => x.username === u).id;
+  const gid = (await admin.post('/request-groups', { name: 'Test công cụ', category: 'Tools', flow: 'sequential',
+    fields: [{ label: 'Nội dung', type: 'textarea', required: true }], approvers: [id('thuhuyen')], followers: [id('chilan')] })).data.id;
+  assert.equal((await demo.post('/request-groups/bulk', { ids: [gid], action: 'sla', sla_hours: 8 })).status, 403);
+  await admin.post('/request-groups/bulk', { ids: [gid], action: 'sla', sla_hours: 8 });
+  assert.equal((await admin.get(`/request-groups/${gid}`)).data.sla_hours, 8);
+
+  const fd = new FormData();
+  fd.append('group_id', gid);
+  fd.append('data', JSON.stringify({ f1: 'a' }));
+  const q = (await demo.post('/requests', fd)).data;
+  const rep = await admin.post('/request-groups/replace-approver', { from_id: id('thuhuyen'), to_id: id('minhtrang'), pending: true });
+  assert.ok(rep.data.groups >= 1);
+  assert.ok(rep.data.requests >= 1);
+  assert.ok((await admin.get(`/request-groups/${gid}`)).data.approvers.some((a) => a.user_id === id('minhtrang')));
+  const mkt = await login('minhtrang');
+  assert.equal((await mkt.get(`/requests/${q.id}`)).data.my_turn, true);
+
+  const exp = (await admin.get(`/request-groups/export?ids=${gid}`)).data;
+  assert.equal(exp.groups[0].approvers[0].username, 'minhtrang');
+  const imp = await admin.post('/request-groups/import', { groups: [{ ...exp.groups[0], name: 'Test nhập JSON' },
+    { name: 'Test nhập Excel', category: 'Tools', flow: 'Duyệt đồng thời', sla: '12', approvers: 'truongkd, giamdoc', followers: '@chilan' },
+    { name: '' }] });
+  assert.equal(imp.data.created.length, 2);
+  assert.equal(imp.data.errors.length, 1);
+  const excel = (await admin.get(`/request-groups/${imp.data.created[1].id}`)).data;
+  assert.equal(excel.flow, 'parallel');
+  assert.equal(excel.sla_hours, 12);
+  assert.equal(excel.approvers.length, 2);
+
+  const dup = (await admin.post(`/request-groups/${gid}/duplicate`)).data.id;
+  const d = (await admin.get(`/request-groups/${dup}`)).data;
+  assert.match(d.name, /Bản sao/);
+  assert.equal(d.active, false);
+  assert.equal(d.approvers.length, 1);
+});
+
+test('HRM records: contracts sync the profile, career events, documents, views, export / import, report', async () => {
+  const hr = await login('chilan');
+  const demo = await login('demo');
+  const kd = await login('truongkd');
+  const cat = (await demo.get('/hrm/catalog')).data;
+  assert.ok(cat.contract_types.length && cat.doc_types.length);
+  assert.equal((await demo.put('/hrm/catalog', { offices: ['X'] })).status, 403);
+  assert.deepEqual((await hr.put('/hrm/catalog', { offices: ['Hà Nội', 'Hà Nội', 'Đà Nẵng'] })).data.offices, ['Hà Nội', 'Đà Nẵng']);
+
+  // hợp đồng mới → hồ sơ cập nhật loại / hạn hợp đồng; lương chỉ HR và chính nhân viên xem
+  const fd = new FormData();
+  fd.append('contract_type', 'Xác định thời hạn 24 tháng');
+  fd.append('start_date', '2026-01-01');
+  fd.append('end_date', '2027-12-31');
+  fd.append('salary', '15.000.000');
+  fd.append('close_previous', '1');
+  fd.append('files', new File(['hop dong'], 'hopdong.pdf', { type: 'application/pdf' }));
+  const k = await hr.post(`/hrm/employees/${demo.user.id}/contracts`, fd);
+  assert.equal(k.status, 201);
+  assert.equal(k.data.salary, 15000000);
+  const prof = (await demo.get(`/hrm/employees/${demo.user.id}`)).data;
+  assert.equal(prof.contract_type, 'Xác định thời hạn 24 tháng');
+  assert.equal(prof.contract_end, '2027-12-31');
+  assert.equal((await demo.get(`/hrm/employees/${demo.user.id}/contracts`)).data.filter((x) => x.status === 'active').length, 1);
+  assert.equal((await kd.get(`/hrm/employees/${demo.user.id}/contracts`)).status, 403);
+  assert.equal((await demo.get(`/hrm/contracts/${k.data.id}/file`)).status, 200);
+  assert.ok((await hr.get('/hrm/contracts?q=Demo')).data.length >= 2);
+
+  // thăng tiến áp dụng ngay → đổi chức danh; lương điều chỉnh bị ẩn với quản lý trực tiếp
+  await hr.post(`/hrm/employees/${demo.user.id}/careers`, { type: 'promotion', effective_date: '2026-06-01', to_value: 'Trưởng nhóm kinh doanh', apply: true });
+  await hr.post(`/hrm/employees/${demo.user.id}/careers`, { type: 'raise', effective_date: '2026-06-01', from_value: '15000000', to_value: '18000000' });
+  assert.equal((await demo.get(`/hrm/employees/${demo.user.id}`)).data.title, 'Trưởng nhóm kinh doanh');
+  const seenByManager = (await kd.get(`/hrm/employees/${demo.user.id}/careers`)).data;
+  assert.equal(seenByManager.find((x) => x.type === 'raise').to_value, null);
+  assert.equal((await demo.get(`/hrm/employees/${demo.user.id}/careers`)).data.find((x) => x.type === 'raise').to_value, '18000000');
+  assert.match((await hr.get('/hrm/employees?q=Demo')).data[0].last_promotion, /Trưởng nhóm/);
+
+  // giấy tờ: nhân viên tự bổ sung, người khác không xem được
+  const fd2 = new FormData();
+  fd2.append('doc_type', 'CCCD / Hộ chiếu');
+  fd2.append('files', new File(['cccd'], 'cccd.jpg', { type: 'image/jpeg' }));
+  const docs = (await demo.post(`/hrm/employees/${demo.user.id}/documents`, fd2)).data;
+  assert.equal(docs.length, 1);
+  assert.equal((await kd.get(`/hrm/employees/${demo.user.id}/documents`)).status, 403);
+  assert.equal((await kd.get(`/hrm/documents/${docs[0].id}`)).status, 404);
+  assert.equal((await hr.get(`/hrm/documents/${docs[0].id}`)).status, 200);
+
+  // view "tôi quản lý", trích xuất CSV, cập nhật hàng loạt
+  const hrUser = hr.user;
+  const mine = (await hr.get('/hrm/employees?view=mine')).data;
+  assert.ok(mine.every((e) => e.manager_id === hrUser.id));
+  const csv = await hr.get('/hrm/employees/export');
+  assert.match(csv.headers.get('content-type'), /text\/csv/);
+  assert.match(csv.data, /Mã NV,Họ tên/);
+  const imp = (await hr.post('/hrm/employees/import', { rows: [{ username: 'demo', office: 'Đà Nẵng', official_date: '20/03/2023' }, { username: 'khongco' }] })).data;
+  assert.equal(imp.updated, 1);
+  assert.equal(imp.errors.length, 1);
+  const d = (await hr.get(`/hrm/employees/${demo.user.id}`)).data;
+  assert.equal(d.office, 'Đà Nẵng');
+  assert.equal(d.official_date, '2023-03-20');
+
+  const rep = (await hr.get('/hrm/report')).data;
+  assert.ok(rep.total >= 9);
+  assert.equal(rep.turnover.length, 12);
+  assert.equal(rep.seniority.reduce((s, b) => s + b.c, 0), rep.total);
+  assert.equal((await demo.get('/hrm/report')).status, 403);
+});

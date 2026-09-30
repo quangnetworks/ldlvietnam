@@ -36,6 +36,7 @@ import { TwoFactorPage, SecuritySettingsPage } from './account/SecurityPages.jsx
 import { WebhooksPage } from './request/Webhooks.jsx';
 import ModuleShell from './components/ModuleShell.jsx';
 import { HrmHome, HrmEmployees, HrmEmployee, HrmSettings } from './hrm/Hrm.jsx';
+import { HrmContracts, HrmCareers, HrmReports } from './hrm/HrmRecords.jsx';
 import { CheckinHome, CheckinTeam, CheckinSettings } from './hrm/Checkin.jsx';
 import { TimeoffHome, TimeoffCalendar, TimeoffBalances } from './hrm/Timeoff.jsx';
 import DrivePage from './drive/Drive.jsx';
@@ -159,6 +160,9 @@ export default function App() {
         <Route index element={<HrmHome />} />
         <Route path="employees" element={<HrmEmployees />} />
         <Route path="employees/:id" element={<HrmEmployee />} />
+        <Route path="contracts" element={<HrmContracts />} />
+        <Route path="careers" element={<HrmCareers />} />
+        <Route path="reports" element={<HrmReports />} />
         <Route path="settings" element={<HrmSettings />} />
       </Route>
       <Route path="/checkin" element={<RequireApp app="checkin"><ModuleShell app="checkin" /></RequireApp>}>

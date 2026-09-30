@@ -2,9 +2,10 @@ import { useEffect, useState } from 'react';
 import { Link, NavLink, Outlet, useLocation } from 'react-router-dom';
 import {
   LayoutDashboard, Users2, Settings, Fingerprint, UsersRound, Plane, CalendarDays, Scale, FolderOpen, Building2, Share2, Clock3,
-  Trash2, Menu,
+  Trash2, Menu, FileSignature, TrendingUp, BarChart3,
 } from 'lucide-react';
-import { useApp } from '../context.jsx';
+import { api } from '../api.js';
+import { useApp, useFetch } from '../context.jsx';
 import { AppSwitcher, NotificationBell, UserMenu } from './shell.jsx';
 import { ContactsButton } from './Contact.jsx';
 import { ECOSYSTEM, AppIcon } from '../apps.jsx';
@@ -13,8 +14,11 @@ import { cx } from '../utils.js';
 const NAV = {
   hrm: [
     { to: '/hrm', end: true, label: 'Tổng quan', icon: LayoutDashboard },
-    { to: '/hrm/employees', label: 'Hồ sơ nhân sự', icon: Users2 },
-    { to: '/hrm/settings', label: 'Cài đặt', icon: Settings, admin: true },
+    { to: '/hrm/employees', label: 'Danh sách nhân sự', icon: Users2, hr: true },
+    { to: '/hrm/contracts', label: 'Hợp đồng', icon: FileSignature, hr: true },
+    { to: '/hrm/careers', label: 'Phát triển sự nghiệp', icon: TrendingUp, hr: true },
+    { to: '/hrm/reports', label: 'Báo cáo nhân sự', icon: BarChart3, hr: true },
+    { to: '/hrm/settings', label: 'Cài đặt', icon: Settings, hr: true },
   ],
   checkin: [
     { to: '/checkin', end: true, label: 'Chấm công của tôi', icon: Fingerprint },
@@ -41,6 +45,8 @@ export default function ModuleShell({ app }) {
   const [open, setOpen] = useState(false);
   useEffect(() => setOpen(false), [location.key]);
   const meta = ECOSYSTEM.find((a) => a.key === app);
+  // mục chỉ dành cho quản lý nhân sự (HRM)
+  const [hrMeta] = useFetch(() => (app === 'hrm' ? api.get('/hrm/meta') : Promise.resolve(null)), [app]);
   return (
     <div className="office">
       <header className="topbar">
@@ -56,7 +62,7 @@ export default function ModuleShell({ app }) {
         {open && <div className="side-backdrop" onClick={() => setOpen(false)} />}
         <aside className={cx('office-side', open && 'open')}>
           <div className="mod-title"><AppIcon app={meta} size={30} /><span><b>{meta.name}</b><small className="muted block">{meta.desc}</small></span></div>
-          {NAV[app].filter((n) => !n.admin || user.role === 'admin').map((n) => (
+          {NAV[app].filter((n) => (!n.admin || user.role === 'admin') && (!n.hr || hrMeta?.is_manager)).map((n) => (
             <NavLink key={n.to} to={n.to} end={n.end} className={({ isActive }) => cx('side-link', isActive && 'active')}>
               <n.icon size={15} /> {n.label}
             </NavLink>

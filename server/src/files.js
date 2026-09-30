@@ -13,6 +13,8 @@ const SOURCES = {
   gf: 'request_group_files',
   cm: 'chat_messages',
   cf: 'comment_files',
+  hc: 'hr_contracts',
+  hd: 'hr_documents',
 };
 
 const VIEW_TTL = 15 * 60;

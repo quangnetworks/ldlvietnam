@@ -6,7 +6,7 @@ import { useApp, useToast } from '../context.jsx';
 import { Field, UserPicker, FileChip, Spinner, Avatar } from '../components/ui.jsx';
 import { useRequestApp, groupByCategory } from './RequestLayout.jsx';
 import GroupGuide from './GroupGuide.jsx';
-import { FieldInput } from './fields.jsx';
+import { FieldInput, flowLabel, stepNote } from './fields.jsx';
 import { cx, fmtDateTime } from '../utils.js';
 
 function GroupChooser({ onPick }) {
@@ -26,7 +26,7 @@ function GroupChooser({ onPick }) {
               <button key={g.id} className="rq-choose" onClick={() => onPick(g.id)}>
                 <b>{g.starred && <Star size={13} className="starred" fill="currentColor" />} {g.name}</b>
                 <small className="muted">{g.description || 'Không có mô tả'}</small>
-                <small className="muted">{g.flow === 'any' ? 'Chỉ cần một người duyệt' : 'Duyệt lần lượt'}{g.sla_hours ? ` · SLA ${g.sla_hours}h` : ''}</small>
+                <small className="muted">{g.visibility === 'private' ? '🔒 ' : ''}{flowLabel(g.flow)}{g.sla_hours ? ` · SLA ${g.sla_hours}h` : ''}</small>
                 {(g.file_count > 0 || g.has_guide) && <small className="rq-choose-guide">📎 Có biểu mẫu / quy trình hướng dẫn{g.file_count ? ` (${g.file_count} tệp)` : ''}</small>}
               </button>
             ))}
@@ -146,7 +146,7 @@ export default function RequestForm() {
           </div>
         </div>
         <div className="card">
-          <h3 className="card-title">Luồng duyệt · {(plan?.flow || group.flow) === 'any' ? 'Chỉ cần một người duyệt' : 'Duyệt lần lượt'}</h3>
+          <h3 className="card-title">Luồng duyệt · {flowLabel(group.flow)}</h3>
           {plan?.no_manager && <p className="muted small">Bạn không có quản lý trực tiếp — đề xuất đi thẳng tới các bước tiếp theo.</p>}
           {planSteps.length > 0 && <StagedFlow steps={planSteps} preview />}
           {group.custom_approvers ? (
@@ -183,7 +183,7 @@ function StagedFlow({ steps, preview, flow }) {
             {g.items.map((a) => (
               <li key={a.user_id} className={cx(preview ? 'pending' : a.status)}>
                 <Avatar name={a.name} color={a.color} size={28} />
-                <div className="grow"><b>{a.name}</b><small className="muted block">{flow === 'any' ? 'Người duyệt' : `Bước ${a.step}`}{a.title ? ` · ${a.title}` : ''}{!preview && a.acted_at ? ` · ${fmtDateTime(a.acted_at)}` : ''}</small>
+                <div className="grow"><b>{a.name}</b><small className="muted block">{stepNote(a, steps, flow)}{a.title ? ` · ${a.title}` : ''}{!preview && a.acted_at ? ` · ${fmtDateTime(a.acted_at)}` : ''}</small>
                   {!preview && a.comment && <div className="small pre">“{a.comment}”</div>}</div>
                 {!preview && (
                   <span className={cx('small', { approved: 'text-green', rejected: 'text-red', returned: 'text-red' }[a.status] || 'muted')}>
@@ -206,7 +206,7 @@ export function StatusSteps({ approvers, flow }) {
       {approvers.map((a) => (
         <li key={a.user_id} className={cx(a.status)}>
           <Avatar name={a.name} color={a.color} size={30} />
-          <div className="grow"><b>{a.name}</b><small className="muted block">{flow === 'any' ? 'Người duyệt' : `Bước ${a.step}`}{a.title ? ` · ${a.title}` : ''}</small>
+          <div className="grow"><b>{a.name}</b><small className="muted block">{stepNote(a, approvers, flow)}{a.title ? ` · ${a.title}` : ''}</small>
             {a.comment && <div className="small pre">“{a.comment}”</div>}</div>
           <span className={cx('small', { approved: 'text-green', rejected: 'text-red', returned: 'text-red' }[a.status] || 'muted')}>
             {{ approved: 'Đã chấp thuận', rejected: 'Từ chối', returned: 'Trả lại', skipped: 'Không cần duyệt', pending: 'Chờ duyệt' }[a.status]}

@@ -278,6 +278,23 @@ export async function buildSeed() {
       VALUES (?,?,?,?,?,?,?,?)`, users[k], code, gender, hire, ctype, cend, status === 'probation' ? dateOffset(20) : null, status);
   }
   add("INSERT OR REPLACE INTO settings(key, value) VALUES ('hrm_settings', ?)", JSON.stringify({ managers: [users.hr] }));
+  // hồ sơ mở rộng, hợp đồng, phát triển sự nghiệp
+  const extra = {
+    gd: ['Văn phòng Hà Nội', 'Giám đốc', 'Toàn thời gian'], hr: ['Văn phòng Hà Nội', 'Trưởng phòng', 'Toàn thời gian'],
+    kd: ['Văn phòng Hà Nội', 'Trưởng phòng', 'Toàn thời gian'], mkt: ['Văn phòng TP. Hồ Chí Minh', 'Trưởng phòng', 'Toàn thời gian'],
+    kt: ['Văn phòng Hà Nội', 'Trưởng phòng', 'Toàn thời gian'], nv1: ['Văn phòng Hà Nội', 'Nhân viên', 'Toàn thời gian'],
+    nv2: ['Văn phòng Hà Nội', 'Nhân viên', 'Toàn thời gian'], nv3: ['Văn phòng TP. Hồ Chí Minh', 'Nhân viên', 'Toàn thời gian'],
+    nv4: ['Văn phòng TP. Hồ Chí Minh', 'Chuyên viên', 'Bán thời gian'],
+  };
+  for (const [k, code, , hire, ctype, cend, status] of hr) {
+    const [office, position, type] = extra[k];
+    add('UPDATE hr_profiles SET office = ?, job_position = ?, employee_type = ?, official_date = ? WHERE user_id = ?',
+      office, position, type, status === 'probation' ? null : hire, users[k]);
+    add(`INSERT INTO hr_contracts(user_id, code, contract_type, start_date, end_date, status, created_by) VALUES (?,?,?,?,?, 'active', ?)`,
+      users[k], `HĐLĐ-${code}`, ctype, hire, cend, users.hr);
+  }
+  add(`INSERT INTO hr_careers(user_id, type, effective_date, from_value, to_value, decision_no, created_by) VALUES (?, 'promotion', '2023-01-01', 'Chuyên viên kinh doanh', 'Trưởng phòng Kinh doanh', 'QĐ-01/2023', ?)`, users.kd, users.hr);
+  add(`INSERT INTO hr_careers(user_id, type, effective_date, to_value, note, created_by) VALUES (?, 'reward', ?, 'Nhân viên xuất sắc quý', 'Vượt 120% chỉ tiêu doanh số', ?)`, users.nv1, dateOffset(-30), users.hr);
 
   // ---------- Checkin: vài ngày chấm công gần đây (giờ VN = UTC+7)
   const utcAt = (day, vnMinutes) => {
@@ -326,7 +343,7 @@ export async function buildSeed() {
   return S;
 }
 
-const TABLES = ['chat_messages', 'chat_members', 'chat_channels', 'drive_shares', 'drive_items', 'leave_quotas', 'checkins', 'hr_profiles',
+const TABLES = ['hr_documents', 'hr_careers', 'hr_contracts', 'request_group_members', 'chat_messages', 'chat_members', 'chat_channels', 'drive_shares', 'drive_items', 'leave_quotas', 'checkins', 'hr_profiles',
   'webhook_logs', 'webhooks', 'request_attachments', 'request_comments', 'request_stars', 'request_followers', 'request_approvers', 'requests',
   'request_group_stars', 'request_group_followers', 'request_group_approvers', 'notes', 'user_prefs', 'login_logs', 'app_access',
   'user_departments', 'user_group_members', 'user_groups', 'notifications', 'activity_logs', 'custom_filters', 'goals', 'task_attachments', 'task_results', 'task_comments', 'request_group_files', 'task_checklist',
