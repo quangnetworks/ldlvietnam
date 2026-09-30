@@ -34,9 +34,13 @@ export async function salesSettings() {
 }
 /** Mã ngành hàng hợp lệ (theo mã hoặc tên, không phân biệt hoa thường); '' / 'chung' → null. */
 export async function industryCode(v) {
+  return industryOf((await salesSettings()).industries, v);
+}
+/** Như industryCode nhưng với danh mục đã đọc sẵn (dùng khi nhập hàng loạt). */
+export function industryOf(industries, v) {
   const t = String(v ?? '').trim().toLowerCase();
   if (!t || t === 'chung' || t === 'all') return null;
-  const hit = (await salesSettings()).industries.find((x) => x.code.toLowerCase() === t || x.name.toLowerCase() === t);
+  const hit = industries.find((x) => x.code.toLowerCase() === t || x.name.toLowerCase() === t);
   if (!hit) throw badRequest(`Ngành hàng "${v}" không có trong danh mục`);
   return hit.code;
 }
@@ -59,11 +63,13 @@ async function territoryOr404(id) {
 }
 
 /** Vị trí chính của nhân sự = vị trí cấp cao nhất trong các phân công chính (không kiêm nhiệm), nếu không có thì lấy mọi phân công. */
+const RANK_SQL = `CASE role ${Object.entries(SALES_ROLES).map(([k, v]) => `WHEN '${k}' THEN ${v.rank}`).join(' ')} ELSE 9 END`;
+const MAIN_POST = (col) => `(SELECT ${col} FROM territory_members WHERE user_id = users.id ORDER BY is_concurrent, ${RANK_SQL}, created_at, territory_id LIMIT 1)`;
+/** Một câu lệnh: vị trí / ngành hàng chính = phân công chính (không kiêm nhiệm) cấp cao nhất. */
+export const refreshSalesRoleStmt = (userId) => [`UPDATE users SET sales_role = ${MAIN_POST('role')}, sales_industry = ${MAIN_POST('industry')} WHERE id = ?`, [userId]];
 async function refreshSalesRole(userId) {
-  const rows = await all('SELECT role, is_concurrent, industry FROM territory_members WHERE user_id = ?', userId);
-  const pick = (list) => list.sort((a, b) => SALES_ROLES[a.role].rank - SALES_ROLES[b.role].rank)[0] ?? null;
-  const main = pick(rows.filter((x) => !x.is_concurrent)) || pick(rows);
-  await run('UPDATE users SET sales_role = ?, sales_industry = ? WHERE id = ?', main?.role ?? null, main?.industry ?? null, userId);
+  const [sql, params] = refreshSalesRoleStmt(userId);
+  await run(sql, ...params);
 }
 
 const MEMBER_SELECT = `SELECT m.territory_id, m.user_id, m.role, m.is_concurrent, m.since, m.industry, u.name, u.username, u.color, u.title, u.avatar_version,
@@ -171,15 +177,17 @@ r.delete('/sales/territories/:id', async (c) => {
  * Phân công người phụ trách (dùng chung cho màn hình và nhập Excel): vị trí phải khớp cấp địa bàn;
  * is_concurrent = kiêm nhiệm; industry = mã ngành hàng (null = chung).
  */
-export async function assignMember(t, userId, role, { industry = null, concurrent = false, since = null } = {}) {
+export function assignStmt(t, userId, role, { industry = null, concurrent = false, since = null } = {}) {
   if (!SALES_ROLES[role]) throw badRequest('Chọn vị trí kinh doanh');
   if (!SALES_ROLES[role].levels.includes(t.level)) {
     throw badRequest(`${SALES_ROLES[role].short} chỉ phụ trách cấp ${SALES_ROLES[role].levels.map((l) => LEVELS[l].toLowerCase()).join(' / ')}`);
   }
-  await run(`INSERT INTO territory_members(territory_id, user_id, role, is_concurrent, since, industry) VALUES (?,?,?,?,?,?)
+  return [`INSERT INTO territory_members(territory_id, user_id, role, is_concurrent, since, industry) VALUES (?,?,?,?,?,?)
     ON CONFLICT(territory_id, user_id, role) DO UPDATE SET is_concurrent = excluded.is_concurrent, since = excluded.since, industry = excluded.industry`,
-  t.id, userId, role, concurrent ? 1 : 0, /^\d{4}-\d{2}-\d{2}$/.test(since || '') ? since : null, industry);
-  await refreshSalesRole(userId);
+  [t.id, userId, role, concurrent ? 1 : 0, /^\d{4}-\d{2}-\d{2}$/.test(since || '') ? since : null, industry]];
+}
+export async function assignMember(t, userId, role, opts = {}) {
+  await batch([assignStmt(t, userId, role, opts), refreshSalesRoleStmt(userId)]);
 }
 
 r.post('/sales/territories/:id/members', async (c) => {

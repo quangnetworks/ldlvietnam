@@ -11,7 +11,7 @@ import {
 } from 'lucide-react';
 import { api } from '../api.js';
 import { useApp, useFetch, useToast } from '../context.jsx';
-import { Avatar, Spinner, Field, Modal, UserPicker, Empty } from '../components/ui.jsx';
+import { Avatar, Spinner, Field, Modal, UserPicker, Empty, useShowMore, foldVi } from '../components/ui.jsx';
 import { HrHero, Kpi, HrCard } from './hrUi.jsx';
 import { useDebounced } from '../components/shell.jsx';
 import { cx } from '../utils.js';
@@ -72,7 +72,7 @@ export function SalesOrg() {
   const toast = useToast();
   const [data, reload, loading, error] = useFetch(() => api.get('/sales/structure'), []);
   const [q, setQ] = useState('');
-  const dq = useDebounced(q).trim().toLowerCase();
+  const dq = foldVi(useDebounced(q).trim());
   const [mode, setMode] = useState('tree');
   const [ind, setInd] = useState('');
   const [open, setOpen] = useState({});
@@ -94,9 +94,9 @@ export function SalesOrg() {
 
   const kids = (t) => idx.children[t.id] || [];
   const mem = (t) => idx.members[t.id] || [];
-  const match = (m) => !!dq && m.name.toLowerCase().includes(dq);
+  const match = (m) => !!dq && foldVi(m.name).includes(dq);
   /** địa bàn khớp tìm kiếm: tên địa bàn hoặc có người phụ trách khớp, tính cả địa bàn con */
-  const hits = (t) => !dq || t.name.toLowerCase().includes(dq) || mem(t).some(match) || kids(t).some(hits);
+  const hits = (t) => !dq || foldVi(t.name).includes(dq) || mem(t).some(match) || kids(t).some(hits);
   const isOpen = (t) => (dq ? hits(t) : open[t.id] ?? t.level !== 'area');
   const toggle = (t) => setOpen({ ...open, [t.id]: !isOpen(t) });
   const root = (idx.children[0] || [])[0];
@@ -208,15 +208,16 @@ function PeopleView({ data, idx, q }) {
     return Object.values(by).map((u) => {
       u.posts.sort((a, b) => a.is_concurrent - b.is_concurrent || RANK[a.role] - RANK[b.role]);
       return { ...u, role: u.posts[0].role };
-    }).filter((u) => !q || u.name.toLowerCase().includes(q) || u.posts.some((p) => idx.byId[p.territory_id]?.name.toLowerCase().includes(q)))
+    }).filter((u) => !q || foldVi(u.name).includes(q) || u.posts.some((p) => foldVi(idx.byId[p.territory_id]?.name).includes(q)))
       .sort((a, b) => RANK[a.role] - RANK[b.role] || a.name.localeCompare(b.name));
   }, [data, idx, q]);
+  const [shown, more] = useShowMore(rows, 60, q);
   if (!rows.length) return <div className="hr-table-card"><Empty title="Chưa có nhân sự trong cơ cấu" /></div>;
   return (
     <div className="hr-table-card hr-rise">
       <div className="table-wrap"><table className="table">
         <thead><tr><th>Nhân sự</th><th>Vị trí</th><th>Ngành hàng</th><th>Địa bàn phụ trách</th><th>Quản lý trực tiếp</th></tr></thead>
-        <tbody>{rows.map((u) => (
+        <tbody>{shown.map((u) => (
           <tr key={u.user_id} className="hr-row">
             <td><Link to={`/account/u/${u.user_id}`} className="hr-name"><Avatar name={u.name} color={u.color} uid={u.user_id} size={30} /><span><b>{u.name}</b><small className="muted block">{u.title}</small></span></Link></td>
             <td><RoleBadge role={u.role} /></td>
@@ -228,6 +229,7 @@ function PeopleView({ data, idx, q }) {
             <td>{u.manager_name || <span className="muted">—</span>}</td>
           </tr>))}</tbody>
       </table></div>
+      {more}
       <div className="hr-table-foot"><span>{rows.length} nhân sự</span><span>KN = kiêm nhiệm</span></div>
     </div>
   );

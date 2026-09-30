@@ -165,6 +165,12 @@ Webapp nội bộ gồm 2 phân hệ, giao diện và chức năng mô phỏng *
 - Đăng nhập, thông báo thời gian thực (polling), chuyển ứng dụng, tài khoản & đổi mật khẩu.
 - **Cài đặt Office**: quyền tạo văn bản (tất cả / người / nhóm / phòng ban), văn thư cấp số, mẫu số hiệu `{seq}/{year}/{prefix}-LDL`, hạn hiệu lực mặc định; loại văn bản / kho / thư mục.
 
+### Quy mô 300+ nhân sự
+- **Hiệu năng**: danh sách công việc truy vấn 2 bước (lọc, sắp xếp, phân trang trước rồi mới tính số việc con / bình luận cho trang trả về); thêm chỉ mục cho công việc, người quản lý, người duyệt đề xuất, người nhận văn bản, chấm công, quyền ứng dụng… Đo với ~365 nhân sự, 36.000 công việc, 11.000 đề xuất: mọi API chính dưới 150 ms (`npm --prefix server run bench:scale`, thêm `BIG=1` cho dữ liệu lớn).
+- **Giới hạn Cloudflare D1**: danh sách id dài (thông báo cả công ty, kênh chat hàng trăm thành viên, thao tác hàng loạt) truyền 1 tham số JSON (`json_each`) thay vì hàng trăm tham số; nhập Excel hồ sơ nhân sự / tài khoản đọc trước rồi ghi theo lô — 300 người kèm lịch sử, hợp đồng chỉ vài chục truy vấn; thông báo đẩy gửi theo lô, ghi kết quả một lần.
+- **Giao diện**: danh sách dài (thành viên, nhân sự, bảng công, quỹ phép, tài sản, cơ cấu kinh doanh) hiển thị dần khi cuộn; ô chọn người tìm không dấu theo tên / chức danh / phòng ban, hiện tối đa 80 kết quả; bảng công và quỹ phép có tìm kiếm, lọc phòng ban, lọc nhanh "Chưa chấm công / Đi muộn / Nghỉ phép"; trang Thành viên lọc theo phòng ban.
+- **Dọn dẹp định kỳ** (Cron 02:10 hằng đêm): xoá thông báo đã đọc > 90 ngày (mọi thông báo > 1 năm), lịch sử đăng nhập > 180 ngày, nhật ký webhook > 60 ngày; nhật ký hệ thống giữ nguyên.
+
 ## Công nghệ
 - **Backend**: [Hono](https://hono.dev) — cùng một mã nguồn chạy trên **Cloudflare Workers** (D1 + R2) hoặc **Node.js ≥ 22.5** (SQLite tích hợp `node:sqlite` + thư mục tệp).
 - **Frontend**: React 19 + Vite, React Router, lucide-react.

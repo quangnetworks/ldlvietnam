@@ -10,7 +10,7 @@ import { SalesFacts, RoleBadge } from './SalesOrg.jsx';
 import { HrHero, Kpi, HrCard, Pill, HBars, StackBar, WORK_TONE, WORK_COLOR, daysLeft } from './hrUi.jsx';
 import { api } from '../api.js';
 import { useApp, useFetch, useToast } from '../context.jsx';
-import { Avatar, Spinner, Field, Empty, UserPicker, FilterSelect, Tabs } from '../components/ui.jsx';
+import { Avatar, Spinner, Field, Empty, UserPicker, FilterSelect, Tabs, useShowMore } from '../components/ui.jsx';
 import { ContractsPanel, CareersPanel, DocumentsPanel, ImportProfilesModal, useHrCatalog, CATALOG_LABELS } from './HrmRecords.jsx';
 import { useDebounced } from '../components/shell.jsx';
 import { fmtDate, cx } from '../utils.js';
@@ -147,6 +147,7 @@ export function HrmEmployees() {
   const params = { q: dq, view, department_id: dep, office, employee_type: type, contract, sales_role: salesRole, territory_id: territory, industry };
   const [items, reload, loading, error] = useFetch(() => api.get('/hrm/employees', params), [dq, view, dep, office, type, contract, salesRole, territory, industry]);
   const pickSales = (setter) => (v) => { setter(v); if (v) setColSet('sales'); };
+  const [shown, more] = useShowMore(items, 60, JSON.stringify(params));
   const indent = { national: '', region: '— ', area: '—— ', province: '——— ' };
   if (error) return <div className="page"><div className="alert alert-error">{error.message}</div></div>;
   const cell = (e, [k, , kind]) => {
@@ -191,13 +192,14 @@ export function HrmEmployees() {
         <div className="hr-table-card hr-rise">
           <div className="table-wrap"><table className="table nowrap-cells">
             <thead><tr><th>Mã NV</th><th>Nhân sự</th>{COLUMN_SETS[colSet].cols.map(([k, l]) => <th key={k}>{l}</th>)}</tr></thead>
-            <tbody>{items.map((e) => (
+            <tbody>{shown.map((e) => (
               <tr key={e.id} className="clickable hr-row" onClick={() => navigate(`/hrm/employees/${e.id}`)}>
                 <td>{e.employee_code ? <span className="hr-code">{e.employee_code}</span> : <span className="muted">—</span>}</td>
                 <td><span className="hr-name"><Avatar name={e.name} color={e.color} uid={e.id} size={32} /><span><b>{e.name}</b><small className="muted block">{e.title}</small></span></span></td>
                 {COLUMN_SETS[colSet].cols.map((c) => <td key={c[0]}>{cell(e, c)}</td>)}
               </tr>))}</tbody>
           </table></div>
+          {more}
           <div className="hr-table-foot"><span>{items.length} nhân sự</span><span>Bấm vào một dòng để mở hồ sơ</span></div>
         </div>
       )}

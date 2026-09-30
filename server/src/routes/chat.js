@@ -62,7 +62,7 @@ r.get('/chat/channels', async (c) => {
     FROM chat_channels c LEFT JOIN chat_members m ON m.channel_id = c.id AND m.user_id = ?
     WHERE ${v.sql} ORDER BY IFNULL(c.last_message_at, c.created_at) DESC`, user.id, user.id, user.id, ...v.params);
   const peers = rows.filter((x) => x.peer_id).map((x) => x.peer_id);
-  const users = peers.length ? await all(`SELECT id, name, color, username FROM users WHERE id IN (${peers.map(() => '?').join(',')})`, ...peers) : [];
+  const users = peers.length ? await all('SELECT id, name, color, username FROM users WHERE id IN (SELECT value FROM json_each(?))', JSON.stringify(peers)) : [];
   const byId = Object.fromEntries(users.map((u) => [u.id, u]));
   return c.json(rows.map((x) => ({ ...x, peer: x.peer_id ? byId[x.peer_id] : null, display_name: x.kind === 'direct' ? byId[x.peer_id]?.name || 'Trò chuyện' : x.name })));
 });
@@ -129,7 +129,7 @@ r.put('/chat/channels/:id', async (c) => {
     const mode = HISTORY_LABEL[b.history] ? b.history : 'all';
     const floor = added.length ? await historyFloorFor(ch.id, mode) : 0;
     await batch([
-      [`DELETE FROM chat_members WHERE channel_id = ? AND user_id NOT IN (${members.map(() => '?').join(',')})`, [ch.id, ...members]],
+      ['DELETE FROM chat_members WHERE channel_id = ? AND user_id NOT IN (SELECT value FROM json_each(?))', [ch.id, JSON.stringify(members)]],
       // người mới: không tính tin nhắn ẩn là chưa đọc
       ...added.map((uid) => ['INSERT OR IGNORE INTO chat_members(channel_id, user_id, history_from_id, last_read_id) VALUES (?,?,?,?)', [ch.id, uid, floor, floor]]),
     ]);

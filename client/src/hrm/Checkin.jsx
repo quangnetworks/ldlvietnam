@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import { ChevronLeft, ChevronRight, Download, LogIn, LogOut, Clock } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Download, LogIn, LogOut, Clock, Search } from 'lucide-react';
 import { api } from '../api.js';
 import { useApp, useFetch, useToast } from '../context.jsx';
-import { Avatar, Spinner, Field, Empty } from '../components/ui.jsx';
+import { Avatar, Spinner, Field, Empty, FilterSelect, useShowMore, foldVi } from '../components/ui.jsx';
 import { cx } from '../utils.js';
 
 const DOW = ['CN', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7'];
@@ -142,28 +142,45 @@ export function CheckinHome() {
 export function CheckinTeam() {
   const [date, setDate] = useState(new Date(Date.now() + 7 * 3600e3).toISOString().slice(0, 10));
   const [data, , loading, error] = useFetch(() => api.get('/checkin/team', { date }), [date]);
+  const { departments } = useApp();
+  const [q, setQ] = useState('');
+  const [dep, setDep] = useState('');
+  const [state, setState] = useState('');
+  const all = data?.items || [];
+  const STATES = { in: (x) => x.record?.check_in_at, late: (x) => x.record?.late_minutes > 0, leave: (x) => x.leave, none: (x) => !x.record?.check_in_at && !x.leave };
+  const fq = foldVi(q.trim());
+  const items = all.filter((x) => (!fq || foldVi(`${x.name} ${x.title || ''}`).includes(fq)) && (!dep || x.department_name === dep) && (!state || STATES[state](x)));
+  const [shown, more] = useShowMore(items, 80, `${q}|${dep}|${state}|${date}`);
   if (error) return <div className="page"><div className="alert alert-error">{error.message}</div></div>;
-  const items = data?.items || [];
-  const count = (fn) => items.filter(fn).length;
+  const count = (fn) => all.filter(fn).length;
+  const tile = (key, label, value, cls = '') => (
+    <button type="button" className={cx('stat-tile', state === key && 'active')} onClick={() => setState(state === key ? '' : key)} aria-pressed={state === key}>
+      <div className="stat-label">{label}</div><div className={cx('stat-value', cls)}>{value}</div></button>
+  );
   return (
     <div className="page">
       <div className="page-head">
         <h1>Bảng công nhân viên</h1>
         {data?.is_hr && <a className="btn" href={api.url('/checkin/export', { month: date.slice(0, 7) })}><Download size={15} /> Xuất bảng công tháng {date.slice(5, 7)}</a>}
       </div>
-      <div className="toolbar"><input className="input" type="date" value={date} onChange={(e) => e.target.value && setDate(e.target.value)} style={{ width: 170 }} /></div>
+      <div className="toolbar wrap">
+        <input className="input" type="date" value={date} onChange={(e) => e.target.value && setDate(e.target.value)} style={{ width: 170 }} />
+        <div className="ww-search"><Search size={14} /><input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Tìm nhân viên" /></div>
+        <FilterSelect value={dep} onChange={setDep} options={[{ value: '', label: 'Tất cả phòng ban' }, ...departments.map((d) => ({ value: d.name, label: d.name }))]} />
+      </div>
       {loading && !data ? <Spinner /> : (
         <>
           <div className="stat-row compact">
-            <div className="stat-tile"><div className="stat-label">Nhân viên</div><div className="stat-value">{items.length}</div></div>
-            <div className="stat-tile"><div className="stat-label">Đã chấm công</div><div className="stat-value text-green">{count((x) => x.record?.check_in_at)}</div></div>
-            <div className="stat-tile"><div className="stat-label">Đi muộn</div><div className="stat-value text-orange">{count((x) => x.record?.late_minutes > 0)}</div></div>
-            <div className="stat-tile"><div className="stat-label">Nghỉ phép</div><div className="stat-value">{count((x) => x.leave)}</div></div>
+            {tile('', 'Nhân viên', all.length)}
+            {tile('in', 'Đã chấm công', count(STATES.in), 'text-green')}
+            {tile('none', 'Chưa chấm công', count(STATES.none))}
+            {tile('late', 'Đi muộn', count(STATES.late), 'text-orange')}
+            {tile('leave', 'Nghỉ phép', count(STATES.leave))}
           </div>
-          {!items.length ? <Empty title="Bạn chưa quản lý nhân viên nào" /> : (
+          {!items.length ? <Empty title={all.length ? 'Không có nhân viên phù hợp bộ lọc' : 'Bạn chưa quản lý nhân viên nào'} /> : (<>
             <div className="table-wrap"><table className="table">
               <thead><tr><th>Nhân viên</th><th>Phòng ban</th><th>Giờ vào</th><th>Giờ ra</th><th>Số giờ</th><th>Trạng thái</th><th /></tr></thead>
-              <tbody>{items.map((u) => {
+              <tbody>{shown.map((u) => {
                 const r = u.record;
                 return (
                   <tr key={u.id}>
@@ -177,7 +194,7 @@ export function CheckinTeam() {
                   </tr>
                 );
               })}</tbody>
-            </table></div>
+            </table></div>{more}</>
           )}
         </>
       )}

@@ -5,6 +5,33 @@ import DOMPurify from 'dompurify';
 import { initials, fileIcon, fileSize, cx } from '../utils.js';
 import { useApp } from '../context.jsx';
 
+/**
+ * Danh sách dài (hàng trăm nhân sự): chỉ vẽ `step` dòng đầu, tự vẽ thêm khi cuộn tới cuối (hoặc bấm "Hiển thị thêm").
+ * Trả về [các dòng đang hiện, phần chân danh sách]. Đổi bộ lọc (resetKey) → quay về trang đầu.
+ */
+export function useShowMore(items, step = 60, resetKey = '') {
+  const [n, setN] = useState(step);
+  const ref = useRef(null);
+  const total = items?.length || 0;
+  useEffect(() => { setN(step); }, [resetKey, step]);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el || n >= total || typeof IntersectionObserver === 'undefined') return undefined;
+    const io = new IntersectionObserver((es) => { if (es.some((e) => e.isIntersecting)) setN((x) => x + step); }, { rootMargin: '400px' });
+    io.observe(el);
+    return () => io.disconnect();
+  }, [n, total, step]);
+  const footer = n < total ? (
+    <div ref={ref} className="show-more">
+      <button type="button" className="btn btn-sm" onClick={() => setN((x) => x + step)}>Hiển thị thêm {Math.min(step, total - n)} · còn {total - n}</button>
+    </div>
+  ) : null;
+  return [items ? items.slice(0, n) : [], footer];
+}
+
+/** So khớp tìm kiếm không phân biệt hoa thường / dấu tiếng Việt ("nguyen van a" khớp "Nguyễn Văn A"). */
+export const foldVi = (s) => String(s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/đ/g, 'd');
+
 export function avatarUrl(id, version) {
   return `/api/account/users/${id}/avatar?v=${version}`;
 }
@@ -185,9 +212,12 @@ export function UserPicker({ users, value, onChange, multiple = false, placehold
   useClickOutside(ref, () => setOpen(false), open);
   const selected = multiple ? value || [] : value ? [value] : [];
   const byId = new Map(users.map((u) => [u.id, u]));
-  const list = users
+  const fq = foldVi(q.trim());
+  const all = users
     .filter((u) => !exclude.includes(u.id))
-    .filter((u) => !q || u.name.toLowerCase().includes(q.toLowerCase()) || u.username?.toLowerCase().includes(q.toLowerCase()));
+    .filter((u) => !fq || foldVi(`${u.name} ${u.username || ''} ${u.title || ''} ${u.department_name || ''}`).includes(fq));
+  // công ty lớn: chỉ vẽ 80 kết quả đầu, gõ để thu hẹp
+  const list = all.slice(0, 80);
   const toggle = (id) => {
     if (multiple) onChange(selected.includes(id) ? selected.filter((x) => x !== id) : [...selected, id]);
     else {
@@ -200,7 +230,8 @@ export function UserPicker({ users, value, onChange, multiple = false, placehold
       <div className="picker-control" onClick={() => setOpen((o) => !o)} tabIndex={0}
         onKeyDown={(e) => e.key === 'Enter' && setOpen((o) => !o)}>
         {selected.length === 0 && <span className="muted">{placeholder}</span>}
-        {selected.map((id) => {
+        {selected.length > 12 && <span className="chip">{selected.length} người đã chọn</span>}
+        {selected.length <= 12 && selected.map((id) => {
           const u = byId.get(id);
           if (!u) return null;
           return (
@@ -231,6 +262,7 @@ export function UserPicker({ users, value, onChange, multiple = false, placehold
               </button>
             ))}
             {!list.length && <div className="empty-small">Không có kết quả nào</div>}
+            {all.length > list.length && <div className="empty-small">Còn {all.length - list.length} người — gõ tên, chức danh hoặc phòng ban để tìm</div>}
           </div>
         </div>
       )}

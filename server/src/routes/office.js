@@ -122,7 +122,7 @@ function buildListQuery(user, q) {
   }
   const idFilter = (col, key) => {
     const ids = idList(q[key]);
-    if (ids.length) { where.push(`${col} IN (${ids.map(() => '?').join(',')})`); params.push(...ids); }
+    if (ids.length) { where.push(`${col} IN (SELECT value FROM json_each(?))`); params.push(JSON.stringify(ids)); }
   };
   idFilter('d.type_id', 'type_id');
   idFilter('d.issuer_id', 'issuer_id');
@@ -191,8 +191,8 @@ async function attachmentsFor(ids) {
   if (!ids.length) return {};
   const rows = await all(
     `SELECT id, document_id, original_name, mime, size FROM document_attachments
-     WHERE document_id IN (${ids.map(() => '?').join(',')}) ORDER BY id`,
-    ...ids
+     WHERE document_id IN (SELECT value FROM json_each(?)) ORDER BY id`,
+    JSON.stringify(ids)
   );
   const map = {};
   for (const a of rows) (map[a.document_id] ||= []).push(a);

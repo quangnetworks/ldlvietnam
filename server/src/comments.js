@@ -83,7 +83,7 @@ export function commentSnippet(content, files) {
 export async function purgeCommentFiles(entity, { entityIds = [], commentId = null } = {}) {
   let rows;
   if (commentId) rows = await all('SELECT id, filename FROM comment_files WHERE entity = ? AND comment_id = ?', entity, commentId);
-  else if (entityIds.length) rows = await all(`SELECT id, filename FROM comment_files WHERE entity = ? AND entity_id IN (${entityIds.map(() => '?').join(',')})`, entity, ...entityIds);
+  else if (entityIds.length) rows = await all(`SELECT id, filename FROM comment_files WHERE entity = ? AND entity_id IN (SELECT value FROM json_each(?))`, entity, JSON.stringify(entityIds));
   else return;
   if (!rows.length) return;
   await batch(rows.map((r) => ['DELETE FROM comment_files WHERE id = ?', [r.id]]));

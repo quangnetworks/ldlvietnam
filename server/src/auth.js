@@ -138,7 +138,7 @@ export async function assertCanManage(actor, ids) {
   if (actor.is_owner) return;
   const list = [].concat(ids).filter(Boolean);
   if (!list.length) return;
-  const hit = await get(`SELECT name FROM users WHERE is_owner = 1 AND id IN (${list.map(() => '?').join(',')})`, ...list);
+  const hit = await get('SELECT name FROM users WHERE is_owner = 1 AND id IN (SELECT value FROM json_each(?))', JSON.stringify(list.map(Number)));
   if (hit) {
     throw forbidden(`Chỉ Chủ doanh nghiệp mới được thay đổi tài khoản của ${hit.name}`);
   }

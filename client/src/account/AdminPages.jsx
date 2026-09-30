@@ -6,7 +6,8 @@ import {
 } from 'lucide-react';
 import { api } from '../api.js';
 import { useApp, useFetch, useToast } from '../context.jsx';
-import { Avatar, Modal, Field, UserPicker, Spinner, Dropdown, MenuItem, Empty, Tabs, Pagination, MultiSelect } from '../components/ui.jsx';
+import { Avatar, Modal, Field, UserPicker, Spinner, Dropdown, MenuItem, Empty, Tabs, Pagination, MultiSelect, FilterSelect, useShowMore } from '../components/ui.jsx';
+import { useDebounced } from '../components/shell.jsx';
 import { ContactButtons } from '../components/Contact.jsx';
 import PushCard from '../components/PushCard.jsx';
 import { refreshBadge } from '../push.js';
@@ -144,13 +145,16 @@ function ImportModal({ onClose, onDone }) {
 
 // ---------------------------------------------------------------- members
 export function MembersPage() {
-  const { user, loadDirectory } = useApp();
+  const { user, loadDirectory, departments } = useApp();
   const toast = useToast();
   const admin = user.role === 'admin';
   const [params, setParams] = useSearchParams();
   const tab = params.get('tab') || 'all';
   const [q, setQ] = useState('');
-  const [data, reload, loading] = useFetch(() => (tab === 'logins' ? Promise.resolve(null) : api.get('/account/members', { tab, q })), [tab, q]);
+  const [dep, setDep] = useState('');
+  const dq = useDebounced(q);
+  const [data, reload, loading] = useFetch(() => (tab === 'logins' ? Promise.resolve(null) : api.get('/account/members', { tab, q: dq, department_id: dep })), [tab, dq, dep]);
+  const [shown, more] = useShowMore(data?.items, 40, `${tab}|${dq}|${dep}`);
   const [edit, setEdit] = useState(null);
   const [importing, setImporting] = useState(false);
   const [resetFor, setResetFor] = useState(null);
@@ -182,6 +186,7 @@ export function MembersPage() {
     <div className="acc-page wide">
       <div className="mem-toolbar">
         <div className="ww-search"><Search size={14} /><input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Tìm kiếm thành viên" /></div>
+        <FilterSelect value={dep} onChange={setDep} options={[{ value: '', label: 'Tất cả phòng ban' }, ...departments.map((d) => ({ value: d.id, label: d.name }))]} />
         <div className="mem-tabs">
           {tabs.map((t) => <button key={t.value} className={cx(tab === t.value && 'active')} onClick={() => setParams(t.value === 'all' ? {} : { tab: t.value })}>{t.label}</button>)}
         </div>
@@ -197,7 +202,7 @@ export function MembersPage() {
       {tab === 'logins' ? <LoginHistory all /> : loading && !data ? <Spinner /> : (
         <div className="mem-list">
           <div className="mem-head"><span>HỌ VÀ TÊN</span><span>THÔNG TIN LIÊN LẠC</span><span>QUẢN LÝ TRỰC TIẾP</span><span /></div>
-          {data.items.map((u) => (
+          {shown.map((u) => (
             <div key={u.id} className="mem-row">
               <div className="mem-name">
                 <Avatar name={u.name} color={u.color} size={48} />
@@ -244,6 +249,7 @@ export function MembersPage() {
               </div>
             </div>
           ))}
+          {more}
           {!data.items.length && <Empty icon={Users} title="Không có thành viên nào" />}
         </div>
       )}

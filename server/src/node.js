@@ -10,6 +10,7 @@ import { setStorage } from './storage.js';
 import { createNodeDriver } from './drivers/node-sqlite.js';
 import { createFsStorage } from './drivers/fs-storage.js';
 import { buildSeed, resetStatements } from './seed.js';
+import { housekeeping } from './maintenance.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 
@@ -40,4 +41,6 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.a
   }
   const port = Number(process.env.PORT) || 4000;
   serve({ fetch: createNodeApp().fetch, port }, () => console.log(`LDL Workspace: http://localhost:${port}`));
+  // dọn dẹp dữ liệu cũ mỗi ngày (trên Cloudflare dùng Cron Trigger)
+  setInterval(() => housekeeping().catch((e) => console.error('housekeeping:', e)), 24 * 3600e3).unref();
 }

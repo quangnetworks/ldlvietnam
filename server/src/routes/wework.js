@@ -231,7 +231,21 @@ function decorateTask(t) {
   return t;
 }
 
-const selectTasks = async (user, tail, ...params) => (await all(`${TASK_SELECT} ${tail}`, user.id, user.id, ...params)).map(decorateTask);
+/**
+ * Danh sách công việc 2 bước: lọc + sắp xếp + phân trang chỉ trên bảng tasks (rẻ), rồi mới tính các cột phụ
+ * (số việc con, checklist, bình luận…) cho đúng những dòng trả về — tránh tính cho hàng nghìn công việc khi công ty lớn.
+ */
+const selectTasks = async (user, tail, ...params) => {
+  const ids = (await all(`SELECT t.id FROM tasks t ${tail}`, ...params)).map((r) => r.id);
+  if (!ids.length) return [];
+  const byId = new Map();
+  // D1 giới hạn 100 tham số / câu lệnh → lấy chi tiết theo từng lô
+  for (let i = 0; i < ids.length; i += 90) {
+    const part = ids.slice(i, i + 90);
+    for (const r of await all(`${TASK_SELECT} WHERE t.id IN (${part.map(() => '?').join(',')})`, user.id, user.id, ...part)) byId.set(r.id, r);
+  }
+  return ids.map((id) => byId.get(id)).filter(Boolean).map(decorateTask);
+};
 
 function buildTaskQuery(u, q) {
   const vis = taskVisibilitySql(u);
@@ -273,7 +287,7 @@ function buildTaskQuery(u, q) {
 
   const ids = (col, key) => {
     const list = idList(q[key]);
-    if (list.length) { where.push(`${col} IN (${list.map(() => '?').join(',')})`); params.push(...list); }
+    if (list.length) { where.push(`${col} IN (SELECT value FROM json_each(?))`); params.push(JSON.stringify(list)); }
   };
   ids('t.project_id', 'project_id');
   ids('t.assignee_id', 'assignee_id');
@@ -873,7 +887,7 @@ async function deleteTaskFiles(taskId) {
   const ids = (await all(`WITH RECURSIVE sub(id) AS (SELECT ? UNION ALL SELECT t.id FROM tasks t JOIN sub ON t.parent_id = sub.id)
     SELECT id FROM sub`, taskId)).map((x) => x.id);
   await purgeCommentFiles('task', { entityIds: ids });
-  return all(`SELECT filename FROM task_attachments WHERE task_id IN (${ids.map(() => '?').join(',')})`, ...ids);
+  return all('SELECT filename FROM task_attachments WHERE task_id IN (SELECT value FROM json_each(?))', JSON.stringify(ids));
 }
 
 r.delete('/tasks/:id', async (c) => {
@@ -1427,7 +1441,7 @@ async function departmentUsers(depIds) {
 
 async function addMembers(actor, p, userIds, role) {
   const existing = new Set((await all('SELECT user_id FROM project_members WHERE project_id = ?', p.id)).map((x) => x.user_id));
-  const valid = (await all(`SELECT id FROM users WHERE active = 1 AND id IN (${userIds.map(() => '?').join(',') || 'NULL'})`, ...userIds)).map((x) => x.id);
+  const valid = (await all('SELECT id FROM users WHERE active = 1 AND id IN (SELECT value FROM json_each(?))', JSON.stringify(userIds))).map((x) => x.id);
   const added = valid.filter((u) => !existing.has(u));
   await batch(added.map((u) => ['INSERT OR IGNORE INTO project_members(project_id, user_id, role) VALUES (?,?,?)', [p.id, u, role === 'manager' ? 'manager' : 'member']]));
   if (added.length) {

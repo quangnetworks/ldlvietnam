@@ -7,7 +7,7 @@
  * Gửi đẩy chạy nền: trên Workers dùng ctx.waitUntil để không làm chậm phản hồi API.
  */
 import { AsyncLocalStorage } from 'node:async_hooks';
-import { all, get, run, getSetting, setSetting, onNotify } from './db.js';
+import { all, get, run, batch, getSetting, setSetting, onNotify } from './db.js';
 
 const enc = new TextEncoder();
 export const b64url = (buf) => btoa(String.fromCharCode(...new Uint8Array(buf))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
@@ -136,20 +136,27 @@ export function pushToUsers(userIds, { app, title, body, link, tag }) {
   return background((async () => {
     const subs = await all(`SELECT s.*, (SELECT COUNT(*) FROM notifications n WHERE n.user_id = s.user_id AND n.is_read = 0) AS unread
       FROM push_subscriptions s JOIN users u ON u.id = s.user_id AND u.active = 1
-      WHERE s.user_id IN (${ids.map(() => '?').join(',')})`, ...ids);
-    await Promise.all(subs.map(async (s) => {
-      try {
-        const status = await sendPush(s, {
-          title: title || APP_LABEL[app] || 'LDL Việt Nam', body: body || '', url: link || '/', tag: tag || undefined, badge: s.unread,
-        }, pushEnv);
-        if (status === 404 || status === 410) await run('DELETE FROM push_subscriptions WHERE id = ?', s.id); // thiết bị đã huỷ đăng ký
-        else if (status < 300) await run("UPDATE push_subscriptions SET last_push_at = datetime('now'), fail_count = 0 WHERE id = ?", s.id);
-        else await run('UPDATE push_subscriptions SET fail_count = fail_count + 1 WHERE id = ?', s.id);
-      } catch (e) {
-        await run('UPDATE push_subscriptions SET fail_count = fail_count + 1 WHERE id = ?', s.id);
-        console.error('push send:', e?.message || e);
-      }
-    }));
+      WHERE s.user_id IN (SELECT value FROM json_each(?))`, JSON.stringify(ids));
+    // gửi song song theo lô 50 thiết bị; kết quả ghi một lần (tránh 1 truy vấn / thiết bị khi thông báo cả công ty)
+    const gone = []; const ok = []; const failed = [];
+    for (let i = 0; i < subs.length; i += 50) {
+      await Promise.all(subs.slice(i, i + 50).map(async (s) => {
+        try {
+          const status = await sendPush(s, {
+            title: title || APP_LABEL[app] || 'LDL Việt Nam', body: body || '', url: link || '/', tag: tag || undefined, badge: s.unread,
+          }, pushEnv);
+          (status === 404 || status === 410 ? gone : status < 300 ? ok : failed).push(s.id); // 404 / 410: thiết bị đã huỷ đăng ký
+        } catch (e) {
+          failed.push(s.id);
+          console.error('push send:', e?.message || e);
+        }
+      }));
+    }
+    await batch([
+      ...(gone.length ? [['DELETE FROM push_subscriptions WHERE id IN (SELECT value FROM json_each(?))', [JSON.stringify(gone)]]] : []),
+      ...(ok.length ? [["UPDATE push_subscriptions SET last_push_at = datetime('now'), fail_count = 0 WHERE id IN (SELECT value FROM json_each(?))", [JSON.stringify(ok)]]] : []),
+      ...(failed.length ? [['UPDATE push_subscriptions SET fail_count = fail_count + 1 WHERE id IN (SELECT value FROM json_each(?))', [JSON.stringify(failed)]]] : []),
+    ]);
     await run('DELETE FROM push_subscriptions WHERE fail_count >= 20');
   })());
 }

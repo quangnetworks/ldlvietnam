@@ -2393,3 +2393,8 @@ td > span + .hr-pill, td > .hr-pill:not(:first-child) { margin-left: 6px; }
 .imp-drop input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
 .imp-new { padding: 12px 14px; border-radius: 12px; border: 1px solid color-mix(in srgb, var(--hr-green) 35%, var(--line)); background: var(--hr-green-soft); }
 @media (max-width: 640px) { .imp-steps { grid-template-columns: 1fr; } }
+.show-more { display: flex; justify-content: center; padding: 12px; }
+button.stat-tile { text-align: left; font: inherit; color: inherit; cursor: pointer; transition: border-color .15s, box-shadow .15s; }
+button.stat-tile:hover { border-color: var(--blue); }
+button.stat-tile.active { border-color: var(--blue); box-shadow: 0 0 0 3px var(--blue-soft); }
+.toolbar.wrap { flex-wrap: wrap; }

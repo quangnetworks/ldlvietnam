@@ -225,7 +225,7 @@ r.post('/assets', async (c) => {
   }
   // giao ngay cho một người (tuỳ chọn) → tạo biên bản bàn giao
   if (toInt(b.holder_id)) await createHandover(c.get('user'), { kind: 'issue', employee_id: toInt(b.holder_id), asset_ids: ids, reason: 'adhoc' });
-  return c.json({ ids, items: (await all(`${ASSET_SELECT} WHERE a.id IN (${ids.map(() => '?').join(',')})`, ...ids)).map(view) }, 201);
+  return c.json({ ids, items: (await all(`${ASSET_SELECT} WHERE a.id IN (SELECT value FROM json_each(?))`, JSON.stringify(ids))).map(view) }, 201);
 });
 
 /** Nhập nhiều tài sản từ Excel (client đọc tệp, gửi các dòng). Người giữ ghi theo tên đăng nhập. */
@@ -348,7 +348,7 @@ async function createHandover(user, { kind, employee_id, asset_ids, items = {}, 
   if (!emp) throw badRequest('Chọn nhân viên');
   const ids = [...new Set(idList(asset_ids))];
   if (!ids.length) throw badRequest('Chọn ít nhất một tài sản');
-  const assets = await all(`SELECT * FROM assets WHERE id IN (${ids.map(() => '?').join(',')})`, ...ids);
+  const assets = await all('SELECT * FROM assets WHERE id IN (SELECT value FROM json_each(?))', JSON.stringify(ids));
   if (assets.length !== ids.length) throw badRequest('Có tài sản không tồn tại');
   for (const a of assets) {
     if (kind === 'issue' && (a.holder_id || !['available'].includes(a.status))) throw badRequest(`${a.code} — ${a.name} không sẵn sàng để bàn giao (${ASSET_STATUS[a.status]}${a.holder_id ? ', đang có người giữ' : ''})`);

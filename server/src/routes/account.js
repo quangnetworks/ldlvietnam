@@ -3,7 +3,7 @@ import { all, get, run, batch, getSetting, setSetting } from '../db.js';
 import { requireAdmin, assertCanManage, hashPassword, verifyPassword, loadUser, PUBLIC_USER_FIELDS, deptIn, userDeptIds, inDeptSql } from '../auth.js';
 import { randomBase32, otpauthUrl, verifyTotp, securitySettings, validIpRule, clientIp, ipMatches } from '../security.js';
 import { badRequest, notFound, forbidden, toInt, idList, jsonBody, paginate, formBody, storeFiles, removeFile, sendFile } from '../util.js';
-import { MODULES, userApps, grantApps, audit } from '../platform.js';
+import { MODULES, userApps, audit } from '../platform.js';
 import { departmentChannel } from './chat.js';
 
 const r = new Hono();
@@ -115,7 +115,12 @@ r.post('/account/members/import', requireAdmin, async (c) => {
   const defaultPassword = String(b.password || '');
   if (defaultPassword.length < 6) throw badRequest('Mật khẩu mặc định phải có ít nhất 6 ký tự');
   const hash = await hashPassword(defaultPassword);
-  const deps = await all('SELECT id, name FROM departments');
+  // đọc sẵn tài khoản / phòng ban, ghi theo lô — số truy vấn không tăng theo số dòng (giới hạn truy vấn của Cloudflare D1)
+  const [deps, existingUsers, maxIds] = await Promise.all([all('SELECT id, name FROM departments'), all('SELECT id, username, is_owner FROM users'),
+    get('SELECT (SELECT IFNULL(MAX(id), 0) FROM users) AS u, (SELECT IFNULL(MAX(id), 0) FROM departments) AS d')]);
+  const byName = new Map(existingUsers.map((u) => [u.username.toLowerCase(), u]));
+  let nextUser = maxIds.u; let nextDep = maxIds.d;
+  const S = [];
   const result = { created: 0, updated: 0, errors: [] };
   const managerLinks = [];
   for (let i = 1; i < rows.length; i++) {
@@ -125,32 +130,33 @@ r.post('/account/members/import', requireAdmin, async (c) => {
     if (!/^[\w.@-]{2,64}$/.test(username) || !name) { result.errors.push(`Dòng ${i + 1}: username/name không hợp lệ`); continue; }
     let depId = null;
     if (v('department')) {
-      depId = deps.find((d) => d.name.toLowerCase() === v('department').toLowerCase())?.id ?? null;
-      if (!depId) {
-        depId = (await run('INSERT INTO departments(name) VALUES (?)', v('department'))).lastId;
-        deps.push({ id: depId, name: v('department') });
-      }
+      let d = deps.find((x) => x.name.toLowerCase() === v('department').toLowerCase());
+      if (!d) { d = { id: ++nextDep, name: v('department') }; deps.push(d); S.push(['INSERT INTO departments(id, name) VALUES (?,?)', [d.id, d.name]]); }
+      depId = d.id;
     }
     const role = v('role') === 'admin' ? 'admin' : 'member';
-    const existing = await get('SELECT id, is_owner FROM users WHERE lower(username) = lower(?)', username);
+    const existing = byName.get(username.toLowerCase());
     if (existing?.is_owner && !c.get('user').is_owner) { result.errors.push(`Dòng ${i + 1}: @${username} là Chủ doanh nghiệp — không được cập nhật`); continue; }
     if (existing) {
-      await run(`UPDATE users SET name = ?, email = COALESCE(NULLIF(?, ''), email), phone = COALESCE(NULLIF(?, ''), phone),
+      S.push([`UPDATE users SET name = ?, email = COALESCE(NULLIF(?, ''), email), phone = COALESCE(NULLIF(?, ''), phone),
         title = COALESCE(NULLIF(?, ''), title), department_id = COALESCE(?, department_id), birthday = COALESCE(NULLIF(?, ''), birthday) WHERE id = ?`,
-      name, v('email'), v('phone'), v('title'), depId, v('birthday'), existing.id);
+      [name, v('email'), v('phone'), v('title'), depId, v('birthday'), existing.id]]);
       result.updated++;
     } else {
-      const { lastId } = await run(`INSERT INTO users(username, password_hash, name, email, phone, title, department_id, role, birthday)
-        VALUES (?,?,?,?,?,?,?,?,?)`, username, hash, name, v('email') || null, v('phone') || null, v('title') || null, depId, role, v('birthday') || null);
-      await grantApps(lastId);
+      const id = ++nextUser;
+      S.push([`INSERT INTO users(id, username, password_hash, name, email, phone, title, department_id, role, birthday)
+        VALUES (?,?,?,?,?,?,?,?,?,?)`, [id, username, hash, name, v('email') || null, v('phone') || null, v('title') || null, depId, role, v('birthday') || null]]);
+      S.push(['INSERT OR IGNORE INTO app_access(app_key, user_id) SELECT key, ? FROM apps WHERE enabled = 1', [id]]);
+      byName.set(username.toLowerCase(), { id, username });
       result.created++;
     }
     if (v('manager_username')) managerLinks.push([username, v('manager_username')]);
   }
   for (const [u, m] of managerLinks) {
-    await run(`UPDATE users SET manager_id = (SELECT id FROM users WHERE lower(username) = lower(?))
-      WHERE lower(username) = lower(?) AND lower(username) <> lower(?)`, m, u, m);
+    const a = byName.get(u.toLowerCase()); const mg = byName.get(m.toLowerCase());
+    if (a && mg && a.id !== mg.id) S.push(['UPDATE users SET manager_id = ? WHERE id = ?', [mg.id, a.id]]);
   }
+  for (let k = 0; k < S.length; k += 100) await batch(S.slice(k, k + 100));
   await audit(c.get('user').id, 'user.import', `Nhập từ Excel: ${result.created} tạo mới, ${result.updated} cập nhật`);
   return c.json(result);
 });

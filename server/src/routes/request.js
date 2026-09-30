@@ -199,7 +199,7 @@ async function fullRequest(id, user) {
     LEFT JOIN users u ON u.id = a.user_id WHERE a.request_id = ? ORDER BY a.id`, id);
   // user-type fields: resolve names for display
   const userIds = q.fields.filter((f) => f.type === 'user').map((f) => toInt(q.data[f.key])).filter(Boolean);
-  q.users = userIds.length ? await all(`SELECT id, name FROM users WHERE id IN (${userIds.map(() => '?').join(',')})`, ...userIds) : [];
+  q.users = userIds.length ? await all('SELECT id, name FROM users WHERE id IN (SELECT value FROM json_each(?))', JSON.stringify(userIds)) : [];
   q.following = q.followers.some((f) => f.id === user.id);
   q.can_edit = (q.creator_id === user.id || isAdmin(user)) && ['draft', 'returned'].includes(q.status);
   q.can_cancel = q.creator_id === user.id && q.status === 'pending';
@@ -735,8 +735,8 @@ r.post('/request-groups/replace-approver', requireAdmin, async (c) => {
       AND NOT EXISTS (SELECT 1 FROM request_approvers x WHERE x.request_id = a.request_id AND x.user_id = ?)`, from, to);
     await batch(rows.map((x) => ["UPDATE request_approvers SET user_id = ? WHERE request_id = ? AND user_id = ? AND status = 'pending'", [to, x.request_id, from]]));
     moved = rows.length;
-    const mine = rows.length ? await all(`SELECT q.id, q.title FROM requests q WHERE q.status = 'pending' AND q.id IN (${rows.map(() => '?').join(',')}) AND ${MY_TURN}`,
-      ...rows.map((x) => x.request_id), to) : [];
+    const mine = rows.length ? await all(`SELECT q.id, q.title FROM requests q WHERE q.status = 'pending' AND q.id IN (SELECT value FROM json_each(?)) AND ${MY_TURN}`,
+      JSON.stringify(rows.map((x) => x.request_id)), to) : [];
     for (const q of mine) {
       await notify(to, { actorId: c.get('user').id, app: APP, type: 'approval', title: `Bạn thay ${fu.name} duyệt đề xuất "${q.title}"`, link: `/request/${q.id}` });
     }
@@ -793,7 +793,7 @@ r.get('/request-groups/:id/plan', async (c) => {
   const user = c.get('user');
   const plan = await approverPlan(g, idList(c.req.query('extra')), user.id);
   const ids = plan.map((p) => p.user_id);
-  const users = ids.length ? await all(`SELECT id, name, color, title FROM users WHERE id IN (${ids.map(() => '?').join(',')})`, ...ids) : [];
+  const users = ids.length ? await all('SELECT id, name, color, title FROM users WHERE id IN (SELECT value FROM json_each(?))', JSON.stringify(ids)) : [];
   const byId = Object.fromEntries(users.map((u) => [u.id, u]));
   return c.json({ staged: staged(g), flow: staged(g) ? 'sequential' : g.flow, manager_approval: !!g.manager_approval,
     no_manager: !!g.manager_approval && !plan.some((p) => p.stage === 'manager'),
@@ -928,20 +928,21 @@ r.post('/request-groups/bulk', requireAdmin, async (c) => {
   const b = await jsonBody(c);
   const ids = idList(b.ids);
   if (!ids.length) throw badRequest('Chưa chọn nhóm đề xuất');
-  const ph = ids.map(() => '?').join(',');
-  const names = await all(`SELECT id, name FROM request_groups WHERE id IN (${ph})`, ...ids);
+  const ph = 'SELECT value FROM json_each(?)';
+  const J = JSON.stringify(ids);
+  const names = await all(`SELECT id, name FROM request_groups WHERE id IN (${ph})`, J);
   if (b.action === 'enable' || b.action === 'disable') {
-    await run(`UPDATE request_groups SET active = ?, updated_at = datetime('now') WHERE id IN (${ph})`, b.action === 'enable' ? 1 : 0, ...ids);
+    await run(`UPDATE request_groups SET active = ?, updated_at = datetime('now') WHERE id IN (${ph})`, b.action === 'enable' ? 1 : 0, J);
   } else if (b.action === 'delete') {
-    const files = await all(`SELECT filename FROM request_group_files WHERE group_id IN (${ph})`, ...ids);
-    await run(`DELETE FROM request_groups WHERE id IN (${ph})`, ...ids);
+    const files = await all(`SELECT filename FROM request_group_files WHERE group_id IN (${ph})`, J);
+    await run(`DELETE FROM request_groups WHERE id IN (${ph})`, J);
     for (const f of files) await removeFile(f.filename);
   } else if (b.action === 'sla') {
     const sla = toInt(b.sla_hours);
-    await run(`UPDATE request_groups SET sla_hours = ?, updated_at = datetime('now') WHERE id IN (${ph})`, sla && sla > 0 ? sla : null, ...ids);
+    await run(`UPDATE request_groups SET sla_hours = ?, updated_at = datetime('now') WHERE id IN (${ph})`, sla && sla > 0 ? sla : null, J);
   } else if (b.action === 'flow') {
     if (!['sequential', 'parallel', 'any'].includes(b.flow)) throw badRequest('Quy trình không hợp lệ');
-    await run(`UPDATE request_groups SET flow = ?, block_modes = NULL, updated_at = datetime('now') WHERE id IN (${ph})`, b.flow, ...ids);
+    await run(`UPDATE request_groups SET flow = ?, block_modes = NULL, updated_at = datetime('now') WHERE id IN (${ph})`, b.flow, J);
     // bỏ đánh số khối cũ: người duyệt xếp lại theo thứ tự
     for (const gid of ids) {
       const list = await all('SELECT user_id FROM request_group_approvers WHERE group_id = ? ORDER BY step, rowid', gid);
@@ -950,7 +951,7 @@ r.post('/request-groups/bulk', requireAdmin, async (c) => {
   } else if (b.action === 'category') {
     const cat = String(b.category || '').trim();
     if (!cat) throw badRequest('Tên danh mục trống');
-    await run(`UPDATE request_groups SET category = ? WHERE id IN (${ph})`, cat, ...ids);
+    await run(`UPDATE request_groups SET category = ? WHERE id IN (${ph})`, cat, J);
   } else throw badRequest('Thao tác không hợp lệ');
   const label = { enable: 'Mở', disable: 'Tạm đóng', delete: 'Xoá', category: 'Chuyển danh mục', sla: `Đặt SLA ${toInt(b.sla_hours) || 'không giới hạn'} giờ cho`,
     flow: `Đổi quy trình "${FLOW_LABEL[b.flow]}" cho` }[b.action];

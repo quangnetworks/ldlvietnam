@@ -8,7 +8,7 @@ import {
 } from 'lucide-react';
 import { api } from '../api.js';
 import { useApp, useFetch, useToast } from '../context.jsx';
-import { Avatar, Spinner, Empty, FilterSelect, Modal, Field, UserPicker } from '../components/ui.jsx';
+import { Avatar, Spinner, Empty, FilterSelect, Modal, Field, UserPicker, useShowMore } from '../components/ui.jsx';
 import { useDebounced } from '../components/shell.jsx';
 import { HrHero, Kpi, HrCard, Pill, HBars, StackBar } from '../hrm/hrUi.jsx';
 import { readSheetFile, rowsToObjects, downloadCsv } from '../sheet.js';
@@ -253,6 +253,7 @@ export function AssetList() {
   const params = { q: dq, status, type, location, kind };
   const [items, reload, loading, error] = useFetch(() => api.get('/assets', params), [dq, status, type, location, kind]);
   const [allItems] = useFetch(() => api.get('/assets'), [items]);
+  const [shown, more] = useShowMore(items, 80, JSON.stringify(params));
   if (error) return <div className="page hr"><div className="alert alert-error">{error.message}</div></div>;
   const n = (k) => (allItems || []).filter((a) => (k === 'active' ? !['disposed', 'lost'].includes(a.status) : a.status === k)).length;
   const exportCsv = () => downloadCsv('tai-san', ['Mã', 'Tên', 'Loại', 'Phân loại', 'Serial', 'Địa điểm', 'Trạng thái', 'Người sử dụng', 'Ngày giao', 'Ngày mua', 'Nguyên giá', 'Giá trị còn lại', 'Tình trạng'],
@@ -282,7 +283,7 @@ export function AssetList() {
         <div className="hr-table-card hr-rise">
           <div className="table-wrap"><table className="table nowrap-cells">
             <thead><tr><th>Mã</th><th>Tài sản</th><th>Người sử dụng</th><th>Địa điểm</th><th>Nguyên giá</th><th>Còn lại</th><th>Trạng thái</th></tr></thead>
-            <tbody>{items.map((a) => (
+            <tbody>{shown.map((a) => (
               <tr key={a.id} className="clickable hr-row" onClick={() => navigate(`/asset/item/${a.id}`)}>
                 <td><span className="hr-code">{a.code}</span></td>
                 <td><span className="hr-name"><span className={cx('as-mini-icon', `tone-${a.kind === 'tool' ? 'amber' : 'blue'}`)}>{a.kind === 'tool' ? <Wrench size={14} /> : <Package size={14} />}</span>
@@ -292,6 +293,7 @@ export function AssetList() {
               </tr>
             ))}</tbody>
           </table></div>
+          {more}
           <div className="hr-table-foot"><span>{items.length} tài sản · nguyên giá {money(items.reduce((s, a) => s + (a.price || 0), 0))}</span><span>Bấm một dòng để xem chi tiết, bàn giao, thu hồi</span></div>
         </div>
       )}
@@ -444,6 +446,7 @@ export function AssetPeople() {
   const [holding, setHolding] = useState('1');
   const dq = useDebounced(q);
   const [items, , loading, error] = useFetch(() => api.get('/asset/people', { q: dq, department_id: dep, holding }), [dq, dep, holding]);
+  const [shown, more] = useShowMore(items, 80, `${dq}|${dep}|${holding}`);
   if (error) return <div className="page hr"><div className="alert alert-error">{error.message}</div></div>;
   const WS = { working: ['Chính thức', 'blue'], probation: ['Thử việc', 'amber'], leave: ['Tạm nghỉ', 'violet'], resigned: ['Đã nghỉ việc', 'red'] };
   return (
@@ -461,7 +464,7 @@ export function AssetPeople() {
         <div className="hr-table-card hr-rise">
           <div className="table-wrap"><table className="table nowrap-cells">
             <thead><tr><th>Nhân sự</th><th>Phòng ban</th><th>Trạng thái</th><th>Số tài sản</th><th>Nguyên giá</th><th>Biên bản chờ</th></tr></thead>
-            <tbody>{items.map((u) => (
+            <tbody>{shown.map((u) => (
               <tr key={u.id} className="clickable hr-row" onClick={() => navigate(`/asset/people/${u.id}`)}>
                 <td><span className="hr-name"><Avatar name={u.name} color={u.color} uid={u.id} size={30} /><span><b>{u.name}</b><small className="muted block">{u.title}</small></span></span></td>
                 <td>{u.department_name || '—'}</td>
@@ -471,6 +474,7 @@ export function AssetPeople() {
               </tr>
             ))}</tbody>
           </table></div>
+          {more}
         </div>
       )}
     </div>
