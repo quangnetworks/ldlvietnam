@@ -296,7 +296,8 @@ export async function buildSeed() {
   add(`INSERT INTO hr_careers(user_id, type, effective_date, from_value, to_value, decision_no, created_by) VALUES (?, 'promotion', '2023-01-01', 'Chuyên viên kinh doanh', 'Trưởng phòng Kinh doanh', 'QĐ-01/2023', ?)`, users.kd, users.hr);
   add(`INSERT INTO hr_careers(user_id, type, effective_date, to_value, note, created_by) VALUES (?, 'reward', ?, 'Nhân viên xuất sắc quý', 'Vượt 120% chỉ tiêu doanh số', ?)`, users.nv1, dateOffset(-30), users.hr);
 
-  // ---------- Cơ cấu kinh doanh: khung Toàn quốc / Miền / Khu vực có sẵn từ migration 0022; seed thêm tỉnh mẫu và phân công
+  // ---------- Cơ cấu kinh doanh: khung Toàn quốc / Miền Bắc, Trung, Nam / Khu vực có sẵn từ migration 0022–0023;
+  // seed thêm tỉnh mẫu và phân công theo ngành hàng (HMP = Hóa mỹ phẩm, TP = Thực phẩm; không ghi = phụ trách chung)
   add("DELETE FROM territories WHERE level = 'province'");
   const provinces = {
     HN: ['Hà Nội'], NHN: ['Hà Nam', 'Nam Định', 'Ninh Bình'], DTB: ['Thái Nguyên', 'Lào Cai', 'Sơn La'], DH: ['Hải Phòng', 'Quảng Ninh', 'Hải Dương'],
@@ -307,13 +308,15 @@ export async function buildSeed() {
     names.forEach((n, i) => add(`INSERT INTO territories(name, level, parent_id, sort) SELECT ?, 'province', id, ? FROM territories
       WHERE code = ? AND level = 'area'`, n, i + 1, code));
   }
-  const assign = (uk, role, name, level, concurrent = 0) => add(`INSERT INTO territory_members(territory_id, user_id, role, is_concurrent, since)
-    SELECT id, ?, ?, ?, '2024-01-01' FROM territories WHERE name = ? AND level = ? LIMIT 1`, users[uk], role, concurrent, name, level);
-  assign('kd', 'NSM', 'Toàn quốc', 'national');
-  assign('nv1', 'SS', 'Hà Nội', 'province');
-  assign('nv1', 'SS', 'Hà Nam', 'province', 1);       // 1 SS phụ trách 2 tỉnh (kiêm nhiệm)
-  assign('nv2', 'SREP_KA', 'Hà Nội', 'area');         // SREP KA phụ trách siêu thị toàn khu vực Hà Nội
-  for (const [uk, role] of [['kd', 'NSM'], ['nv1', 'SS'], ['nv2', 'SREP_KA']]) add('UPDATE users SET sales_role = ? WHERE id = ?', role, users[uk]);
+  const assign = (uk, role, name, level, industry, concurrent = 0) => add(`INSERT INTO territory_members(territory_id, user_id, role, is_concurrent, since, industry)
+    SELECT id, ?, ?, ?, '2024-01-01', ? FROM territories WHERE name = ? AND level = ? LIMIT 1`, users[uk], role, concurrent, industry, name, level);
+  assign('kd', 'NSM', 'Toàn quốc', 'national', null);          // NSM phụ trách chung cả hai ngành hàng
+  assign('nv1', 'SS', 'Hà Nội', 'province', 'HMP');
+  assign('nv1', 'SS', 'Hà Nam', 'province', 'HMP', 1);         // 1 SS phụ trách 2 tỉnh (kiêm nhiệm)
+  assign('nv2', 'SREP_KA', 'Hà Nội', 'area', 'TP');            // SREP KA Thực phẩm, siêu thị toàn khu vực Hà Nội
+  for (const [uk, role, ind] of [['kd', 'NSM', null], ['nv1', 'SS', 'HMP'], ['nv2', 'SREP_KA', 'TP']]) {
+    add('UPDATE users SET sales_role = ?, sales_industry = ? WHERE id = ?', role, ind, users[uk]);
+  }
 
   // ---------- LDL Asset: tài sản gắn với nhân viên, biên bản bàn giao, thủ tục nhận việc
   const assetRows = [

@@ -115,7 +115,7 @@ const COLUMN_SETS = {
   work: { label: 'Công việc', cols: [['title', 'Chức danh'], ['manager_name', 'Quản lý trực tiếp'], ['office', 'Văn phòng'], ['employee_type', 'Phân loại nhân sự'],
     ['official_date', 'Ngày chính thức', 'date'], ['last_promotion', 'Thăng tiến gần nhất']] },
   legal: { label: 'Hợp đồng & pháp lý', cols: [['contract_type', 'Hợp đồng'], ['contract_end', 'Hết hạn HĐ', 'date'], ['id_number', 'Số CCCD'], ['insurance_number', 'Số sổ BHXH'], ['tax_code', 'MST TNCN']] },
-  sales: { label: 'Kinh doanh', cols: [['sales_role', 'Vị trí kinh doanh'], ['territory_names', 'Địa bàn phụ trách'], ['manager_name', 'Quản lý trực tiếp'], ['office', 'Văn phòng']] },
+  sales: { label: 'Kinh doanh', cols: [['sales_role', 'Vị trí kinh doanh'], ['sales_industry', 'Ngành hàng'], ['territory_names', 'Địa bàn phụ trách'], ['manager_name', 'Quản lý trực tiếp'], ['office', 'Văn phòng']] },
   contact: { label: 'Hồ sơ & liên hệ', cols: [['gender', 'Giới tính'], ['birthday', 'Ngày sinh', 'date'], ['phone', 'Điện thoại'], ['email', 'Email'], ['resign_date', 'Ngày nghỉ việc', 'date']] },
 };
 
@@ -139,18 +139,20 @@ export function HrmEmployees() {
   const [contract, setContract] = useState('');
   const [salesRole, setSalesRole] = useState('');
   const [territory, setTerritory] = useState('');
+  const [industry, setIndustry] = useState('');
   const [sales] = useFetch(() => api.get('/sales/structure'), []);
   const [colSet, setColSet] = useState('overview');
   const [importing, setImporting] = useState(false);
   const dq = useDebounced(q);
-  const params = { q: dq, view, department_id: dep, office, employee_type: type, contract, sales_role: salesRole, territory_id: territory };
-  const [items, reload, loading, error] = useFetch(() => api.get('/hrm/employees', params), [dq, view, dep, office, type, contract, salesRole, territory]);
+  const params = { q: dq, view, department_id: dep, office, employee_type: type, contract, sales_role: salesRole, territory_id: territory, industry };
+  const [items, reload, loading, error] = useFetch(() => api.get('/hrm/employees', params), [dq, view, dep, office, type, contract, salesRole, territory, industry]);
   const pickSales = (setter) => (v) => { setter(v); if (v) setColSet('sales'); };
   const indent = { national: '', region: '— ', area: '—— ', province: '——— ' };
   if (error) return <div className="page"><div className="alert alert-error">{error.message}</div></div>;
   const cell = (e, [k, , kind]) => {
     if (k === 'work_status') return <StatusPill status={e.work_status} />;
     if (k === 'sales_role') return e.sales_role ? <RoleBadge role={e.sales_role} /> : '—';
+    if (k === 'sales_industry') return e.sales_industry ? (sales?.industries || []).find((x) => x.code === e.sales_industry)?.name || e.sales_industry : e.sales_role ? 'Chung' : '—';
     if (k === 'seniority') return seniority(e.hire_date, e.resign_date);
     if (k === 'contract_end') return <span className={e.contract_end && e.contract_end < new Date(Date.now() + 30 * 864e5).toISOString().slice(0, 10) ? 'text-red' : ''}>{fmtDate(e.contract_end)}</span>;
     const v = e[k];
@@ -158,9 +160,9 @@ export function HrmEmployees() {
   };
   return (
     <div className="page hr">
-      <HrHero icon={Users2} tone="indigo" title="Danh sách nhân sự" subtitle="Tra cứu hồ sơ, lọc theo phòng ban / văn phòng, trích xuất và cập nhật hàng loạt">
+      <HrHero icon={Users2} tone="indigo" title="Danh sách nhân sự" subtitle="Tra cứu hồ sơ, lọc theo phòng ban / văn phòng / cơ cấu kinh doanh; nhập từ Excel để thêm nhân sự mới (tạo tài khoản), lịch sử công tác, hợp đồng">
         <a className="btn" href={api.url('/hrm/employees/export', params)}><Download size={15} /> Trích xuất Excel</a>
-        <button className="btn solid" onClick={() => setImporting(true)}><Upload size={15} /> Cập nhật hàng loạt</button>
+        <button className="btn solid" onClick={() => setImporting(true)}><Upload size={15} /> Nhập từ Excel</button>
       </HrHero>
       <div className="hr-seg" role="tablist">
         {VIEWS.map((v) => (
@@ -178,6 +180,8 @@ export function HrmEmployees() {
           ...Object.entries(sales?.roles || {}).map(([k, r]) => ({ value: k, label: r.label })), { value: 'none', label: 'Ngoài cơ cấu kinh doanh' }]} />
         <FilterSelect value={territory} onChange={pickSales(setTerritory)} options={[{ value: '', label: 'Mọi địa bàn' },
           ...orderTerritories((sales?.territories || []).filter((t) => t.level !== 'province')).map((t) => ({ value: t.id, label: `${indent[t.level]}${t.name}` }))]} />
+        {(sales?.industries || []).length > 0 && <FilterSelect value={industry} onChange={pickSales(setIndustry)} options={[{ value: '', label: 'Mọi ngành hàng' },
+          ...sales.industries.map((x) => ({ value: x.code, label: x.name }))]} />}
         <FilterSelect value={contract} onChange={setContract} options={[{ value: '', label: 'Mọi hợp đồng' }, { value: 'expiring', label: 'HĐ sắp hết hạn (30 ngày)' }]} />
       </div>
       <div className="hr-colsets">

@@ -1,6 +1,8 @@
 /**
  * Cơ cấu kinh doanh theo địa bàn:
- *   NSM (Toàn quốc) → RSM (Miền) → ASM (Khu vực) → SS (Tỉnh; 1 SS có thể phụ trách 1–2 tỉnh) → PG / SREP / SREP KA
+ *   NSM (Toàn quốc) → RSM (Miền Bắc / Trung / Nam) → ASM (Khu vực) → SS (Tỉnh; 1 SS có thể phụ trách 1–2 tỉnh) → PG / SREP / SREP KA
+ *  - chia theo ngành hàng (mặc định Hóa mỹ phẩm, Thực phẩm): cây địa bàn dùng chung, mỗi phân công gắn một ngành hàng
+ *    hoặc "chung" (VD NSM chung cả hai ngành, ASM / SS / SREP riêng từng ngành); cấp trên được chọn cùng ngành hàng
  *  - cây địa bàn: toàn quốc → miền → khu vực → tỉnh (thêm / sửa / xoá, thêm nhiều tỉnh một lần)
  *  - người phụ trách theo vị trí, cho phép kiêm nhiệm (một người phụ trách thêm địa bàn khác)
  *  - đồng bộ "quản lý trực tiếp" theo cơ cấu: mỗi người báo cáo cho cấp cao hơn gần nhất trên cây địa bàn;
@@ -8,7 +10,7 @@
  * Quyền: mọi nhân sự xem sơ đồ; quản trị viên và quản lý nhân sự chỉnh sửa.
  */
 import { Hono } from 'hono';
-import { all, get, run, batch, getSetting } from '../db.js';
+import { all, get, run, batch, getSetting, setSetting } from '../db.js';
 import { badRequest, notFound, forbidden, toInt, jsonBody } from '../util.js';
 import { audit } from '../platform.js';
 
@@ -25,6 +27,19 @@ export const SALES_ROLES = {
 };
 export const LEVELS = { national: 'Toàn quốc', region: 'Miền', area: 'Khu vực', province: 'Tỉnh / thành' };
 const LEVEL_ORDER = ['national', 'region', 'area', 'province'];
+export const SALES_SETTINGS_DEFAULTS = { industries: [{ code: 'HMP', name: 'Hóa mỹ phẩm' }, { code: 'TP', name: 'Thực phẩm' }] };
+
+export async function salesSettings() {
+  try { return { ...SALES_SETTINGS_DEFAULTS, ...JSON.parse((await getSetting('sales_settings')) || '{}') }; } catch { return { ...SALES_SETTINGS_DEFAULTS }; }
+}
+/** Mã ngành hàng hợp lệ (theo mã hoặc tên, không phân biệt hoa thường); '' / 'chung' → null. */
+export async function industryCode(v) {
+  const t = String(v ?? '').trim().toLowerCase();
+  if (!t || t === 'chung' || t === 'all') return null;
+  const hit = (await salesSettings()).industries.find((x) => x.code.toLowerCase() === t || x.name.toLowerCase() === t);
+  if (!hit) throw badRequest(`Ngành hàng "${v}" không có trong danh mục`);
+  return hit.code;
+}
 
 async function canManage(user) {
   if (user.role === 'admin') return true;
@@ -45,13 +60,13 @@ async function territoryOr404(id) {
 
 /** Vị trí chính của nhân sự = vị trí cấp cao nhất trong các phân công chính (không kiêm nhiệm), nếu không có thì lấy mọi phân công. */
 async function refreshSalesRole(userId) {
-  const rows = await all('SELECT role, is_concurrent FROM territory_members WHERE user_id = ?', userId);
-  const pick = (list) => list.sort((a, b) => SALES_ROLES[a.role].rank - SALES_ROLES[b.role].rank)[0]?.role ?? null;
-  const role = pick(rows.filter((x) => !x.is_concurrent)) || pick(rows);
-  await run('UPDATE users SET sales_role = ? WHERE id = ?', role, userId);
+  const rows = await all('SELECT role, is_concurrent, industry FROM territory_members WHERE user_id = ?', userId);
+  const pick = (list) => list.sort((a, b) => SALES_ROLES[a.role].rank - SALES_ROLES[b.role].rank)[0] ?? null;
+  const main = pick(rows.filter((x) => !x.is_concurrent)) || pick(rows);
+  await run('UPDATE users SET sales_role = ?, sales_industry = ? WHERE id = ?', main?.role ?? null, main?.industry ?? null, userId);
 }
 
-const MEMBER_SELECT = `SELECT m.territory_id, m.user_id, m.role, m.is_concurrent, m.since, u.name, u.username, u.color, u.title, u.avatar_version,
+const MEMBER_SELECT = `SELECT m.territory_id, m.user_id, m.role, m.is_concurrent, m.since, m.industry, u.name, u.username, u.color, u.title, u.avatar_version,
     u.manager_id, u.active, mg.name AS manager_name
   FROM territory_members m JOIN users u ON u.id = m.user_id LEFT JOIN users mg ON mg.id = u.manager_id`;
 
@@ -59,13 +74,30 @@ r.get('/sales/structure', async (c) => {
   requireStaff(c);
   const territories = await all('SELECT id, name, code, level, parent_id, sort FROM territories ORDER BY sort, name COLLATE NOCASE');
   const members = await all(`${MEMBER_SELECT} ORDER BY u.name COLLATE NOCASE`);
-  return c.json({ territories, members, roles: SALES_ROLES, levels: LEVELS, can_manage: await canManage(c.get('user')) });
+  return c.json({ territories, members, roles: SALES_ROLES, levels: LEVELS, industries: (await salesSettings()).industries,
+    can_manage: await canManage(c.get('user')) });
+});
+
+/** Danh mục ngành hàng (mã ngắn + tên), VD HMP – Hóa mỹ phẩm, TP – Thực phẩm. */
+r.put('/sales/settings', async (c) => {
+  await requireManage(c);
+  const b = await jsonBody(c);
+  const seen = new Set();
+  const industries = (Array.isArray(b.industries) ? b.industries : []).map((x) => ({
+    code: String(x.code || '').trim().toUpperCase().replace(/[^A-Z0-9_]/g, '').slice(0, 12), name: String(x.name || '').trim().slice(0, 60),
+  })).filter((x) => x.code && x.name && !seen.has(x.code) && seen.add(x.code)).slice(0, 12);
+  const used = (await all('SELECT DISTINCT industry FROM territory_members WHERE industry IS NOT NULL')).map((x) => x.industry);
+  const missing = used.filter((u) => !industries.some((x) => x.code === u));
+  if (missing.length) throw badRequest(`Ngành hàng ${missing.join(', ')} đang có người phụ trách, gỡ phân công trước khi xoá`);
+  await setSetting('sales_settings', JSON.stringify({ industries }));
+  await audit(c.get('user').id, 'sales.settings', `Cập nhật ngành hàng: ${industries.map((x) => x.name).join(', ')}`);
+  return c.json({ industries });
 });
 
 /** Địa bàn & vị trí của một nhân sự (hiển thị trên hồ sơ). */
 r.get('/sales/users/:id', async (c) => {
   requireStaff(c);
-  const rows = await all(`SELECT m.role, m.is_concurrent, m.since, t.id AS territory_id, t.name AS territory_name, t.level
+  const rows = await all(`SELECT m.role, m.is_concurrent, m.since, m.industry, t.id AS territory_id, t.name AS territory_name, t.level
     FROM territory_members m JOIN territories t ON t.id = m.territory_id WHERE m.user_id = ?`, toInt(c.req.param('id')));
   rows.sort((a, b) => a.is_concurrent - b.is_concurrent || SALES_ROLES[a.role].rank - SALES_ROLES[b.role].rank);
   return c.json(rows);
@@ -135,24 +167,30 @@ r.delete('/sales/territories/:id', async (c) => {
   return c.json({ ok: true });
 });
 
-/** Phân công người phụ trách: vị trí phải khớp cấp địa bàn; is_concurrent = kiêm nhiệm. */
-r.post('/sales/territories/:id/members', async (c) => {
-  await requireManage(c);
-  const t = await territoryOr404(c.req.param('id'));
-  const b = await jsonBody(c);
-  const role = String(b.role || '');
+/**
+ * Phân công người phụ trách (dùng chung cho màn hình và nhập Excel): vị trí phải khớp cấp địa bàn;
+ * is_concurrent = kiêm nhiệm; industry = mã ngành hàng (null = chung).
+ */
+export async function assignMember(t, userId, role, { industry = null, concurrent = false, since = null } = {}) {
   if (!SALES_ROLES[role]) throw badRequest('Chọn vị trí kinh doanh');
   if (!SALES_ROLES[role].levels.includes(t.level)) {
     throw badRequest(`${SALES_ROLES[role].short} chỉ phụ trách cấp ${SALES_ROLES[role].levels.map((l) => LEVELS[l].toLowerCase()).join(' / ')}`);
   }
+  await run(`INSERT INTO territory_members(territory_id, user_id, role, is_concurrent, since, industry) VALUES (?,?,?,?,?,?)
+    ON CONFLICT(territory_id, user_id, role) DO UPDATE SET is_concurrent = excluded.is_concurrent, since = excluded.since, industry = excluded.industry`,
+  t.id, userId, role, concurrent ? 1 : 0, /^\d{4}-\d{2}-\d{2}$/.test(since || '') ? since : null, industry);
+  await refreshSalesRole(userId);
+}
+
+r.post('/sales/territories/:id/members', async (c) => {
+  await requireManage(c);
+  const t = await territoryOr404(c.req.param('id'));
+  const b = await jsonBody(c);
   const u = await get("SELECT id, name FROM users WHERE id = ? AND role <> 'guest'", toInt(b.user_id));
   if (!u) throw badRequest('Chọn nhân sự');
-  const since = /^\d{4}-\d{2}-\d{2}$/.test(b.since || '') ? b.since : null;
-  await run(`INSERT INTO territory_members(territory_id, user_id, role, is_concurrent, since) VALUES (?,?,?,?,?)
-    ON CONFLICT(territory_id, user_id, role) DO UPDATE SET is_concurrent = excluded.is_concurrent, since = excluded.since`,
-  t.id, u.id, role, b.is_concurrent ? 1 : 0, since);
-  await refreshSalesRole(u.id);
-  await audit(c.get('user').id, 'sales.member', `${u.name}: ${SALES_ROLES[role].short} ${t.name}${b.is_concurrent ? ' (kiêm nhiệm)' : ''}`);
+  const industry = await industryCode(b.industry);
+  await assignMember(t, u.id, String(b.role || ''), { industry, concurrent: !!b.is_concurrent, since: b.since });
+  await audit(c.get('user').id, 'sales.member', `${u.name}: ${SALES_ROLES[b.role].short} ${t.name}${industry ? ` (${industry})` : ''}${b.is_concurrent ? ' (kiêm nhiệm)' : ''}`);
   return c.json({ ok: true }, 201);
 });
 
@@ -192,12 +230,15 @@ export async function planManagers() {
     const rank = SALES_ROLES[m.role].rank;
     let leader = null;
     for (let t = territories.get(m.territory_id), guard = 0; t && !leader && guard < 10; t = territories.get(t.parent_id), guard++) {
-      const cands = (byTerritory.get(t.id) || []).filter((x) => x.user_id !== m.user_id && SALES_ROLES[x.role].rank < rank)
-        .sort((a, b) => SALES_ROLES[b.role].rank - SALES_ROLES[a.role].rank || a.is_concurrent - b.is_concurrent || a.user_id - b.user_id);
+      // cấp trên phải cùng ngành hàng hoặc phụ trách chung; ưu tiên cấp gần nhất, rồi đúng ngành, rồi phân công chính
+      const cands = (byTerritory.get(t.id) || []).filter((x) => x.user_id !== m.user_id && SALES_ROLES[x.role].rank < rank
+          && (!x.industry || !m.industry || x.industry === m.industry))
+        .sort((a, b) => SALES_ROLES[b.role].rank - SALES_ROLES[a.role].rank
+          || (a.industry === m.industry ? 0 : 1) - (b.industry === m.industry ? 0 : 1) || a.is_concurrent - b.is_concurrent || a.user_id - b.user_id);
       leader = cands[0] || null;
     }
     if (!leader) continue;
-    plan.push({ user_id: m.user_id, name: m.name, color: m.color, role: m.role, territory: territories.get(m.territory_id)?.name,
+    plan.push({ user_id: m.user_id, name: m.name, color: m.color, role: m.role, industry: m.industry, manager_industry: leader.industry, territory: territories.get(m.territory_id)?.name,
       current_manager_id: m.manager_id, current_manager_name: m.manager_name,
       manager_id: leader.user_id, manager_name: leader.name, manager_role: leader.role, changed: m.manager_id !== leader.user_id });
   }

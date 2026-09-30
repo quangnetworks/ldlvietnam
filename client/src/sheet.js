@@ -18,16 +18,36 @@ export function parseCsv(text, sep) {
 }
 
 const pad = (n) => String(n).padStart(2, '0');
-const cellText = (v) => (v instanceof Date ? `${v.getFullYear()}-${pad(v.getMonth() + 1)}-${pad(v.getDate())}` : v == null ? '' : String(v).trim());
+// ngày trong Excel được đọc thành Date lúc 00:00 UTC → lấy theo UTC để không lệch ngày theo múi giờ
+const cellText = (v) => (v instanceof Date ? `${v.getUTCFullYear()}-${pad(v.getUTCMonth() + 1)}-${pad(v.getUTCDate())}` : v == null ? '' : String(v).trim());
+const cleanRows = (rows) => rows.map((r) => r.map(cellText)).filter((r) => r.some(Boolean));
 
-/** Tệp .xlsx / .csv → mảng dòng (mảng ô dạng chuỗi; ngày Excel → YYYY-MM-DD). */
-export async function readSheetFile(file) {
+/** Mọi sheet của tệp: [{ sheet: 'Tên sheet', rows }] (.csv = một sheet). Ngày Excel → YYYY-MM-DD. */
+export async function readWorkbook(file) {
   if (/\.xlsx$/i.test(file.name)) {
     const { default: readXlsx } = await import('read-excel-file/browser');
-    return (await readXlsx(file)).map((r) => r.map(cellText)).filter((r) => r.some(Boolean));
+    return (await readXlsx(file)).map((x) => ({ sheet: x.sheet, rows: cleanRows(x.data) }));
   }
-  if (/\.(csv|txt)$/i.test(file.name)) return parseCsv((await file.text()).replace(/^﻿/, '')).map((r) => r.map(cellText));
+  if (/\.(csv|txt)$/i.test(file.name)) return [{ sheet: file.name, rows: cleanRows(parseCsv((await file.text()).replace(/^\uFEFF/, ''))) }];
   throw new Error('Chỉ hỗ trợ tệp Excel (.xlsx) hoặc CSV');
+}
+
+/** Tệp .xlsx / .csv → mảng dòng của sheet đầu tiên (mảng ô dạng chuỗi). */
+export async function readSheetFile(file) {
+  return (await readWorkbook(file))[0]?.rows || [];
+}
+
+/** Tải tệp Excel nhiều sheet: sheets = [{ sheet, head: [...], rows: [[...]], widths?: [...] }]; dòng tiêu đề in đậm, cố định. */
+export async function downloadXlsx(name, sheets) {
+  const { default: writeXlsx } = await import('write-excel-file/browser');
+  const data = sheets.map((x) => ({
+    sheet: x.sheet.slice(0, 31),
+    data: [x.head.map((h) => ({ value: h, fontWeight: 'bold', backgroundColor: '#FDEBD3', wrap: true })),
+      ...x.rows.map((r) => r.map((v) => (v === '' || v == null ? null : { value: String(v) })))],
+    columns: x.head.map((h, i) => ({ width: x.widths?.[i] || Math.min(40, Math.max(12, String(h).length + 4)) })),
+    stickyRowsCount: 1,
+  }));
+  downloadBlob(`${name}.xlsx`, await writeXlsx(data).toBlob());
 }
 
 const norm = (s) => String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/đ/g, 'd').replace(/[^a-z0-9]/g, '');

@@ -6,16 +6,16 @@ import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
   Plus, Search, Trash2, Pencil, Paperclip, Upload, Download, FileText, TrendingUp, ArrowRightLeft, Award, AlertTriangle, BadgeDollarSign, FileSignature, Layers,
-  CheckCircle2, AlarmClock, History, XCircle, BarChart3, Users2, Users, UserPlus, UserMinus, Percent, Clock3, Activity, Shapes, Cake, MapPin, Briefcase, Network, Map as MapIcon,
+  CheckCircle2, AlarmClock, History, XCircle, BarChart3, Users2, Users, UserPlus, UserMinus, Percent, Clock3, Activity, Shapes, Cake, MapPin, Briefcase, Network, Map as MapIcon, Tags,
 } from 'lucide-react';
 import { api, toFormData } from '../api.js';
 import { useApp, useFetch, useToast } from '../context.jsx';
 import { Avatar, Spinner, Field, Empty, Modal, UserPicker, FilterSelect, FileChip, Tabs } from '../components/ui.jsx';
 import { Donut } from '../components/charts.jsx';
-import { HrHero, Kpi, HrCard, Pill, HBars, GroupedColumns, daysLeft } from './hrUi.jsx';
+import { HrHero, Kpi, HrCard, Pill, HBars, StackBar, GroupedColumns, daysLeft } from './hrUi.jsx';
 import FileViewer from '../components/FileViewer.jsx';
 import { useDebounced } from '../components/shell.jsx';
-import { readSheetFile, rowsToObjects, downloadCsv } from '../sheet.js';
+import { readWorkbook, rowsToObjects, downloadCsv, downloadXlsx } from '../sheet.js';
 import { fmtDate, cx } from '../utils.js';
 
 export const CONTRACT_STATUS = { active: 'Đang hiệu lực', ended: 'Đã hết hạn', terminated: 'Đã chấm dứt' };
@@ -387,44 +387,171 @@ export function DocumentsPanel({ userId, isHr, selfView }) {
 }
 
 // ================================================================ cập nhật hàng loạt từ Excel
+/** Cột sheet "Nhân sự": [key, tiêu đề mẫu, ...tên cột khác được chấp nhận] (so khớp không phân biệt hoa thường / dấu). */
 export const PROFILE_COLUMNS = [
-  ['username', 'Tài khoản'], ['employee_code', 'Mã NV', 'Mã nhân viên'], ['gender', 'Giới tính'], ['job_position', 'Vị trí công việc'],
-  ['employee_type', 'Phân loại nhân sự'], ['office', 'Văn phòng'], ['hire_date', 'Ngày bắt đầu', 'Ngày vào làm'], ['official_date', 'Ngày chính thức'],
-  ['probation_end', 'Hết thử việc'], ['work_status', 'Trạng thái'], ['id_number', 'Số CCCD'], ['id_issue_date', 'Ngày cấp'], ['id_issue_place', 'Nơi cấp'],
-  ['insurance_number', 'Số sổ BHXH'], ['tax_code', 'MST TNCN', 'Mã số thuế'], ['bank_account', 'Tài khoản ngân hàng'], ['emergency_contact', 'Liên hệ khẩn cấp'],
-  ['resign_date', 'Ngày nghỉ việc'], ['resign_reason', 'Lý do nghỉ việc'],
+  ['username', 'Tài khoản', 'Tên đăng nhập'], ['employee_code', 'Mã NV', 'Mã nhân viên'], ['name', 'Họ tên', 'Họ và tên'], ['email', 'Email'],
+  ['phone', 'Điện thoại', 'Số điện thoại'], ['birthday', 'Ngày sinh'], ['title', 'Chức danh'], ['department', 'Phòng ban'],
+  ['manager_username', 'Quản lý trực tiếp (tài khoản / mã NV)', 'Quản lý (tài khoản)'],
+  ['gender', 'Giới tính'], ['job_position', 'Vị trí công việc'], ['employee_type', 'Phân loại nhân sự'], ['office', 'Văn phòng'],
+  ['hire_date', 'Ngày bắt đầu', 'Ngày vào làm'], ['probation_end', 'Hết thử việc'], ['official_date', 'Ngày chính thức'], ['work_status', 'Trạng thái'],
+  ['id_number', 'Số CCCD'], ['id_issue_date', 'Ngày cấp'], ['id_issue_place', 'Nơi cấp'], ['insurance_number', 'Số sổ BHXH'], ['tax_code', 'MST TNCN', 'Mã số thuế'],
+  ['bank_account', 'Tài khoản ngân hàng'], ['emergency_contact', 'Liên hệ khẩn cấp'], ['resign_date', 'Ngày nghỉ việc'], ['resign_reason', 'Lý do nghỉ việc'],
+  ['sales_role', 'Vị trí kinh doanh'], ['territory', 'Địa bàn'], ['industry', 'Ngành hàng'],
 ];
+const CAREER_COLUMNS = [
+  ['username', 'Tài khoản'], ['employee_code', 'Mã NV', 'Mã nhân viên'], ['type', 'Loại', 'Loại sự kiện'], ['effective_date', 'Ngày hiệu lực'],
+  ['from_value', 'Từ (trước)', 'Từ'], ['to_value', 'Đến (sau)', 'Đến', 'Nội dung'], ['decision_no', 'Số quyết định'], ['note', 'Ghi chú'],
+];
+const CONTRACT_COLUMNS = [
+  ['username', 'Tài khoản'], ['employee_code', 'Mã NV', 'Mã nhân viên'], ['code', 'Số hợp đồng', 'Số HĐ'], ['contract_type', 'Loại hợp đồng'],
+  ['start_date', 'Ngày bắt đầu'], ['end_date', 'Ngày kết thúc'], ['salary', 'Mức lương'], ['status', 'Trạng thái'], ['note', 'Ghi chú'],
+];
+const TEMPLATE_GUIDE = [
+  ['Sheet "Nhân sự"', 'Mỗi dòng một nhân sự. Nhận diện bằng Tài khoản hoặc Mã NV. Chưa có trên hệ thống → tạo tài khoản mới (cần Họ tên; thiếu Tài khoản thì dùng Mã NV làm tên đăng nhập).'],
+  ['', 'Đã có → chỉ cập nhật các ô có giá trị, ô trống giữ nguyên. Ngày ghi dd/mm/yyyy hoặc yyyy-mm-dd.'],
+  ['', 'Trạng thái: Chính thức / Thử việc / Tạm nghỉ / Đã nghỉ việc (nhân sự đã nghỉ việc được lưu hồ sơ, tài khoản bị khoá).'],
+  ['', 'Phòng ban chưa có sẽ được tạo. Quản lý trực tiếp ghi tài khoản hoặc mã NV của người quản lý.'],
+  ['', 'Vị trí kinh doanh: NSM, RSM, ASM, SS, PG, SREP, SREP KA — Địa bàn: đúng tên trong Cơ cấu kinh doanh (VD Miền Bắc, Hà Nội, Đồng Nai) — Ngành hàng: Hóa mỹ phẩm / Thực phẩm (để trống = phụ trách chung).'],
+  ['Sheet "Lịch sử công tác"', 'Quá trình công tác trước đây: Thăng tiến, Điều chỉnh lương, Điều chuyển, Khen thưởng, Kỷ luật. Dòng trùng (cùng người, loại, ngày, nội dung) được bỏ qua.'],
+  ['Sheet "Hợp đồng"', 'Các hợp đồng lao động đã ký. Trạng thái: Đang hiệu lực / Đã hết hạn / Đã chấm dứt. Hợp đồng đang hiệu lực mới nhất cập nhật vào hồ sơ.'],
+  ['Lưu ý', 'Có thể chỉ điền 1 sheet. Tối đa 1.000 nhân sự, 5.000 dòng lịch sử, 3.000 hợp đồng mỗi lần nhập.'],
+];
+
+/** Sheet theo tên: "Lịch sử…" → lịch sử công tác, "Hợp đồng…" → hợp đồng, "Hướng dẫn" bỏ qua, còn lại → nhân sự. */
+function splitWorkbook(sheets) {
+  const n = (x) => x.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/đ/g, 'd');
+  const pick = (re) => sheets.find((x) => re.test(n(x.sheet)))?.rows || [];
+  const profile = sheets.find((x) => !/lich su|hop dong|huong dan/.test(n(x.sheet)))?.rows || [];
+  const key = (r) => r.username || r.employee_code;
+  return {
+    rows: rowsToObjects(profile, PROFILE_COLUMNS).filter(key),
+    careers: rowsToObjects(pick(/lich su/), CAREER_COLUMNS).filter((r) => key(r) && (r.type || r.effective_date)),
+    contracts: rowsToObjects(pick(/hop dong/), CONTRACT_COLUMNS).filter((r) => key(r) && (r.contract_type || r.start_date)),
+  };
+}
 
 export function ImportProfilesModal({ onClose, onDone }) {
   const toast = useToast();
-  const [rows, setRows] = useState(null);
+  const { loadDirectory } = useApp();
+  const [known] = useFetch(() => api.get('/hrm/employees', { view: 'all' }), []);
+  const [data, setData] = useState(null);
+  const [fileName, setFileName] = useState('');
+  const [create, setCreate] = useState(true);
+  const [password, setPassword] = useState('');
+  const [busy, setBusy] = useState(false);
   const [result, setResult] = useState(null);
-  const template = () => downloadCsv('mau-cap-nhat-nhan-su', PROFILE_COLUMNS.map((c) => c[1]), [
-    ['demo', 'LDL006', 'Nam', 'Nhân viên', 'Toàn thời gian', 'Văn phòng Hà Nội', '20/02/2023', '20/04/2023', '', 'Chính thức', '001095000111', '', 'Hà Nội', '', '', '', '', '', ''],
+  const template = () => downloadXlsx('mau-nhap-ho-so-nhan-su', [
+    { sheet: 'Nhân sự', head: PROFILE_COLUMNS.map((c) => c[1]), rows: [
+      ['nguyenvana', 'LDL101', 'Nguyễn Văn A', 'nguyenvana@ldlvietnam.vn', '0901 111 222', '15/05/1995', 'Nhân viên kinh doanh', 'Phòng Kinh doanh', 'truongkd',
+        'Nam', 'Nhân viên', 'Toàn thời gian', 'Văn phòng Hà Nội', '01/03/2024', '01/05/2024', '01/05/2024', 'Chính thức', '001095000222', '10/01/2021', 'Hà Nội',
+        '', '', '', '', '', '', 'SREP', 'Hà Nội', 'Hóa mỹ phẩm'],
+      ['', 'LDL102', 'Trần Thị B', '', '', '', 'Giám sát bán hàng', 'Phòng Kinh doanh', '', 'Nữ', '', '', '', '01/07/2022', '', '', 'Chính thức',
+        '', '', '', '', '', '', '', '', '', 'SS', 'Đồng Nai', 'Thực phẩm'],
+    ], widths: PROFILE_COLUMNS.map((c) => (['name', 'title', 'department', 'manager_username'].includes(c[0]) ? 24 : 16)) },
+    { sheet: 'Lịch sử công tác', head: CAREER_COLUMNS.map((c) => c[1]), rows: [
+      ['nguyenvana', '', 'Thăng tiến', '01/01/2025', 'Nhân viên kinh doanh', 'Trưởng nhóm kinh doanh', 'QĐ-12/2025', ''],
+      ['', 'LDL102', 'Khen thưởng', '15/12/2024', '', 'Nhân viên xuất sắc năm 2024', 'QĐ-45/2024', 'Vượt 120% chỉ tiêu'],
+    ], widths: [16, 12, 18, 16, 26, 30, 16, 30] },
+    { sheet: 'Hợp đồng', head: CONTRACT_COLUMNS.map((c) => c[1]), rows: [
+      ['nguyenvana', '', 'HĐLĐ-101/2024', 'Xác định thời hạn 12 tháng', '01/05/2024', '30/04/2025', '12000000', 'Đã hết hạn', ''],
+      ['nguyenvana', '', 'HĐLĐ-101/2025', 'Không xác định thời hạn', '01/05/2025', '', '15000000', 'Đang hiệu lực', ''],
+    ], widths: [16, 12, 18, 28, 14, 14, 14, 16, 24] },
+    { sheet: 'Hướng dẫn', head: ['Mục', 'Hướng dẫn'], rows: TEMPLATE_GUIDE, widths: [24, 120] },
   ]);
   const pick = async (file) => {
     if (!file) return;
     setResult(null);
-    try { setRows(rowsToObjects(await readSheetFile(file), PROFILE_COLUMNS).filter((r) => r.username || r.employee_code)); } catch (e) { toast(e.message, 'error'); }
+    setFileName(file.name);
+    try { setData(splitWorkbook(await readWorkbook(file))); } catch (e) { toast(e.message, 'error'); setData(null); }
   };
+  const users = new Set((known || []).map((e) => e.username?.toLowerCase()));
+  const codes = new Set((known || []).filter((e) => e.employee_code).map((e) => e.employee_code.toLowerCase()));
+  const isNew = (r) => !users.has(String(r.username || '').replace(/^@/, '').toLowerCase()) && !codes.has(String(r.employee_code || '').toLowerCase());
+  const newCount = data ? data.rows.filter(isNew).length : 0;
+  const total = data ? data.rows.length + data.careers.length + data.contracts.length : 0;
+  const needPw = create && newCount > 0;
   const run = async () => {
+    setBusy(true);
     try {
-      const r = await api.post('/hrm/employees/import', { rows });
+      const r = await api.post('/hrm/employees/import', { ...data, create_accounts: create, password });
       setResult(r);
-      if (r.updated) { toast(`Đã cập nhật ${r.updated} hồ sơ`); onDone(); }
-    } catch (e) { toast(e.message, 'error'); }
+      toast('Đã nhập hồ sơ nhân sự');
+      onDone(); loadDirectory?.();
+    } catch (e) { toast(e.message, 'error'); } finally { setBusy(false); }
   };
   return (
-    <Modal title="Cập nhật hàng loạt hồ sơ nhân sự" onClose={onClose} width={620}
-      footer={<><button className="btn" onClick={onClose}>Đóng</button><button className="btn btn-primary" disabled={!rows?.length || !!result} onClick={run}>Cập nhật {rows?.length || 0} hồ sơ</button></>}>
-      <p className="muted small">Tệp Excel (.xlsx) hoặc CSV: mỗi dòng một nhân sự, xác định bằng <b>Tài khoản</b> hoặc <b>Mã NV</b>. Chỉ các ô có giá trị được cập nhật;
-        ngày ghi dạng dd/mm/yyyy hoặc yyyy-mm-dd. <button className="link-btn" onClick={template}><Download size={13} /> Tải file mẫu</button></p>
-      <input type="file" className="input" accept=".xlsx,.csv" onChange={(e) => pick(e.target.files[0])} />
-      {rows && !result && <p className="small mt">{rows.length ? `Đọc được ${rows.length} dòng: ${rows.slice(0, 5).map((r) => r.username || r.employee_code).join(', ')}${rows.length > 5 ? '…' : ''}` : 'Không có dòng hợp lệ (cần cột Tài khoản hoặc Mã NV).'}</p>}
+    <Modal title="Nhập hồ sơ nhân sự từ Excel" onClose={onClose} width={780}
+      footer={<><button className="btn" onClick={onClose}>{result ? 'Xong' : 'Huỷ'}</button>
+        {!result && <button className="btn btn-primary" disabled={!total || busy || (needPw && password.length < 6)} onClick={run}><Upload size={15} /> {busy ? 'Đang nhập…' : `Nhập ${total} dòng`}</button>}</>}>
+      {!result && (
+        <>
+          <div className="imp-steps">
+            <div className="imp-step"><span>1</span><div><b>Tải file mẫu</b><small className="muted block">Sheet Nhân sự, Lịch sử công tác, Hợp đồng và Hướng dẫn</small>
+              <button className="btn btn-sm mt-xs" onClick={template}><Download size={14} /> File mẫu (.xlsx)</button></div></div>
+            <div className="imp-step"><span>2</span><div><b>Điền thông tin</b><small className="muted block">Nhân sự mới → tạo tài khoản; đã có → cập nhật ô có giá trị. Có thể chỉ điền 1 sheet.</small></div></div>
+            <div className="imp-step"><span>3</span><div><b>Chọn tệp và nhập</b><small className="muted block">Excel (.xlsx) hoặc CSV (chỉ sheet Nhân sự)</small></div></div>
+          </div>
+          <label className={cx('imp-drop', data && 'has-file')}>
+            <Upload size={20} />
+            <span><b>{fileName || 'Chọn tệp Excel / CSV'}</b><small className="muted block">{fileName ? 'Bấm để chọn tệp khác' : 'Kéo thả hoặc bấm để chọn'}</small></span>
+            <input type="file" accept=".xlsx,.csv" onChange={(e) => pick(e.target.files[0])} />
+          </label>
+          {data && (
+            <>
+              <div className="hr-kpis compact mt">
+                <Kpi icon={UserPlus} tone="green" label="Tài khoản mới" value={newCount} />
+                <Kpi icon={Users2} tone="blue" label="Cập nhật hồ sơ" value={data.rows.length - newCount} />
+                <Kpi icon={History} tone="violet" label="Lịch sử công tác" value={data.careers.length} />
+                <Kpi icon={FileSignature} tone="amber" label="Hợp đồng" value={data.contracts.length} />
+              </div>
+              {data.rows.length > 0 && (
+                <div className="table-wrap mt"><table className="table">
+                  <thead><tr><th /><th>Tài khoản / Mã NV</th><th>Họ tên</th><th>Phòng ban · Chức danh</th><th>Kinh doanh</th></tr></thead>
+                  <tbody>{data.rows.slice(0, 8).map((r, i) => (
+                    <tr key={i}>
+                      <td>{isNew(r) ? <Pill tone="green">Mới</Pill> : <Pill tone="blue">Cập nhật</Pill>}</td>
+                      <td><b>{r.username || String(r.employee_code).toLowerCase()}</b>{r.username && r.employee_code && <small className="muted block">{r.employee_code}</small>}</td>
+                      <td>{r.name || <span className="muted">—</span>}</td>
+                      <td className="small">{[r.department, r.title].filter(Boolean).join(' · ') || <span className="muted">—</span>}</td>
+                      <td className="small">{[r.sales_role, r.territory, r.industry].filter(Boolean).join(' · ') || <span className="muted">—</span>}</td>
+                    </tr>))}</tbody>
+                </table></div>
+              )}
+              {data.rows.length > 8 && <p className="muted small">… và {data.rows.length - 8} nhân sự khác</p>}
+              {newCount > 0 && (
+                <div className="imp-new mt">
+                  <label className="check"><input type="checkbox" checked={create} onChange={(e) => setCreate(e.target.checked)} /> <b>Tạo tài khoản mới cho {newCount} nhân sự chưa có trên hệ thống</b></label>
+                  {create && (
+                    <div className="row gap-sm wrap mt-xs">
+                      <input className="input" style={{ maxWidth: 260 }} type="text" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Mật khẩu mặc định (≥ 6 ký tự)" autoComplete="new-password" />
+                      <small className="muted grow">Tài khoản nhân viên, được dùng các ứng dụng đang bật; gửi mật khẩu cho nhân viên và nhắc đổi sau khi đăng nhập.
+                        Nhân sự "Đã nghỉ việc" chỉ lưu hồ sơ, tài khoản bị khoá.</small>
+                    </div>
+                  )}
+                  {!create && <small className="muted block mt-xs">Các dòng chưa có trên hệ thống sẽ bị bỏ qua.</small>}
+                </div>
+              )}
+              {!total && <div className="alert alert-info mt">Không đọc được dòng nào — kiểm tra dòng tiêu đề có cột Tài khoản hoặc Mã NV.</div>}
+            </>
+          )}
+        </>
+      )}
       {result && (
-        <div className="mt">
-          <p className="text-green">Đã cập nhật {result.updated} hồ sơ.</p>
-          {result.errors.length > 0 && <ul className="small text-red">{result.errors.slice(0, 30).map((e) => <li key={e}>{e}</li>)}</ul>}
+        <div>
+          <div className="hr-kpis compact">
+            <Kpi icon={UserPlus} tone="green" label="Tài khoản mới" value={result.created} />
+            <Kpi icon={Users2} tone="blue" label="Hồ sơ cập nhật" value={result.updated} />
+            <Kpi icon={Network} tone="aqua" label="Phân công kinh doanh" value={result.assignments} />
+            <Kpi icon={History} tone="violet" label="Lịch sử công tác" value={result.careers} />
+            <Kpi icon={FileSignature} tone="amber" label="Hợp đồng" value={result.contracts} />
+          </div>
+          {result.skipped > 0 && <p className="muted small mt">Bỏ qua {result.skipped} dòng lịch sử / hợp đồng đã có.</p>}
+          {result.new_accounts.length > 0 && <p className="small mt">Tài khoản mới: {result.new_accounts.slice(0, 40).map((u) => <code key={u} className="hr-code">{u}</code>).reduce((a, x) => [...a, a.length ? ' ' : '', x], [])}{result.new_accounts.length > 40 ? ' …' : ''}</p>}
+          {result.assignments > 0 && <div className="alert alert-info mt small">Đã phân công vị trí kinh doanh. Vào <Link to="/hrm/sales">Cơ cấu kinh doanh</Link> → "Đồng bộ quản lý trực tiếp" để cập nhật cấp trên theo cơ cấu.</div>}
+          {result.errors.length > 0 && (
+            <div className="alert alert-error mt small"><b>{result.errors.length} dòng cần kiểm tra lại:</b>
+              <ul>{result.errors.slice(0, 40).map((e) => <li key={e}>{e}</li>)}</ul>{result.errors.length > 40 && '…'}</div>
+          )}
         </div>
       )}
     </Modal>
@@ -450,7 +577,7 @@ export function HrmReports() {
   const resigns = r.turnover.reduce((s, m) => s + m.resigns, 0);
   const exportCsv = () => downloadCsv('bao-cao-nhan-su', ['Chỉ tiêu', 'Nhóm', 'Số lượng'], [
     ...[['Phân loại nhân sự', r.by_type], ['Văn phòng', r.by_office], ['Giới tính', r.by_gender], ['Loại hợp đồng', r.by_contract], ['Vị trí', r.by_position],
-      ['Vị trí kinh doanh', r.by_sales || []], ['Kinh doanh theo miền', r.by_region || []], ['Thâm niên', r.seniority], ['Độ tuổi', r.ages]].flatMap(([k, list]) => list.map((x) => [k, x.name, x.c])),
+      ['Vị trí kinh doanh', r.by_sales || []], ['Kinh doanh theo miền', r.by_region || []], ['Kinh doanh theo ngành hàng', r.by_industry || []], ['Thâm niên', r.seniority], ['Độ tuổi', r.ages]].flatMap(([k, list]) => list.map((x) => [k, x.name, x.c])),
     ...r.turnover.map((m) => ['Biến động', m.month, `+${m.hires} / -${m.resigns}`]),
   ]);
   const rows = r.turnover.map((m) => ({ label: `T${Number(m.month.slice(5))}`, tip: `Tháng ${m.month.slice(5)}/${m.month.slice(0, 4)}`, hires: m.hires, resigns: m.resigns }));
@@ -479,6 +606,8 @@ export function HrmReports() {
         <HrCard i={12} className="hr-span-4" icon={Briefcase} tone="orange" title="Vị trí công việc"><HBars items={r.by_position} total={r.total} /></HrCard>
         {(r.by_sales?.length > 0 || r.by_region?.length > 0) && (
           <>
+            {r.by_industry?.length > 0 && <HrCard i={13} className="hr-span-12" icon={Tags} tone="pink" title="Nhân sự kinh doanh theo ngành hàng">
+              <StackBar parts={r.by_industry.map((x, i) => ({ key: x.name, label: x.name, value: x.c, color: x.name === 'Phụ trách chung' ? 'var(--viz-neutral)' : CAT[i] }))} /></HrCard>}
             <HrCard i={13} className="hr-span-6" icon={Network} tone="aqua" title="Cơ cấu kinh doanh theo vị trí"
               action={<Link to="/hrm/sales" className="link-btn small">Xem sơ đồ</Link>}><HBars items={r.by_sales} color="var(--hr-cat-3)" /></HrCard>
             <HrCard i={14} className="hr-span-6" icon={MapIcon} tone="orange" title="Nhân sự kinh doanh theo miền"><HBars items={r.by_region} color="var(--hr-cat-2)" /></HrCard>

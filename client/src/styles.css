@@ -2376,3 +2376,20 @@ td > span + .hr-pill, td > .hr-pill:not(:first-child) { margin-left: 6px; }
 .so-role-opt small { color: var(--muted); font-size: 11.5px; line-height: 1.3; }
 .so-role-opt.active { border-color: var(--tone); background: var(--tone-soft); box-shadow: 0 0 0 2px var(--tone-soft); }
 @media (max-width: 560px) { .so-toggle small { display: none; } .so-provinces, .so-area > .so-members, .so-area > .so-vacant { margin-left: 0; } .so-national::after { display: none; } }
+.so-ind { display: inline-flex; align-items: center; font-size: 10px; font-weight: 700; padding: 1px 6px; border-radius: 999px; letter-spacing: .03em;
+  border: 1px solid color-mix(in srgb, var(--tone) 45%, transparent); color: color-mix(in srgb, var(--tone) 85%, var(--text)); white-space: nowrap; line-height: 1.5; }
+.so-ind-pick { display: flex; flex-wrap: wrap; gap: 6px; }
+.so-seg-count { margin-left: 6px; font-size: 11px; padding: 0 7px; border-radius: 999px; background: var(--bg-3); color: var(--text-2); }
+
+/* ================= Nhập hồ sơ nhân sự từ Excel (imp-*) ================= */
+.imp-steps { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin-bottom: 12px; }
+.imp-step { display: flex; gap: 10px; align-items: flex-start; padding: 10px 12px; border-radius: 12px; background: var(--bg-3); font-size: 13px; }
+.imp-step > span { flex: none; width: 24px; height: 24px; border-radius: 50%; display: grid; place-items: center; font-weight: 700; font-size: 12px;
+  background: var(--hr-blue-soft); color: var(--hr-blue); }
+.imp-drop { display: flex; align-items: center; gap: 12px; padding: 16px 18px; border: 2px dashed var(--line); border-radius: 14px; cursor: pointer; position: relative;
+  color: var(--text-2); transition: border-color .15s, background .15s; }
+.imp-drop:hover { border-color: var(--hr-blue); background: var(--hr-blue-soft); }
+.imp-drop.has-file { border-style: solid; border-color: color-mix(in srgb, var(--hr-green) 50%, var(--line)); background: var(--hr-green-soft); }
+.imp-drop input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+.imp-new { padding: 12px 14px; border-radius: 12px; border: 1px solid color-mix(in srgb, var(--hr-green) 35%, var(--line)); background: var(--hr-green-soft); }
+@media (max-width: 640px) { .imp-steps { grid-template-columns: 1fr; } }

@@ -38,7 +38,7 @@ test('sales structure: territory tree, members with concurrent posts, manager sy
   assert.equal(s.can_manage, false);
   const T = (name, level) => s.territories.find((t) => t.name === name && (!level || t.level === level));
   assert.equal(T('Toàn quốc').level, 'national');
-  assert.equal(s.territories.filter((t) => t.level === 'region').length, 2);
+  assert.equal(s.territories.filter((t) => t.level === 'region').length, 3);
   assert.equal(s.territories.filter((t) => t.level === 'area').length, 10);
   assert.ok(s.members.some((m) => m.username === 'demo' && m.role === 'SS' && m.is_concurrent === 1));
   assert.equal((await demo.post('/sales/territories', { parent_id: T('Đông Tây Bắc').id, name: 'Phú Thọ' })).status, 403);
@@ -97,4 +97,85 @@ test('sales structure: territory tree, members with concurrent posts, manager sy
   assert.ok(!after.territories.some((t) => t.name === 'Hà Nội'));
   assert.equal((await hr.get('/users')).data.find((u) => u.username === 'hoangcong').sales_role, null);
   assert.equal((await hr.get('/users')).data.find((u) => u.username === 'duylinh').sales_role, 'ASM'); // còn kiêm nhiệm Nam Hà Nội
+});
+
+test('sales by industry (HMP / TP) on 3 regions; HRM import creates accounts with profile, sales post, history and contracts', async () => {
+  const hr = await login('chilan');
+  const s = (await hr.get('/sales/structure')).data;
+  const T = (name) => s.territories.find((t) => t.name === name);
+  assert.deepEqual(s.territories.filter((t) => t.level === 'region').map((t) => t.name), ['Miền Bắc', 'Miền Trung', 'Miền Nam']);
+  assert.equal(T('Bắc Miền Trung').parent_id, T('Miền Trung').id);
+  assert.equal(T('Hồ Chí Minh').parent_id, T('Miền Nam').id);
+  assert.deepEqual(s.industries.map((x) => x.code), ['HMP', 'TP']);
+  assert.equal(s.members.find((m) => m.role === 'SS').industry, 'HMP');
+
+  const rows = [
+    { username: 'asm.dnb.tp', name: 'Phạm ASM Thực phẩm', department: 'Phòng Kinh doanh', sales_role: 'ASM', territory: 'Đông Nam Bộ', industry: 'Thực phẩm' },
+    { username: 'asm.dnb.hmp', name: 'Phạm ASM Hóa mỹ phẩm', sales_role: 'ASM', territory: 'Đông Nam Bộ', industry: 'HMP' },
+    { username: 'ss.dn', name: 'Lê SS Đồng Nai', sales_role: 'SS', territory: 'Đồng Nai', industry: 'HMP' },
+    { employee_code: 'LDL100', name: 'Nguyễn Văn SREP', email: 'srep100@ldlvietnam.vn', manager_username: 'truongkd', hire_date: '01/03/2024',
+      work_status: 'Chính thức', gender: 'Nam', sales_role: 'SREP', territory: 'Đồng Nai', industry: 'TP', title: 'Quản trị kho' },
+    { username: 'cu.nv', name: 'Nhân viên cũ', work_status: 'Đã nghỉ việc', resign_date: '2023-12-31' },
+    { username: 'demo', phone: '0909 000 111' },
+    { username: 'loi', name: 'Sai địa bàn', sales_role: 'SS', territory: 'Không có' },
+  ];
+  assert.equal((await hr.post('/hrm/employees/import', { rows, create_accounts: true })).status, 400); // thiếu mật khẩu mặc định
+  const res = (await hr.post('/hrm/employees/import', {
+    rows, create_accounts: true, password: 'Ldl@2026',
+    careers: [
+      { employee_code: 'LDL100', type: 'Khen thưởng', effective_date: '15/06/2024', to_value: 'Nhân viên xuất sắc quý 2' },
+      { employee_code: 'LDL100', type: 'Khen thưởng', effective_date: '15/06/2024', to_value: 'Nhân viên xuất sắc quý 2' },
+      { username: 'cu.nv', type: 'Thăng tiến', effective_date: '2022-01-01', from_value: 'Nhân viên', to_value: 'Trưởng nhóm' },
+      { username: 'khongco', type: 'Kỷ luật', effective_date: '2024-01-01' },
+    ],
+    contracts: [
+      { employee_code: 'LDL100', code: 'HĐ-100', contract_type: 'Xác định thời hạn 12 tháng', start_date: '01/03/2024', end_date: '28/02/2025', status: 'Đã hết hạn' },
+      { employee_code: 'LDL100', code: 'HĐ-101', contract_type: 'Không xác định thời hạn', start_date: '01/03/2025', salary: '12.000.000' },
+    ],
+  })).data;
+  assert.equal(res.created, 6);                           // 5 dòng mới hợp lệ + "loi" (tài khoản tạo được, chỉ sai địa bàn)
+  assert.ok(res.new_accounts.includes('ldl100'));          // thiếu tài khoản → dùng mã NV
+  assert.equal(res.updated, 1);
+  assert.equal(res.assignments, 4);
+  assert.equal(res.careers, 2);
+  assert.equal(res.skipped, 1);
+  assert.equal(res.contracts, 2);
+  assert.ok(res.errors.some((e) => /Quản trị kho/.test(e)));
+  assert.ok(res.errors.some((e) => /Không có/.test(e)));
+  assert.ok(res.errors.some((e) => /khongco/.test(e)));
+
+  const users = (await hr.get('/users')).data;
+  const id = (u) => users.find((x) => x.username === u)?.id;
+  const srep = (await hr.get(`/hrm/employees/${id('ldl100')}`)).data;
+  assert.equal(srep.employee_code, 'LDL100');
+  assert.equal(srep.hire_date, '2024-03-01');
+  assert.equal(srep.contract_type, 'Không xác định thời hạn');
+  assert.equal(srep.manager_id, id('truongkd'));
+  assert.equal(srep.title, null);
+  assert.equal(srep.sales_role, 'SREP');
+  assert.equal(srep.sales_industry, 'TP');
+  assert.equal(users.find((u) => u.username === 'demo').phone, '0909 000 111');
+  assert.equal((await hr.get(`/hrm/employees/${id('ldl100')}/careers`)).data.length, 1);
+  assert.equal((await hr.get(`/hrm/employees/${id('ldl100')}/contracts`)).data.length, 2);
+  // tài khoản mới đăng nhập bằng mật khẩu mặc định; nhân viên đã nghỉ việc bị khoá
+  assert.ok((await login('ldl100', { password: 'Ldl@2026' })).user);
+  assert.ok((await login('cu.nv', { password: 'Ldl@2026' })).fail);
+
+  // cấp trên theo ngành hàng: SREP TP bỏ qua SS HMP cùng tỉnh → ASM TP; SS HMP → ASM HMP
+  const plan = (await hr.get('/sales/sync-managers')).data;
+  const mgr = (u) => plan.find((p) => p.user_id === id(u))?.manager_id;
+  assert.equal(mgr('ldl100'), id('asm.dnb.tp'));
+  assert.equal(mgr('ss.dn'), id('asm.dnb.hmp'));
+  assert.equal(mgr('asm.dnb.tp'), id('truongkd'));
+
+  // lọc HRM theo ngành hàng, báo cáo theo ngành
+  const tp = (await hr.get('/hrm/employees?industry=TP')).data.map((e) => e.username);
+  assert.ok(tp.includes('ldl100') && tp.includes('asm.dnb.tp') && !tp.includes('ss.dn'));
+  assert.ok((await hr.get('/hrm/report')).data.by_industry.some((x) => x.name === 'Thực phẩm' && x.c >= 2));
+
+  // danh mục ngành hàng: không xoá được ngành đang có người phụ trách
+  assert.equal((await (await login('demo')).put('/sales/settings', { industries: [] })).status, 403);
+  assert.equal((await hr.put('/sales/settings', { industries: [{ code: 'HMP', name: 'Hóa mỹ phẩm' }] })).status, 400);
+  const next = (await hr.put('/sales/settings', { industries: [...s.industries, { code: 'dl', name: 'Đồ uống' }] })).data;
+  assert.deepEqual(next.industries.map((x) => x.code), ['HMP', 'TP', 'DL']);
 });

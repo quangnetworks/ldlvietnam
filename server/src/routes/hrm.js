@@ -1,10 +1,11 @@
 /** HRM+ modules: LDL HRM (hồ sơ nhân sự), LDL Checkin (chấm công), LDL Timeoff (nghỉ phép). */
 import { Hono } from 'hono';
 import { all, get, run, getSetting, setSetting } from '../db.js';
-import { requireAdmin, underSql, isSubordinate } from '../auth.js';
+import { requireAdmin, underSql, isSubordinate, hashPassword } from '../auth.js';
 import { badRequest, notFound, forbidden, toInt, idList, jsonBody, formBody, storeFiles, removeFile, sendFile } from '../util.js';
 import { publicFileLink } from '../files.js';
-import { audit } from '../platform.js';
+import { audit, grantApps } from '../platform.js';
+import { assignMember, industryCode, salesSettings } from './territory.js';
 import { clientIp, ipMatches, validIpRule } from '../security.js';
 
 const r = new Hono();
@@ -53,10 +54,10 @@ const DATE_FIELDS = ['id_issue_date', 'hire_date', 'probation_end', 'contract_en
 const WORK_STATUS = ['working', 'probation', 'leave', 'resigned'];
 
 const EMP_SELECT = `SELECT u.id, u.name, u.username, u.email, u.phone, u.title, u.color, u.birthday, u.address, u.department_id, u.manager_id,
-    u.active, u.sales_role, d.name AS department_name, m.name AS manager_name, h.*,
+    u.active, u.sales_role, u.sales_industry, d.name AS department_name, m.name AS manager_name, h.*,
     (SELECT c.to_value || ' (' || c.effective_date || ')' FROM hr_careers c WHERE c.user_id = u.id AND c.type = 'promotion'
       ORDER BY c.effective_date DESC, c.id DESC LIMIT 1) AS last_promotion,
-    (SELECT GROUP_CONCAT(t.name || CASE WHEN tm.is_concurrent THEN ' (KN)' ELSE '' END, ', ') FROM territory_members tm
+    (SELECT GROUP_CONCAT(t.name || IFNULL(' · ' || tm.industry, '') || CASE WHEN tm.is_concurrent THEN ' (KN)' ELSE '' END, ', ') FROM territory_members tm
       JOIN territories t ON t.id = tm.territory_id WHERE tm.user_id = u.id) AS territory_names
   FROM users u LEFT JOIN departments d ON d.id = u.department_id LEFT JOIN users m ON m.id = u.manager_id
   LEFT JOIN hr_profiles h ON h.user_id = u.id`;
@@ -97,6 +98,8 @@ function employeeFilter(user, q) {
       UNION ALL SELECT x.id FROM territories x JOIN sub ON x.parent_id = sub.id) SELECT id FROM sub))`);
     params.push(toInt(q.territory_id));
   }
+  // ngành hàng: người phụ trách ngành đó (tính cả người phụ trách chung khi chọn kèm địa bàn / vị trí thì vẫn lọc đúng ngành)
+  if (q.industry) { where.push('u.id IN (SELECT user_id FROM territory_members WHERE industry = ?)'); params.push(String(q.industry)); }
   if (q.q) { const like = `%${q.q}%`; where.push("(u.name LIKE ? OR IFNULL(h.employee_code,'') LIKE ? OR IFNULL(u.phone,'') LIKE ? OR IFNULL(u.email,'') LIKE ?)"); params.push(like, like, like, like); }
   if (q.contract === 'expiring') { where.push("h.contract_end IS NOT NULL AND h.contract_end BETWEEN date('now') AND date('now', '+30 day')"); }
   return { where, params };
@@ -105,7 +108,7 @@ function employeeFilter(user, q) {
 const csvCell = (v) => { const t = v == null ? '' : String(v); return /[",\n;]/.test(t) ? `"${t.replace(/"/g, '""')}"` : t; };
 const EXPORT_COLS = [
   ['employee_code', 'Mã NV'], ['name', 'Họ tên'], ['username', 'Tài khoản'], ['work_status', 'Trạng thái'], ['title', 'Chức danh'],
-  ['department_name', 'Phòng ban'], ['manager_name', 'Quản lý trực tiếp'], ['sales_role', 'Vị trí kinh doanh'], ['territory_names', 'Địa bàn phụ trách'], ['job_position', 'Vị trí công việc'], ['employee_type', 'Phân loại nhân sự'],
+  ['department_name', 'Phòng ban'], ['manager_name', 'Quản lý trực tiếp'], ['sales_role', 'Vị trí kinh doanh'], ['sales_industry', 'Ngành hàng'], ['territory_names', 'Địa bàn phụ trách'], ['job_position', 'Vị trí công việc'], ['employee_type', 'Phân loại nhân sự'],
   ['office', 'Văn phòng'], ['gender', 'Giới tính'], ['birthday', 'Ngày sinh'], ['phone', 'Điện thoại'], ['email', 'Email'],
   ['hire_date', 'Ngày bắt đầu'], ['official_date', 'Ngày chính thức'], ['contract_type', 'Hợp đồng'], ['contract_end', 'Hết hạn HĐ'],
   ['id_number', 'Số CCCD'], ['insurance_number', 'Số sổ BHXH'], ['tax_code', 'MST TNCN'], ['bank_account', 'Tài khoản ngân hàng'],
@@ -126,46 +129,186 @@ r.get('/hrm/employees/export', async (c) => {
 });
 
 /**
- * Cập nhật hàng loạt hồ sơ từ tệp Excel (client đọc tệp, gửi các dòng): mỗi dòng xác định nhân sự bằng tài khoản hoặc mã NV;
- * chỉ các cột có giá trị được cập nhật.
+ * Nhập hồ sơ nhân sự từ Excel (client đọc tệp, gửi các dòng theo từng sheet):
+ *  - rows (sheet "Nhân sự"): xác định bằng tài khoản hoặc mã NV; chưa có thì **tạo tài khoản mới** (mật khẩu mặc định,
+ *    thiếu tài khoản thì dùng mã NV); cập nhật thông tin tài khoản, hồ sơ HRM, quản lý trực tiếp, vị trí kinh doanh – địa bàn – ngành hàng
+ *  - careers (sheet "Lịch sử công tác"): thăng tiến, điều chỉnh lương, điều chuyển, khen thưởng, kỷ luật (bỏ qua dòng trùng)
+ *  - contracts (sheet "Hợp đồng"): các hợp đồng lao động đã ký (bỏ qua dòng trùng)
+ * Chỉ các ô có giá trị được cập nhật. Lịch sử nhập vào chỉ ghi nhận, không đổi chức danh / phòng ban hiện tại.
  */
 r.post('/hrm/employees/import', async (c) => {
   await requireHr(c);
-  const { rows } = await jsonBody(c);
-  return c.json(await importProfiles(c, Array.isArray(rows) ? rows : []));
+  return c.json(await importProfiles(c, await jsonBody(c)));
 });
-async function importProfiles(c, rows) {
-  const list = rows.slice(0, 1000);
-  const users = await all('SELECT u.id, u.username, h.employee_code FROM users u LEFT JOIN hr_profiles h ON h.user_id = u.id');
-  const byUser = Object.fromEntries(users.map((u) => [u.username.toLowerCase(), u.id]));
-  const byCode = Object.fromEntries(users.filter((u) => u.employee_code).map((u) => [u.employee_code.toLowerCase(), u.id]));
-  const statusByText = Object.fromEntries(Object.entries(STATUS_TEXT).map(([k, v]) => [v.toLowerCase(), k]));
-  let updated = 0;
-  const errors = [];
-  for (const [i, row] of list.entries()) {
-    const id = byUser[String(row.username || '').trim().replace(/^@/, '').toLowerCase()] || byCode[String(row.employee_code || '').trim().toLowerCase()];
-    if (!id) { errors.push(`Dòng ${i + 2}: không tìm thấy nhân sự (${row.username || row.employee_code || 'trống'})`); continue; }
+
+const STATUS_BY_TEXT = Object.fromEntries(Object.entries(STATUS_TEXT).map(([k, v]) => [v.toLowerCase(), k]));
+const clean = (v) => (v === undefined || v === null ? '' : String(v).trim());
+/** dd/mm/yyyy | yyyy-mm-dd → yyyy-mm-dd; '' → null; sai định dạng → false */
+function isoDate(v) {
+  const t = clean(v);
+  if (!t) return null;
+  const m = /^(\d{1,2})[/.-](\d{1,2})[/.-](\d{4})$/.exec(t);
+  const d = m ? `${m[3]}-${m[2].padStart(2, '0')}-${m[1].padStart(2, '0')}` : t.slice(0, 10);
+  return /^\d{4}-\d{2}-\d{2}$/.test(d) && !Number.isNaN(Date.parse(d)) ? d : false;
+}
+/** Chức danh trao quyền quản trị Wework (VD "Quản trị…") chỉ quản trị viên mới được đặt. */
+async function adminTitle(title) {
+  let list = ['Quản trị'];
+  try { list = JSON.parse((await getSetting('wework_settings')) || '{}').admin_titles || list; } catch { /* mặc định */ }
+  const n = (x) => String(x || '').normalize('NFC').trim().toLowerCase().replace(/\s+/g, ' ');
+  const t = n(title);
+  return !!t && list.some((x) => n(x) && (t === n(x) || t.startsWith(`${n(x)} `)));
+}
+const AVATAR_COLORS = ['#2d7ff9', '#20c997', '#f59f00', '#e8590c', '#7048e8', '#d6336c', '#0ca678', '#1098ad', '#ae3ec9', '#5c940d'];
+const SALES_ROLE_BY_TEXT = { nsm: 'NSM', rsm: 'RSM', asm: 'ASM', ss: 'SS', pg: 'PG', srep: 'SREP', 'srep ka': 'SREP_KA', srep_ka: 'SREP_KA', srepka: 'SREP_KA' };
+
+async function importProfiles(c, body) {
+  const actor = c.get('user');
+  const rows = (Array.isArray(body.rows) ? body.rows : []).slice(0, 1000);
+  const careerRows = (Array.isArray(body.careers) ? body.careers : []).slice(0, 5000);
+  const contractRows = (Array.isArray(body.contracts) ? body.contracts : []).slice(0, 3000);
+  const createAccounts = !!body.create_accounts;
+  const res = { created: 0, updated: 0, assignments: 0, careers: 0, contracts: 0, skipped: 0, errors: [], new_accounts: [] };
+  const err = (sheet, i, msg) => res.errors.push(`${sheet} – dòng ${i + 2}: ${msg}`);
+
+  const users = await all('SELECT u.id, u.username, u.role, u.is_owner, h.employee_code FROM users u LEFT JOIN hr_profiles h ON h.user_id = u.id');
+  const byUser = new Map(users.map((u) => [u.username.toLowerCase(), u]));
+  const byCode = new Map(users.filter((u) => u.employee_code).map((u) => [u.employee_code.toLowerCase(), u]));
+  const find = (row) => byUser.get(clean(row.username).replace(/^@/, '').toLowerCase()) || byCode.get(clean(row.employee_code).toLowerCase());
+  const newUsername = (row) => (clean(row.username).replace(/^@/, '') || clean(row.employee_code)).toLowerCase();
+
+  // tài khoản mới cần mật khẩu mặc định — kiểm tra trước khi ghi bất cứ dòng nào
+  const needNew = createAccounts && rows.some((row) => !find(row) && newUsername(row));
+  let hash = null;
+  if (needNew) {
+    if (String(body.password || '').length < 6) throw badRequest('Nhập mật khẩu mặc định (ít nhất 6 ký tự) cho các tài khoản mới');
+    hash = await hashPassword(String(body.password));
+  }
+  const deps = await all('SELECT id, name FROM departments');
+  const depId = async (name) => {
+    if (!name) return null;
+    let d = deps.find((x) => x.name.toLowerCase() === name.toLowerCase());
+    if (!d) { d = { id: (await run('INSERT INTO departments(name) VALUES (?)', name.slice(0, 120))).lastId, name }; deps.push(d); }
+    return d.id;
+  };
+  const territories = await all('SELECT id, name, level FROM territories');
+  const managerLinks = [];
+
+  for (const [i, row] of rows.entries()) {
+    const S = 'Nhân sự';
+    let u = find(row);
+    const name = clean(row.name);
+    let title = clean(row.title);
+    if (title && actor.role !== 'admin' && (await adminTitle(title))) { err(S, i, `chức danh "${title}" có quyền quản trị — chỉ quản trị viên được đặt`); title = ''; }
+    const birthday = isoDate(row.birthday);
+    if (birthday === false) err(S, i, `ngày sinh "${row.birthday}" không hợp lệ`);
+    let changed = false;
+    if (!u) {
+      const username = newUsername(row);
+      if (!username) { err(S, i, 'thiếu Tài khoản / Mã NV'); continue; }
+      if (!createAccounts) { err(S, i, `không tìm thấy nhân sự ${username} (bật "Tạo tài khoản mới" để thêm)`); continue; }
+      if (!/^[\w.@-]{2,64}$/.test(username)) { err(S, i, `tài khoản "${username}" chỉ gồm chữ không dấu, số, . _ - @`); continue; }
+      if (!name) { err(S, i, `tài khoản mới ${username} cần Họ tên`); continue; }
+      const resigned = /nghỉ việc|resigned/i.test(clean(row.work_status));
+      const { lastId } = await run(`INSERT INTO users(username, password_hash, name, email, phone, title, department_id, role, birthday, active, color)
+        VALUES (?,?,?,?,?,?,?, 'member', ?, ?, ?)`, username, hash, name.slice(0, 120), clean(row.email) || null, clean(row.phone) || null,
+      title.slice(0, 120) || null, await depId(clean(row.department)), birthday || null, resigned ? 0 : 1, AVATAR_COLORS[(res.created + users.length) % AVATAR_COLORS.length]);
+      await grantApps(lastId);
+      u = { id: lastId, username, role: 'member' };
+      byUser.set(username, u);
+      res.created++;
+      res.new_accounts.push(username);
+    } else if (name || title || row.email || row.phone || birthday || row.department) {
+      if ((u.role === 'admin' || u.is_owner) && actor.role !== 'admin') err(S, i, `@${u.username} là quản trị viên — chỉ cập nhật hồ sơ HRM, không đổi thông tin tài khoản`);
+      else {
+        await run(`UPDATE users SET name = COALESCE(NULLIF(?, ''), name), email = COALESCE(NULLIF(?, ''), email), phone = COALESCE(NULLIF(?, ''), phone),
+          title = COALESCE(NULLIF(?, ''), title), birthday = COALESCE(?, birthday), department_id = COALESCE(?, department_id) WHERE id = ?`,
+        name.slice(0, 120), clean(row.email), clean(row.phone), title.slice(0, 120), birthday || null, await depId(clean(row.department)), u.id);
+        changed = true;
+      }
+    }
+    if (clean(row.employee_code)) byCode.set(clean(row.employee_code).toLowerCase(), u);
+    // hồ sơ HRM
     const set = {};
     for (const k of HR_FIELDS) {
-      let v = row[k];
-      if (v === undefined || v === null || String(v).trim() === '') continue;
-      v = String(v).trim();
-      if (DATE_FIELDS.includes(k)) {
-        const m = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/.exec(v);
-        if (m) v = `${m[3]}-${m[2].padStart(2, '0')}-${m[1].padStart(2, '0')}`;
-        if (!/^\d{4}-\d{2}-\d{2}$/.test(v)) { errors.push(`Dòng ${i + 2}: ngày "${v}" không hợp lệ`); continue; }
-      }
-      if (k === 'work_status') v = WORK_STATUS.includes(v) ? v : statusByText[v.toLowerCase()] || null;
+      let v = clean(row[k]);
+      if (!v) continue;
+      if (DATE_FIELDS.includes(k)) { const d = isoDate(v); if (!d) { err(S, i, `ngày "${v}" không hợp lệ`); continue; } v = d; }
+      if (k === 'work_status') v = WORK_STATUS.includes(v) ? v : STATUS_BY_TEXT[v.toLowerCase()] || null;
       if (v) set[k] = v.slice(0, 500);
     }
-    if (!Object.keys(set).length) continue;
-    const keys = Object.keys(set);
-    await run(`INSERT INTO hr_profiles(user_id, ${keys.join(', ')}, updated_at) VALUES (?, ${keys.map(() => '?').join(', ')}, datetime('now'))
-      ON CONFLICT(user_id) DO UPDATE SET ${keys.map((k) => `${k} = excluded.${k}`).join(', ')}, updated_at = datetime('now')`, id, ...keys.map((k) => set[k]));
-    updated++;
+    if (Object.keys(set).length) {
+      const keys = Object.keys(set);
+      await run(`INSERT INTO hr_profiles(user_id, ${keys.join(', ')}, updated_at) VALUES (?, ${keys.map(() => '?').join(', ')}, datetime('now'))
+        ON CONFLICT(user_id) DO UPDATE SET ${keys.map((k) => `${k} = excluded.${k}`).join(', ')}, updated_at = datetime('now')`, u.id, ...keys.map((k) => set[k]));
+      changed = true;
+    }
+    if (clean(row.manager_username)) managerLinks.push([i, u, clean(row.manager_username).replace(/^@/, '')]);
+    // vị trí kinh doanh – địa bàn – ngành hàng (phân công chính)
+    if (clean(row.sales_role)) {
+      const role = SALES_ROLE_BY_TEXT[clean(row.sales_role).toLowerCase().replace(/\s+/g, ' ')];
+      const tname = clean(row.territory).toLowerCase();
+      const cands = territories.filter((t) => t.name.toLowerCase() === tname);
+      const lv = { NSM: ['national'], RSM: ['region'], ASM: ['area'] }[role] || ['province', 'area'];
+      const t = cands.sort((a, b) => lv.indexOf(a.level) - lv.indexOf(b.level)).find((x) => lv.includes(x.level)) || cands[0];
+      if (!role) err(S, i, `vị trí kinh doanh "${row.sales_role}" không hợp lệ (NSM, RSM, ASM, SS, PG, SREP, SREP KA)`);
+      else if (!t) err(S, i, `không tìm thấy địa bàn "${row.territory || ''}" trong Cơ cấu kinh doanh`);
+      else {
+        try {
+          await assignMember(t, u.id, role, { industry: await industryCode(row.industry), since: isoDate(row.hire_date) || null });
+          res.assignments++;
+        } catch (e) { err(S, i, e.message); }
+      }
+    }
+    if (changed && !res.new_accounts.includes(u.username)) res.updated++;
   }
-  await audit(c.get('user').id, 'hrm.import', `Cập nhật hàng loạt ${updated} hồ sơ nhân sự`);
-  return { updated, errors };
+  for (const [i, u, m] of managerLinks) {
+    const mgr = byUser.get(m.toLowerCase()) || byCode.get(m.toLowerCase());
+    if (!mgr || mgr.id === u.id) { err('Nhân sự', i, `không tìm thấy quản lý "${m}"`); continue; }
+    await run('UPDATE users SET manager_id = ? WHERE id = ?', mgr.id, u.id);
+  }
+
+  // lịch sử công tác
+  const careerType = Object.fromEntries([...Object.entries(CAREER_TYPES).map(([k, v]) => [v.toLowerCase(), k]), ...Object.keys(CAREER_TYPES).map((k) => [k, k]),
+    ['bổ nhiệm', 'promotion'], ['tăng lương', 'raise'], ['luân chuyển', 'transfer']]);
+  for (const [i, row] of careerRows.entries()) {
+    const S = 'Lịch sử công tác';
+    const u = find(row);
+    if (!u) { err(S, i, `không tìm thấy nhân sự ${row.username || row.employee_code || ''}`); continue; }
+    const type = careerType[clean(row.type).toLowerCase()];
+    const date = isoDate(row.effective_date);
+    if (!type) { err(S, i, `loại "${row.type || ''}" không hợp lệ (Thăng tiến, Điều chỉnh lương, Điều chuyển, Khen thưởng, Kỷ luật)`); continue; }
+    if (!date) { err(S, i, 'ngày hiệu lực không hợp lệ'); continue; }
+    const to = clean(row.to_value).slice(0, 300) || null;
+    if (await get('SELECT 1 FROM hr_careers WHERE user_id = ? AND type = ? AND effective_date = ? AND IFNULL(to_value, \'\') = ?', u.id, type, date, to || '')) { res.skipped++; continue; }
+    await run('INSERT INTO hr_careers(user_id, type, effective_date, from_value, to_value, decision_no, note, created_by) VALUES (?,?,?,?,?,?,?,?)',
+      u.id, type, date, clean(row.from_value).slice(0, 300) || null, to, clean(row.decision_no).slice(0, 60) || null, clean(row.note).slice(0, 2000) || null, actor.id);
+    res.careers++;
+  }
+  // hợp đồng
+  const contractStatus = { ...Object.fromEntries(Object.entries(CONTRACT_STATUS).map(([k, v]) => [v.toLowerCase(), k])), 'hết hạn': 'ended', 'chấm dứt': 'terminated', 'hiệu lực': 'active' };
+  const touched = new Set();
+  for (const [i, row] of contractRows.entries()) {
+    const S = 'Hợp đồng';
+    const u = find(row);
+    if (!u) { err(S, i, `không tìm thấy nhân sự ${row.username || row.employee_code || ''}`); continue; }
+    let k;
+    try {
+      const start = isoDate(row.start_date); const end = isoDate(row.end_date);
+      if (start === false || end === false) throw badRequest('ngày không hợp lệ');
+      k = parseContract({ ...row, start_date: start, end_date: end, status: contractStatus[clean(row.status).toLowerCase()] || clean(row.status) || 'active' });
+    } catch (e) { err(S, i, e.message); continue; }
+    const dupe = k.code ? await get('SELECT 1 FROM hr_contracts WHERE user_id = ? AND code = ?', u.id, k.code)
+      : await get('SELECT 1 FROM hr_contracts WHERE user_id = ? AND contract_type = ? AND start_date = ?', u.id, k.contract_type, k.start_date);
+    if (dupe) { res.skipped++; continue; }
+    await run(`INSERT INTO hr_contracts(user_id, code, contract_type, start_date, end_date, salary, status, note, created_by) VALUES (?,?,?,?,?,?,?,?,?)`,
+      u.id, k.code, k.contract_type, k.start_date, k.end_date, k.salary, k.status, k.note, actor.id);
+    touched.add(u.id);
+    res.contracts++;
+  }
+  for (const id of touched) await syncProfileContract(id);
+  await audit(actor.id, 'hrm.import', `Nhập hồ sơ nhân sự: ${res.created} tài khoản mới, ${res.updated} cập nhật, ${res.careers} lịch sử, ${res.contracts} hợp đồng`);
+  return res;
 }
 
 r.get('/hrm/employees/:id', async (c) => {
@@ -465,7 +608,7 @@ r.get('/hrm/report', async (c) => {
   const group = (col, label) => all(`SELECT IFNULL(NULLIF(${col}, ''), '${label}') AS name, COUNT(*) AS c ${base} WHERE ${active} GROUP BY 1 ORDER BY c DESC`);
   const today = vnDate();
   const year = today.slice(0, 4);
-  const [byType, byOffice, byGender, byContract, byPosition, people, hires, resigns, careers, bySales, byRegion] = await Promise.all([
+  const [byType, byOffice, byGender, byContract, byPosition, people, hires, resigns, careers, bySales, byRegion, byIndustry] = await Promise.all([
     group('h.employee_type', 'Chưa phân loại'), group('h.office', 'Chưa có văn phòng'), group('h.gender', 'Chưa rõ'),
     group('h.contract_type', 'Chưa có hợp đồng'), group('h.job_position', 'Chưa có vị trí'),
     all(`SELECT u.birthday, h.hire_date ${base} WHERE ${active}`),
@@ -479,7 +622,10 @@ r.get('/hrm/report', async (c) => {
       SELECT r.name, COUNT(DISTINCT tm.user_id) AS c FROM territories r JOIN tree ON tree.region_id = r.id
         JOIN territory_members tm ON tm.territory_id = tree.id JOIN users u ON u.id = tm.user_id LEFT JOIN hr_profiles h ON h.user_id = u.id
       WHERE ${active} GROUP BY r.id ORDER BY r.sort`),
+    all(`SELECT tm.industry, COUNT(DISTINCT tm.user_id) AS c FROM territory_members tm JOIN users u ON u.id = tm.user_id
+      LEFT JOIN hr_profiles h ON h.user_id = u.id WHERE ${active} GROUP BY 1`),
   ]);
+  const industries = (await salesSettings()).industries;
   const years = (from) => (from ? (Date.parse(today) - Date.parse(from)) / (365.25 * 864e5) : null);
   const bucket = (list, edges) => {
     const out = edges.map(([label, lo, hi]) => ({ name: label, c: list.filter((y) => y != null && y >= lo && y < hi).length }));
@@ -501,6 +647,8 @@ r.get('/hrm/report', async (c) => {
     total, year,
     by_sales: SALES_ORDER.map((k) => ({ name: k.replace('_', ' '), c: bySales.find((x) => x.role === k)?.c || 0 })).filter((x) => x.c),
     by_region: byRegion,
+    by_industry: [...industries.map((x) => ({ name: x.name, c: byIndustry.find((y) => y.industry === x.code)?.c || 0 })),
+      { name: 'Phụ trách chung', c: byIndustry.find((y) => !y.industry)?.c || 0 }].filter((x) => x.c),
     by_type: byType, by_office: byOffice, by_gender: byGender, by_contract: byContract, by_position: byPosition,
     seniority: bucket(seniority, [['Dưới 1 năm', 0, 1], ['1 – 3 năm', 1, 3], ['3 – 5 năm', 3, 5], ['5 – 10 năm', 5, 10], ['Trên 10 năm', 10, 99]]),
     ages: bucket(ages, [['Dưới 25', 0, 25], ['25 – 34', 25, 35], ['35 – 44', 35, 45], ['45 – 54', 45, 55], ['Từ 55', 55, 120]]),
