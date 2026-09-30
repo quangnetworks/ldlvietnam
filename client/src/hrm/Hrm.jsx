@@ -1,6 +1,11 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { Search, ArrowLeft, Cake, FileWarning, UserPlus, Hourglass, Download, Upload, Plus, Trash2 } from 'lucide-react';
+import {
+  Search, ArrowLeft, Cake, FileWarning, UserPlus, Hourglass, Download, Upload, Plus, Trash2, Users2, BarChart3, FileSignature, BadgeCheck,
+  PauseCircle, Building2, PieChart, CheckCircle2, Briefcase, IdCard, LogOut, StickyNote, Phone, Mail, CalendarDays, UserCog, MapPin, Clock3,
+  FileText, TrendingUp, Save, Settings2, ShieldCheck, ListChecks, CalendarHeart,
+} from 'lucide-react';
+import { HrHero, Kpi, HrCard, Pill, HBars, StackBar, WORK_TONE, WORK_COLOR, daysLeft } from './hrUi.jsx';
 import { api } from '../api.js';
 import { useApp, useFetch, useToast } from '../context.jsx';
 import { Avatar, Spinner, Field, Empty, UserPicker, FilterSelect, Tabs } from '../components/ui.jsx';
@@ -9,55 +14,77 @@ import { useDebounced } from '../components/shell.jsx';
 import { fmtDate, cx } from '../utils.js';
 
 export const WORK_STATUS = { working: 'Chính thức', probation: 'Thử việc', leave: 'Tạm nghỉ', resigned: 'Đã nghỉ việc' };
-const STATUS_CLS = { working: 'badge-green', probation: 'badge-orange', leave: 'badge-purple', resigned: 'badge-gray' };
 
 export function useHrMeta() {
   const [meta] = useFetch(() => api.get('/hrm/meta'), []);
   return meta;
 }
 
-function PersonList({ title, icon: Icon, items, render }) {
+function PeopleCard({ title, icon, tone, items, chip, empty, to, i }) {
   return (
-    <div className="card">
-      <h3 className="card-title row gap-sm"><Icon size={16} /> {title} ({items.length})</h3>
-      {items.length ? items.map((x) => (
-        <Link key={x.id} to={`/hrm/employees/${x.id}`} className="user-row"><Avatar name={x.name} color={x.color} size={28} /><span className="grow">{x.name}</span><small className="muted">{render(x)}</small></Link>
-      )) : <p className="muted small">Không có</p>}
-    </div>
+    <HrCard icon={icon} tone={tone} title={title} count={items.length} i={i}
+      action={to && items.length > 0 ? <Link to={to} className="link-btn small">Xem tất cả</Link> : null}>
+      {items.length ? (
+        <div className="hr-people">
+          {items.slice(0, 6).map((x) => (
+            <Link key={x.id} to={`/hrm/employees/${x.id}`} className="hr-person">
+              <Avatar name={x.name} color={x.color} uid={x.id} size={32} />
+              <span className="grow"><b>{x.name}</b>{x.sub && <small className="muted">{x.sub}</small>}</span>
+              <span className="hr-chip">{chip(x)}</span>
+            </Link>
+          ))}
+          {items.length > 6 && <small className="muted">và {items.length - 6} người khác</small>}
+        </div>
+      ) : <div className="hr-empty"><CheckCircle2 size={16} /> {empty}</div>}
+    </HrCard>
   );
 }
+
+const leftLabel = (d) => { const n = daysLeft(d); return n == null ? '' : n <= 0 ? 'Hôm nay' : `Còn ${n} ngày`; };
 
 export function HrmHome() {
   const { user } = useApp();
   const meta = useHrMeta();
   const [stats] = useFetch(() => (meta?.is_manager ? api.get('/hrm/stats') : Promise.resolve(null)), [meta?.is_manager]);
-  if (!meta) return <div className="page"><Spinner /></div>;
+  if (!meta) return <div className="page hr"><Spinner /></div>;
   if (!meta.is_manager) return <HrmEmployee selfId={user.id} />;
-  if (!stats) return <div className="page"><Spinner /></div>;
-  const max = Math.max(1, ...stats.by_department.map((d) => d.c));
+  if (!stats) return <div className="page hr"><Spinner /></div>;
+  const count = (k) => stats.by_status.find((x) => x.status === k)?.c || 0;
+  const hour = new Date().getHours();
+  const greet = hour < 11 ? 'Chào buổi sáng' : hour < 14 ? 'Chào buổi trưa' : hour < 18 ? 'Chào buổi chiều' : 'Chào buổi tối';
+  const today = new Date().toLocaleDateString('vi-VN', { weekday: 'long', day: '2-digit', month: '2-digit', year: 'numeric' });
+  const alerts = stats.contracts_expiring.length + stats.probation_ending.length;
   return (
-    <div className="page">
-      <div className="page-head"><h1>Tổng quan nhân sự</h1><Link className="btn btn-primary" to="/hrm/employees">Hồ sơ nhân sự</Link></div>
-      <div className="stat-row">
-        <div className="stat-tile"><div className="stat-label">Tổng nhân sự</div><div className="stat-value">{stats.total}</div></div>
-        {Object.entries(WORK_STATUS).map(([k, l]) => (
-          <div key={k} className="stat-tile"><div className="stat-label">{l}</div><div className="stat-value">{stats.by_status.find((x) => x.status === k)?.c || 0}</div></div>
-        ))}
+    <div className="page hr">
+      <HrHero icon={Users2} title={`${greet}, ${user.name.split(' ').slice(-1)[0]}!`}
+        subtitle={`${today.charAt(0).toUpperCase()}${today.slice(1)} · ${alerts ? `${alerts} việc nhân sự cần chú ý trong 30 ngày tới` : 'Không có cảnh báo nhân sự trong 30 ngày tới'}`}>
+        <Link className="btn" to="/hrm/reports"><BarChart3 size={15} /> Báo cáo</Link>
+        <Link className="btn" to="/hrm/contracts"><FileSignature size={15} /> Hợp đồng</Link>
+        <Link className="btn solid" to="/hrm/employees"><Users2 size={15} /> Danh sách nhân sự</Link>
+      </HrHero>
+      <div className="hr-kpis">
+        <Kpi i={0} icon={Users2} tone="aqua" label="Đang làm việc" value={stats.total} sub="Không gồm đã nghỉ việc" to="/hrm/employees" />
+        <Kpi i={1} icon={BadgeCheck} tone="blue" label="Chính thức" value={count('working')} sub={stats.total ? `${Math.round((count('working') / stats.total) * 100)}% nhân sự` : ''} to="/hrm/employees" />
+        <Kpi i={2} icon={Hourglass} tone="amber" label="Thử việc" value={count('probation')} sub={`${stats.probation_ending.length} sắp hết thử việc`} to="/hrm/employees" />
+        <Kpi i={3} icon={PauseCircle} tone="violet" label="Tạm nghỉ" value={count('leave')} to="/hrm/employees" />
+        <Kpi i={4} icon={FileWarning} tone="red" label="HĐ sắp hết hạn" value={stats.contracts_expiring.length} sub="Trong 30 ngày" to="/hrm/contracts" />
       </div>
-      <div className="grid-2">
-        <div className="card">
-          <h3 className="card-title">Nhân sự theo phòng ban</h3>
-          {stats.by_department.map((d) => (
-            <div key={d.name} className="bar-row"><span className="ellipsis">{d.name}</span>
-              <div className="meter"><div style={{ width: `${(d.c / max) * 100}%`, background: 'var(--blue-2)' }} /></div><b>{d.c}</b></div>
-          ))}
-        </div>
-        <div>
-          <PersonList title="Hợp đồng sắp hết hạn (30 ngày)" icon={FileWarning} items={stats.contracts_expiring} render={(x) => fmtDate(x.contract_end)} />
-          <PersonList title="Sắp hết thử việc" icon={Hourglass} items={stats.probation_ending} render={(x) => fmtDate(x.probation_end)} />
-        </div>
-        <PersonList title="Sinh nhật trong tháng" icon={Cake} items={stats.birthdays} render={(x) => fmtDate(x.birthday).slice(0, 5)} />
-        <PersonList title="Nhân sự mới trong tháng" icon={UserPlus} items={stats.new_hires} render={(x) => fmtDate(x.hire_date)} />
+      <div className="hr-grid">
+        <HrCard i={5} className="hr-span-7" icon={Building2} tone="blue" title="Nhân sự theo phòng ban" count={stats.by_department.length}>
+          <HBars items={stats.by_department} total={stats.total} />
+        </HrCard>
+        <HrCard i={6} className="hr-span-5" icon={PieChart} tone="violet" title="Cơ cấu trạng thái làm việc">
+          <StackBar parts={['working', 'probation', 'leave'].map((k) => ({ key: k, label: WORK_STATUS[k], value: count(k), color: WORK_COLOR[k] }))} />
+          <p className="muted small hr-note">Nhân sự đã nghỉ việc: <b>{count('resigned')}</b></p>
+        </HrCard>
+        <div className="hr-span-6"><PeopleCard i={7} title="Hợp đồng sắp hết hạn" icon={FileWarning} tone="red" to="/hrm/contracts" empty="Không có hợp đồng hết hạn trong 30 ngày"
+          items={stats.contracts_expiring.map((x) => ({ ...x, sub: x.contract_type }))} chip={(x) => `${fmtDate(x.contract_end)} · ${leftLabel(x.contract_end)}`} /></div>
+        <div className="hr-span-6"><PeopleCard i={8} title="Sắp hết thử việc" icon={Hourglass} tone="amber" empty="Không có ai sắp hết thử việc"
+          items={stats.probation_ending} chip={(x) => `${fmtDate(x.probation_end)} · ${leftLabel(x.probation_end)}`} /></div>
+        <div className="hr-span-6"><PeopleCard i={9} title="Sinh nhật trong tháng" icon={Cake} tone="pink" empty="Không có sinh nhật trong tháng này"
+          items={stats.birthdays} chip={(x) => fmtDate(x.birthday).slice(0, 5)} /></div>
+        <div className="hr-span-6"><PeopleCard i={10} title="Nhân sự mới trong tháng" icon={UserPlus} tone="green" empty="Chưa có nhân sự mới trong tháng"
+          items={stats.new_hires} chip={(x) => fmtDate(x.hire_date)} /></div>
       </div>
     </div>
   );
@@ -76,9 +103,10 @@ export function seniority(from, to) {
 }
 
 const VIEWS = [
-  { value: '', label: 'Đang làm việc' }, { value: 'all', label: 'Tất cả nhân sự' }, { value: 'mine', label: 'Tôi quản lý' },
-  { value: 'probation', label: 'Đang thử việc' }, { value: 'leave', label: 'Đang tạm nghỉ' }, { value: 'resigned', label: 'Nghỉ việc' },
+  { value: '', label: 'Đang làm việc', tone: 'aqua' }, { value: 'all', label: 'Tất cả nhân sự', tone: 'gray' }, { value: 'mine', label: 'Tôi quản lý', tone: 'blue' },
+  { value: 'probation', label: 'Đang thử việc', tone: 'amber' }, { value: 'leave', label: 'Đang tạm nghỉ', tone: 'violet' }, { value: 'resigned', label: 'Nghỉ việc', tone: 'gray' },
 ];
+export const StatusPill = ({ status }) => <Pill tone={WORK_TONE[status] || 'gray'}>{WORK_STATUS[status] || status}</Pill>;
 /** Nhóm cột như Base HRM: Tổng quan, Công việc, Hợp đồng & pháp lý, Hồ sơ & liên hệ. */
 const COLUMN_SETS = {
   overview: { label: 'Tổng quan', cols: [['department_name', 'Phòng ban'], ['job_position', 'Vị trí'], ['hire_date', 'Ngày bắt đầu', 'date'], ['seniority', 'Thâm niên'], ['work_status', 'Trạng thái']] },
@@ -105,23 +133,27 @@ export function HrmEmployees() {
   const [items, reload, loading, error] = useFetch(() => api.get('/hrm/employees', params), [dq, view, dep, office, type, contract]);
   if (error) return <div className="page"><div className="alert alert-error">{error.message}</div></div>;
   const cell = (e, [k, , kind]) => {
-    if (k === 'work_status') return <span className={cx('badge', STATUS_CLS[e.work_status])}>{WORK_STATUS[e.work_status].toUpperCase()}</span>;
+    if (k === 'work_status') return <StatusPill status={e.work_status} />;
     if (k === 'seniority') return seniority(e.hire_date, e.resign_date);
     if (k === 'contract_end') return <span className={e.contract_end && e.contract_end < new Date(Date.now() + 30 * 864e5).toISOString().slice(0, 10) ? 'text-red' : ''}>{fmtDate(e.contract_end)}</span>;
     const v = e[k];
     return kind === 'date' ? fmtDate(v) : v || '—';
   };
   return (
-    <div className="page">
-      <div className="page-head"><h1>Danh sách nhân sự</h1>
-        <div className="row gap-sm">
-          <a className="btn" href={api.url('/hrm/employees/export', params)}><Download size={14} /> Trích xuất</a>
-          <button className="btn" onClick={() => setImporting(true)}><Upload size={14} /> Cập nhật hàng loạt</button>
-        </div>
+    <div className="page hr">
+      <HrHero icon={Users2} tone="indigo" title="Danh sách nhân sự" subtitle="Tra cứu hồ sơ, lọc theo phòng ban / văn phòng, trích xuất và cập nhật hàng loạt">
+        <a className="btn" href={api.url('/hrm/employees/export', params)}><Download size={15} /> Trích xuất Excel</a>
+        <button className="btn solid" onClick={() => setImporting(true)}><Upload size={15} /> Cập nhật hàng loạt</button>
+      </HrHero>
+      <div className="hr-seg" role="tablist">
+        {VIEWS.map((v) => (
+          <button key={v.value} role="tab" aria-selected={view === v.value} className={cx(`tone-${v.tone}`, view === v.value && 'active')} onClick={() => setView(v.value)}>
+            <i />{v.label}
+          </button>
+        ))}
       </div>
-      <Tabs value={view} onChange={setView} tabs={VIEWS} />
-      <div className="toolbar">
-        <div className="ww-search"><Search size={14} /><input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Tên, mã NV, điện thoại, email" /></div>
+      <div className="hr-toolbar">
+        <div className="ww-search"><Search size={14} /><input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Tìm theo tên, mã NV, điện thoại, email" /></div>
         <FilterSelect value={dep} onChange={setDep} options={[{ value: '', label: 'Tất cả phòng ban' }, ...departments.map((d) => ({ value: d.id, label: d.name }))]} />
         <FilterSelect value={office} onChange={setOffice} options={[{ value: '', label: 'Mọi văn phòng' }, ...(cat?.offices || []).map((o) => ({ value: o, label: o }))]} />
         <FilterSelect value={type} onChange={setType} options={[{ value: '', label: 'Mọi phân loại' }, ...(cat?.employee_types || []).map((o) => ({ value: o, label: o }))]} />
@@ -129,18 +161,20 @@ export function HrmEmployees() {
       </div>
       <div className="hr-colsets">
         {Object.entries(COLUMN_SETS).map(([k, c]) => <button key={k} className={cx('chip-btn', colSet === k && 'active')} onClick={() => setColSet(k)}>{c.label}</button>)}
-        {items && <small className="muted">{items.length} nhân sự</small>}
       </div>
-      {loading && !items ? <Spinner /> : !items.length ? <Empty title="Không có nhân sự" /> : (
-        <div className="table-wrap"><table className="table nowrap-cells">
-          <thead><tr><th>Mã NV</th><th>Nhân sự</th>{COLUMN_SETS[colSet].cols.map(([k, l]) => <th key={k}>{l}</th>)}</tr></thead>
-          <tbody>{items.map((e) => (
-            <tr key={e.id} className="clickable" onClick={() => navigate(`/hrm/employees/${e.id}`)}>
-              <td className="mono">{e.employee_code || '—'}</td>
-              <td><span className="row gap-sm"><Avatar name={e.name} color={e.color} size={28} /><span>{e.name}<small className="muted block">{e.title}</small></span></span></td>
-              {COLUMN_SETS[colSet].cols.map((c) => <td key={c[0]}>{cell(e, c)}</td>)}
-            </tr>))}</tbody>
-        </table></div>
+      {loading && !items ? <Spinner /> : !items.length ? <div className="hr-table-card"><Empty title="Không có nhân sự phù hợp bộ lọc" /></div> : (
+        <div className="hr-table-card hr-rise">
+          <div className="table-wrap"><table className="table nowrap-cells">
+            <thead><tr><th>Mã NV</th><th>Nhân sự</th>{COLUMN_SETS[colSet].cols.map(([k, l]) => <th key={k}>{l}</th>)}</tr></thead>
+            <tbody>{items.map((e) => (
+              <tr key={e.id} className="clickable hr-row" onClick={() => navigate(`/hrm/employees/${e.id}`)}>
+                <td>{e.employee_code ? <span className="hr-code">{e.employee_code}</span> : <span className="muted">—</span>}</td>
+                <td><span className="hr-name"><Avatar name={e.name} color={e.color} uid={e.id} size={32} /><span><b>{e.name}</b><small className="muted block">{e.title}</small></span></span></td>
+                {COLUMN_SETS[colSet].cols.map((c) => <td key={c[0]}>{cell(e, c)}</td>)}
+              </tr>))}</tbody>
+          </table></div>
+          <div className="hr-table-foot"><span>{items.length} nhân sự</span><span>Bấm vào một dòng để mở hồ sơ</span></div>
+        </div>
       )}
       {importing && <ImportProfilesModal onClose={() => setImporting(false)} onDone={reload} />}
     </div>
@@ -175,8 +209,8 @@ export function HrmEmployee({ selfId }) {
   const [e, reload, loading, error] = useFetch(() => api.get(`/hrm/employees/${id}`), [id]);
   const [f, setF] = useState(null);
   useEffect(() => { if (e) setF(Object.fromEntries([...ALL_FIELDS.map(([k]) => [k, e[k] || '']), ['note', e.note || '']])); }, [e]);
-  if (error) return <div className="page"><div className="alert alert-error">{error.message}</div></div>;
-  if (loading && !e) return <div className="page"><Spinner /></div>;
+  if (error) return <div className="page hr"><div className="alert alert-error">{error.message}</div></div>;
+  if (loading && !e) return <div className="page hr"><Spinner /></div>;
   const edit = meta?.is_manager;
   const self = e.id === user.id;
   const save = async () => {
@@ -186,62 +220,87 @@ export function HrmEmployee({ selfId }) {
     const list = Array.isArray(type) ? type : type?.startsWith('list:') ? cat?.[type.slice(5)] || [] : null;
     return list && [...new Set([...list, ...(cur && !list.includes(cur) ? [cur] : [])])];
   };
+  const dirty = e && f && [...ALL_FIELDS.map(([k]) => k), 'note'].some((k) => String(f[k] ?? '') !== String(e[k] ?? ''));
+  const TABS = [['profile', 'Hồ sơ', IdCard], ['contracts', 'Hợp đồng', FileSignature], ['career', 'Phát triển sự nghiệp', TrendingUp], ['documents', 'Giấy tờ', FileText]];
   return (
-    <div className="page">
-      <div className="page-head">
-        <div className="row gap">
-          {!selfId && <button className="icon-btn" onClick={() => navigate(-1)} aria-label="Quay lại"><ArrowLeft size={18} /></button>}
-          <Avatar name={e.name} color={e.color} size={48} />
-          <div><h1>{e.name}</h1><div className="muted">{e.title} · {e.department_name}{e.manager_name ? ` · Quản lý: ${e.manager_name}` : ''}</div>
-            <div className="row gap-sm wrap mt-xs"><span className={cx('badge', STATUS_CLS[e.work_status])}>{WORK_STATUS[e.work_status].toUpperCase()}</span>
-              {e.hire_date && <small className="muted">Thâm niên {seniority(e.hire_date, e.resign_date)}</small>}</div></div>
+    <div className="page hr">
+      <section className="hr-profile hr-rise">
+        <div className="hr-profile-cover">
+          {!selfId && <button className="icon-btn hr-back" onClick={() => navigate(-1)} aria-label="Quay lại"><ArrowLeft size={18} /></button>}
         </div>
-        {edit && tab === 'profile' && <button className="btn btn-success" onClick={save}>Lưu hồ sơ</button>}
-      </div>
-      {selfId && <p className="muted">Đây là hồ sơ nhân sự của bạn. Liên hệ phòng Hành chính Nhân sự nếu thông tin chưa chính xác.</p>}
-      <Tabs value={tab} onChange={setTab} tabs={[{ value: 'profile', label: 'Hồ sơ' }, { value: 'contracts', label: 'Hợp đồng' },
-        { value: 'career', label: 'Phát triển sự nghiệp' }, { value: 'documents', label: 'Giấy tờ' }]} />
-      {tab === 'profile' && f && (
-        <>
-          <div className="card">
-            <h3 className="card-title">Liên hệ</h3>
-            <div className="form-grid three">
-              <Field label="Email"><input className="input" value={e.email || ''} disabled /></Field>
-              <Field label="Điện thoại"><input className="input" value={e.phone || ''} disabled /></Field>
-              <Field label="Ngày sinh"><input className="input" value={fmtDate(e.birthday)} disabled /></Field>
+        <div className="hr-profile-main">
+          <span className="hr-profile-avatar"><Avatar name={e.name} color={e.color} uid={e.id} size={84} /></span>
+          <div className="hr-profile-info">
+            <div className="row gap-sm wrap"><h1>{e.name}</h1><StatusPill status={e.work_status} /></div>
+            <div className="muted">{e.title || 'Chưa có chức danh'}{e.department_name ? ` · ${e.department_name}` : ''}</div>
+            <div className="hr-facts">
+              {e.employee_code && <span className="hr-fact tone-gray"><IdCard size={13} /> {e.employee_code}</span>}
+              {e.hire_date && <span className="hr-fact tone-aqua"><Clock3 size={13} /> Thâm niên {seniority(e.hire_date, e.resign_date)}</span>}
+              {e.job_position && <span className="hr-fact tone-blue"><Briefcase size={13} /> {e.job_position}</span>}
+              {e.office && <span className="hr-fact tone-violet"><MapPin size={13} /> {e.office}</span>}
+              {e.manager_name && <span className="hr-fact tone-amber"><UserCog size={13} /> Quản lý: {e.manager_name}</span>}
+              {e.contract_end && <span className={cx('hr-fact', daysLeft(e.contract_end) <= 30 ? 'tone-red' : 'tone-green')}><FileSignature size={13} /> HĐ đến {fmtDate(e.contract_end)}</span>}
             </div>
           </div>
-          {FIELD_GROUPS.map(([title, fields]) => (
-            <div key={title} className="card">
-              <h3 className="card-title">{title}</h3>
-              <div className="form-grid three">
-                {fields.map(([k, label, type]) => {
-                  const opts = options(type, f[k]);
-                  return (
-                    <Field key={k} label={label}>
-                      {opts ? (
-                        <select className="input" disabled={!edit} value={f[k]} onChange={(ev) => setF({ ...f, [k]: ev.target.value })}>
-                          <option value="">—</option>
-                          {opts.map((o) => <option key={o} value={o}>{WORK_STATUS[o] || o}</option>)}
-                        </select>
-                      ) : <input className="input" type={type === 'date' ? 'date' : 'text'} disabled={!edit} value={f[k]} onChange={(ev) => setF({ ...f, [k]: ev.target.value })} />}
-                    </Field>
-                  );
-                })}
+          <div className="row gap-sm wrap">
+            <Link className="btn btn-sm" to={`/checkin?user_id=${id}`}><CalendarDays size={14} /> Bảng công</Link>
+            <Link className="btn btn-sm" to={`/timeoff?user_id=${id}`}><CalendarHeart size={14} /> Nghỉ phép</Link>
+            <Link className="btn btn-sm" to={`/account/u/${id}`}>Tài khoản</Link>
+          </div>
+        </div>
+        <nav className="hr-profile-tabs" role="tablist">
+          {TABS.map(([k, l, Icon]) => <button key={k} role="tab" aria-selected={tab === k} className={cx(tab === k && 'active')} onClick={() => setTab(k)}><Icon size={15} /> {l}</button>)}
+        </nav>
+      </section>
+      {selfId && <div className="alert alert-info">Đây là hồ sơ nhân sự của bạn. Liên hệ phòng Hành chính Nhân sự nếu thông tin chưa chính xác.</div>}
+      <div className="hr-tab-panel" key={tab}>
+        {tab === 'profile' && f && (
+          <>
+            <HrCard icon={Phone} tone="aqua" title="Liên hệ">
+              <div className="hr-field-grid">
+                <Field label="Email"><input className="input" value={e.email || ''} disabled /></Field>
+                <Field label="Điện thoại"><input className="input" value={e.phone || ''} disabled /></Field>
+                <Field label="Ngày sinh"><input className="input" value={fmtDate(e.birthday)} disabled /></Field>
               </div>
-            </div>
-          ))}
-          <div className="card"><Field label="Ghi chú"><textarea className="input" rows={3} disabled={!edit} value={f.note} onChange={(ev) => setF({ ...f, note: ev.target.value })} /></Field></div>
-          <div className="row gap wrap">
-            <Link className="btn" to={`/checkin?user_id=${id}`}>Xem bảng công</Link>
-            <Link className="btn" to={`/timeoff?user_id=${id}`}>Xem nghỉ phép</Link>
-            <Link className="btn" to={`/account/u/${id}`}>Xem tài khoản</Link>
-          </div>
-        </>
-      )}
-      {tab === 'contracts' && (edit || self ? <ContractsPanel userId={id} canEdit={edit} /> : <p className="muted">Chỉ nhân viên và quản lý nhân sự xem được hợp đồng.</p>)}
-      {tab === 'career' && <CareersPanel userId={id} canEdit={edit} />}
-      {tab === 'documents' && (edit || self ? <DocumentsPanel userId={id} isHr={edit} selfView={self} /> : <p className="muted">Chỉ nhân viên và quản lý nhân sự xem được giấy tờ.</p>)}
+            </HrCard>
+            {FIELD_GROUPS.map(([title, fields], gi) => {
+              const [Icon, tone] = [[Briefcase, 'blue'], [ShieldCheck, 'violet'], [LogOut, 'gray']][gi] || [FileText, 'blue'];
+              return (
+                <HrCard key={title} icon={Icon} tone={tone} title={title} i={gi + 1}>
+                  <div className="hr-field-grid">
+                    {fields.map(([k, label, type]) => {
+                      const opts = options(type, f[k]);
+                      return (
+                        <Field key={k} label={label}>
+                          {opts ? (
+                            <select className="input" disabled={!edit} value={f[k]} onChange={(ev) => setF({ ...f, [k]: ev.target.value })}>
+                              <option value="">—</option>
+                              {opts.map((o) => <option key={o} value={o}>{WORK_STATUS[o] || o}</option>)}
+                            </select>
+                          ) : <input className="input" type={type === 'date' ? 'date' : 'text'} disabled={!edit} value={f[k]} onChange={(ev) => setF({ ...f, [k]: ev.target.value })} />}
+                        </Field>
+                      );
+                    })}
+                  </div>
+                </HrCard>
+              );
+            })}
+            <HrCard icon={StickyNote} tone="amber" title="Ghi chú" i={4}>
+              <textarea className="input" rows={3} disabled={!edit} value={f.note} onChange={(ev) => setF({ ...f, note: ev.target.value })} placeholder={edit ? 'Ghi chú nội bộ của phòng Nhân sự' : ''} />
+            </HrCard>
+            {edit && dirty && (
+              <div className="hr-savebar hr-rise">
+                <span className="grow small"><b>Có thay đổi chưa lưu</b></span>
+                {dirty && <button className="btn" onClick={() => setF(Object.fromEntries([...ALL_FIELDS.map(([k]) => [k, e[k] || '']), ['note', e.note || '']]))}>Hoàn tác</button>}
+                <button className="btn btn-primary" disabled={!dirty} onClick={save}><Save size={15} /> Lưu hồ sơ</button>
+              </div>
+            )}
+          </>
+        )}
+        {tab === 'contracts' && (edit || self ? <ContractsPanel userId={id} canEdit={edit} /> : <HrCard><div className="hr-empty"><ShieldCheck size={16} /> Chỉ nhân viên và quản lý nhân sự xem được hợp đồng.</div></HrCard>)}
+        {tab === 'career' && <CareersPanel userId={id} canEdit={edit} />}
+        {tab === 'documents' && (edit || self ? <DocumentsPanel userId={id} isHr={edit} selfView={self} /> : <HrCard><div className="hr-empty"><ShieldCheck size={16} /> Chỉ nhân viên và quản lý nhân sự xem được giấy tờ.</div></HrCard>)}
+      </div>
     </div>
   );
 }
@@ -263,31 +322,31 @@ export function HrmSettings() {
   const [cat, setCat] = useState(null);
   useEffect(() => { if (meta) setIds(meta.settings.managers); }, [meta]);
   useEffect(() => { if (catRemote) setCat(catRemote); }, [catRemote]);
-  if (!ids || !cat) return <div className="page"><Spinner /></div>;
-  if (!meta.is_manager) return <div className="page"><div className="alert alert-error">Chỉ quản lý nhân sự mới vào được cài đặt.</div></div>;
+  if (!ids || !cat) return <div className="page hr"><Spinner /></div>;
+  if (!meta.is_manager) return <div className="page hr"><div className="alert alert-error">Chỉ quản lý nhân sự mới vào được cài đặt.</div></div>;
   const setList = (k) => (v) => setCat({ ...cat, [k]: v });
   const saveCat = async () => {
     try { setCat(await api.put('/hrm/catalog', cat)); toast('Đã lưu danh mục'); } catch (e) { toast(e.message, 'error'); }
   };
   return (
-    <div className="page" style={{ maxWidth: 900 }}>
-      <h1>Cài đặt LDL HRM</h1>
+    <div className="page hr">
+      <HrHero icon={Settings2} tone="slate" title="Cài đặt LDL HRM" subtitle="Phân quyền quản lý nhân sự và danh mục dùng chung cho hồ sơ, hợp đồng, giấy tờ" />
       {user.role === 'admin' && (
-        <div className="card mt">
-          <h3 className="card-title">Phân quyền</h3>
+        <HrCard icon={ShieldCheck} tone="red" title="Phân quyền">
           <Field label="Quản lý nhân sự" hint="Được xem / sửa toàn bộ hồ sơ nhân sự, hợp đồng, giấy tờ, bảng công và quỹ phép của công ty (ngoài quản trị viên)">
             <UserPicker users={users} multiple value={ids} onChange={setIds} placeholder="Chọn người" />
           </Field>
-          <button className="btn btn-primary mt" onClick={async () => { await api.put('/hrm/settings', { managers: ids }); toast('Đã lưu'); }}>Lưu phân quyền</button>
-        </div>
+          <button className="btn btn-primary mt" onClick={async () => { await api.put('/hrm/settings', { managers: ids }); toast('Đã lưu'); }}><Save size={15} /> Lưu phân quyền</button>
+        </HrCard>
       )}
-      <div className="card">
-        <div className="row between"><h3 className="card-title">Danh mục</h3><button className="btn btn-primary" onClick={saveCat}>Lưu danh mục</button></div>
+      <HrCard icon={ListChecks} tone="blue" title="Danh mục" i={1} action={<button className="btn btn-primary btn-sm" onClick={saveCat}><Save size={14} /> Lưu danh mục</button>}>
         <p className="muted small">Mỗi dòng một giá trị. Dùng cho lựa chọn trong hồ sơ nhân sự, hợp đồng, giấy tờ và bộ lọc danh sách.</p>
         <div className="form-grid">
           {Object.entries(CATALOG_LABELS).map(([k, [label, hint]]) => <ListEditor key={k} label={label} hint={hint} value={cat[k] || []} onChange={setList(k)} />)}
         </div>
-        <h3 className="card-title mt">Ngày lễ</h3>
+      </HrCard>
+      <HrCard icon={CalendarHeart} tone="pink" title="Ngày lễ" count={(cat.holidays || []).length} i={2}
+        action={<button className="btn btn-primary btn-sm" onClick={saveCat}><Save size={14} /> Lưu</button>}>
         {(cat.holidays || []).map((h, i) => (
           <div key={i} className="row gap-sm mt-xs">
             <input className="input input-sm" type="date" value={h.date} onChange={(e) => setCat({ ...cat, holidays: cat.holidays.map((x, j) => (j === i ? { ...x, date: e.target.value } : x)) })} aria-label="Ngày" />
@@ -295,8 +354,9 @@ export function HrmSettings() {
             <button className="icon-btn sm" aria-label="Xoá" onClick={() => setCat({ ...cat, holidays: cat.holidays.filter((_, j) => j !== i) })}><Trash2 size={14} /></button>
           </div>
         ))}
+        {!(cat.holidays || []).length && <div className="hr-empty"><CalendarHeart size={16} /> Chưa có ngày lễ nào</div>}
         <button className="btn btn-sm mt" onClick={() => setCat({ ...cat, holidays: [...(cat.holidays || []), { date: '', name: '' }] })}><Plus size={14} /> Thêm ngày lễ</button>
-      </div>
+      </HrCard>
     </div>
   );
 }
