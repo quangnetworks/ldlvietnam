@@ -1,10 +1,11 @@
 import { Hono } from 'hono';
 import { all, get, run, batch, logActivity, notify, markSeen, findMentions } from '../db.js';
-import { requireAdmin } from '../auth.js';
+import { requireAdmin, hashPassword } from '../auth.js';
 import {
   badRequest, notFound, forbidden, toInt, idList, paginate, jsonBody, formBody, storeFiles, removeFile, sendFile,
 } from '../util.js';
 import { fireRequestEvent } from './webhooks.js';
+import { parseAutomation, runRequestAutomation, viewAutomation, isHrManager, AUTOMATION_TYPES } from '../automation.js';
 import { publicFileLink } from '../files.js';
 import { readComment, saveCommentFiles, withCommentFiles, commentFileOr404, commentSnippet, purgeCommentFiles, editComment, deleteComment, notifyReply } from '../comments.js';
 
@@ -43,7 +44,9 @@ async function viewable(c) {
   const id = toInt(c.req.param('id'));
   const q = await loadRequest(id);
   const v = visibility(c.get('user'));
-  if (!(await get(`SELECT 1 FROM requests q WHERE q.id = ? AND ${v.sql}`, id, ...v.params))) throw forbidden('Bạn không có quyền xem đề xuất này');
+  if (!(await get(`SELECT 1 FROM requests q WHERE q.id = ? AND ${v.sql}`, id, ...v.params))
+    // quản lý nhân sự xem được đề xuất đã chạy tự động hoá tạo nhân sự (để kiểm tra / chạy lại)
+    && !(q.automation_result && (await isHrManager(c.get('user'))))) throw forbidden('Bạn không có quyền xem đề xuất này');
   return q;
 }
 
@@ -183,8 +186,10 @@ async function fullRequest(id, user) {
   q.data = parseJson(raw.data, {});
   const group = q.group_id ? await get(`SELECT id, name, fields, flow, custom_approvers, sla_hours, guide, manager_approval, final_approver_id,
     print_title, print_code, print_note FROM request_groups WHERE id = ?`, q.group_id) : null;
-  const extra = await get('SELECT submitted_at FROM requests WHERE id = ?', id);
+  const extra = await get('SELECT submitted_at, automation_result FROM requests WHERE id = ?', id);
   q.submitted_at = extra?.submitted_at || null;
+  const auto = group ? await get('SELECT automation FROM request_groups WHERE id = ?', group.id) : null;
+  q.automation = await viewAutomation(extra?.automation_result, auto?.automation, user);
   q.print = group ? { title: group.print_title || null, code: group.print_code || null, note: group.print_note || null } : {};
   q.staged_flow = group ? staged(group) : false;
   q.group_flow = group?.flow || null;
@@ -474,6 +479,8 @@ r.post('/requests/:id/decide', async (c) => {
     await run("UPDATE request_approvers SET status = 'skipped' WHERE request_id = ? AND status = 'pending'", q.id);
     await notify([q.creator_id, ...watchers], { actorId: user.id, app: APP, type: finalStatus,
       title: `${user.name}: ${ACTION_LABEL[action].toLowerCase()} đề xuất "${q.title}"`, link: `/request/${q.id}` });
+    // tự động hoá của nhóm (VD đề xuất tuyển dụng → tạo tài khoản + hồ sơ HRM); lỗi không chặn việc duyệt
+    if (finalStatus === 'approved') await runRequestAutomation(q.id, user.id);
     await fireRequestEvent(c, `request.${finalStatus}`, q.id, { comment });
   } else {
     await run("UPDATE requests SET updated_at = datetime('now') WHERE id = ?", q.id);
@@ -483,6 +490,18 @@ r.post('/requests/:id/decide', async (c) => {
     if (stepNow !== stepBefore) await notifyCurrent(q.id, user, `Đề xuất "${q.title}" đến lượt bạn duyệt`);
     await fireRequestEvent(c, 'request.step_approved', q.id, { comment });
   }
+  return c.json(await fullRequest(q.id, user));
+});
+
+/** Chạy lại tự động hoá (VD lần trước lỗi do trùng email) — quản trị viên / quản lý nhân sự. */
+r.post('/requests/:id/automation/run', async (c) => {
+  const user = c.get('user');
+  const q = await viewable(c);
+  if (!(await isHrManager(user))) throw forbidden('Chỉ quản trị viên hoặc quản lý nhân sự được chạy lại');
+  if (q.status !== 'approved') throw badRequest('Đề xuất chưa được duyệt');
+  const res = await runRequestAutomation(q.id, user.id);
+  if (!res) throw badRequest('Nhóm đề xuất này không có tự động hoá');
+  await logActivity('request', q.id, user.id, 'automation', res.status === 'done' ? `Tự động tạo nhân sự @${res.username}` : `Tự động hoá lỗi: ${res.error}`);
   return c.json(await fullRequest(q.id, user));
 });
 
@@ -655,6 +674,7 @@ async function exportGroup(id) {
     block_modes: parseJson(g.block_modes || 'null', null), sla_hours: g.sla_hours, active: !!g.active, custom_approvers: !!g.custom_approvers,
     manager_approval: !!g.manager_approval, manager_levels: g.manager_levels || 1, notify_manager: !!g.notify_manager, visibility: g.visibility || 'public', guide: g.guide,
     print_title: g.print_title, print_code: g.print_code, print_note: g.print_note, final_approver: final?.username || null,
+    automation: (({ password_hash, ...a }) => (a.type ? a : null))(parseAutomation(g.automation) || {}),
     approvers, followers: followers.map((f) => f.username),
     member_departments: members.filter((m) => m.department).map((m) => m.department), member_users: members.filter((m) => m.username).map((m) => m.username),
   };
@@ -760,9 +780,9 @@ r.post('/request-groups/:id/duplicate', requireAdmin, async (c) => {
   if (!data) throw notFound('Nhóm đề xuất không tồn tại');
   const src = await get('SELECT * FROM request_groups WHERE id = ?', toInt(c.req.param('id')));
   const { lastId } = await run(`INSERT INTO request_groups(name, description, category, fields, flow, custom_approvers, sla_hours, active, created_by, guide,
-      manager_approval, final_approver_id, print_title, print_code, print_note, block_modes, visibility, notify_manager, manager_levels)
+      manager_approval, final_approver_id, print_title, print_code, print_note, block_modes, visibility, notify_manager, manager_levels, automation)
     SELECT ?, description, category, fields, flow, custom_approvers, sla_hours, 0, ?, guide,
-      manager_approval, final_approver_id, print_title, print_code, print_note, block_modes, visibility, notify_manager, manager_levels FROM request_groups WHERE id = ?`,
+      manager_approval, final_approver_id, print_title, print_code, print_note, block_modes, visibility, notify_manager, manager_levels, automation FROM request_groups WHERE id = ?`,
   `${src.name} (Bản sao)`.slice(0, 200), c.get('user').id, src.id);
   await batch([
     ['INSERT INTO request_group_approvers(group_id, user_id, step) SELECT ?, user_id, step FROM request_group_approvers WHERE group_id = ?', [lastId, src.id]],
@@ -792,6 +812,8 @@ r.get('/request-groups/:id', async (c) => {
   g.member_users = members.filter((m) => m.user_id).map((m) => m.user_id);
   g.followers = await all(`SELECT f.user_id, u.name, u.color FROM request_group_followers f JOIN users u ON u.id = f.user_id WHERE f.group_id = ?`, g.id);
   g.files = await groupFiles(g.id);
+  const auto = parseAutomation(g.automation);
+  g.automation = auto ? { type: auto.type, map: auto.map, onboarding: auto.onboarding, has_password: !!auto.password_hash } : null;
   return c.json(g);
 });
 
@@ -870,8 +892,23 @@ function parseGroup(b) {
     notify_manager: b.notify_manager ? 1 : 0, visibility: b.visibility === 'private' ? 'private' : 'public',
     manager_levels: Math.min(5, Math.max(1, toInt(b.manager_levels, 1))),
     member_departments: idList(b.member_departments), member_users: idList(b.member_users),
+    automation: b.automation === undefined ? undefined : b.automation && AUTOMATION_TYPES[b.automation.type] ? b.automation : null,
     ...parseBlocks(b),
   };
+}
+
+/** Cấu hình tự động hoá để lưu: giữ mật khẩu mặc định cũ nếu không nhập mới. */
+async function automationJson(id, a) {
+  if (!a) return null;
+  const cfg = parseAutomation({ ...a, password_hash: null });
+  if (a.password) {
+    if (String(a.password).length < 6) throw badRequest('Mật khẩu mặc định cho tài khoản mới phải có ít nhất 6 ký tự');
+    cfg.password_hash = await hashPassword(String(a.password));
+  } else if (!a.clear_password && id) {
+    cfg.password_hash = parseAutomation((await get('SELECT automation FROM request_groups WHERE id = ?', id))?.automation)?.password_hash || null;
+  }
+  if (cfg.type === 'hire' && !cfg.map.name) throw badRequest('Tự động hoá: chọn trường chứa "Họ tên" nhân sự mới');
+  return JSON.stringify(cfg);
 }
 
 /** Khối người duyệt: [{ mode: 'all' | 'any', users: [id] }] → người duyệt theo khối + chế độ từng khối. */
@@ -889,11 +926,12 @@ function parseBlocks(b) {
   return { block_modes: JSON.stringify(modes), block_approvers: approvers };
 }
 
-/** Luồng duyệt theo chặng + mẫu in. */
-function saveGroupExtras(id, g) {
-  return run(`UPDATE request_groups SET manager_approval = ?, final_approver_id = ?, print_title = ?, print_code = ?, print_note = ?,
+/** Luồng duyệt theo chặng + mẫu in + tự động hoá. */
+async function saveGroupExtras(id, g) {
+  await run(`UPDATE request_groups SET manager_approval = ?, final_approver_id = ?, print_title = ?, print_code = ?, print_note = ?,
     block_modes = ?, visibility = ?, notify_manager = ?, manager_levels = ? WHERE id = ?`,
   g.manager_approval, g.final_approver_id, g.print_title, g.print_code, g.print_note, g.block_modes, g.visibility, g.notify_manager, g.manager_levels, id);
+  if (g.automation !== undefined) await run('UPDATE request_groups SET automation = ? WHERE id = ?', await automationJson(id, g.automation), id);
 }
 
 async function saveGroupRelations(id, g) {

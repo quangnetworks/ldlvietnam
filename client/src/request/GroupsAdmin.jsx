@@ -2,11 +2,11 @@ import { useEffect, useState } from 'react';
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
 import {
   Search, ChevronDown, Pencil, Plus, Trash2, ArrowUp, ArrowDown, User, Users, Copy, BookOpen, Upload, FileText, Workflow, Printer, ListOrdered, Boxes,
-  Lock, Globe, X,
+  Lock, Globe, X, Zap,
 } from 'lucide-react';
 import { api, toFormData } from '../api.js';
 import { useApp, useFetch, useToast } from '../context.jsx';
-import { Field, UserPicker, Spinner, Dropdown, MenuItem, Empty, Avatar, Modal, RichEditor, FileChip, MultiSelect } from '../components/ui.jsx';
+import { Field, UserPicker, Spinner, Dropdown, MenuItem, Empty, Avatar, Modal, RichEditor, FileChip, MultiSelect, foldVi } from '../components/ui.jsx';
 import FileViewer from '../components/FileViewer.jsx';
 import { useDebounced } from '../components/shell.jsx';
 import { fmtDateTime, cx } from '../utils.js';
@@ -169,6 +169,81 @@ export function TemplatesPage() {
           </button>
         ))}
       </div>
+    </div>
+  );
+}
+
+// ---------------- tự động hoá khi đề xuất được duyệt xong
+const HIRE_TARGETS = [
+  ['name', 'Họ tên', ['ho ten', 'ten ung vien', 'ten nhan su']], ['email', 'Email', ['email']], ['phone', 'Điện thoại', ['dien thoai', 'sdt', 'so dien thoai']],
+  ['birthday', 'Ngày sinh', ['ngay sinh']], ['gender', 'Giới tính', ['gioi tinh']], ['title', 'Chức danh', ['chuc danh', 'chuc vu']],
+  ['department', 'Phòng ban', ['phong ban', 'bo phan']], ['manager', 'Quản lý trực tiếp', ['quan ly']], ['job_position', 'Vị trí công việc', ['vi tri']],
+  ['office', 'Văn phòng', ['van phong', 'chi nhanh']], ['employee_type', 'Phân loại nhân sự', ['phan loai', 'loai nhan su', 'hinh thuc']],
+  ['hire_date', 'Ngày nhận việc', ['ngay nhan viec', 'ngay bat dau', 'ngay vao lam']], ['probation_end', 'Ngày hết thử việc', ['het thu viec']],
+  ['note', 'Ghi chú hồ sơ', ['ghi chu', 'ly do']],
+];
+/** Nối sẵn trường biểu mẫu với thông tin nhân sự theo tên trường. */
+function autoMap(fields) {
+  const map = {};
+  for (const [k, , words] of HIRE_TARGETS) {
+    const f = fields.find((x) => x.label && words.some((w) => foldVi(x.label).includes(w)) && !Object.values(map).includes(x.key)
+      && (k !== 'manager' || x.type === 'user'));
+    if (f) map[k] = f.key;
+  }
+  return map;
+}
+
+function AutomationCard({ g, setG }) {
+  const a = g.automation;
+  const setA = (patch) => setG({ ...g, automation: a ? { ...a, ...patch } : null });
+  const fields = g.fields.filter((f) => f.label);
+  const unmapped = a ? fields.filter((f) => !Object.values(a.map || {}).includes(f.key)) : [];
+  return (
+    <div className="card">
+      <h3 className="card-title"><Zap size={16} /> Tự động hoá khi được duyệt</h3>
+      <p className="muted small">Khi đề xuất được duyệt xong, hệ thống tự thực hiện thao tác bên dưới. Nếu lỗi (VD trùng email), việc duyệt vẫn hoàn tất —
+        quản lý nhân sự được báo và chạy lại ngay trên đề xuất.</p>
+      <Field label="Thao tác">
+        <select className="input" value={a?.type || ''} onChange={(e) => setG({ ...g, automation: e.target.value
+          ? { type: e.target.value, onboarding: true, map: autoMap(fields), ...(a && { map: a.map, onboarding: a.onboarding, has_password: a.has_password }) } : null })}>
+          <option value="">Không tự động</option>
+          <option value="hire">Tuyển dụng: tạo tài khoản LDL + hồ sơ HRM cho nhân sự mới</option>
+        </select>
+      </Field>
+      {a?.type === 'hire' && (
+        <>
+          <div className="row between" style={{ marginTop: 8 }}>
+            <strong className="small">Lấy thông tin nhân sự từ trường</strong>
+            <button type="button" className="btn btn-sm" onClick={() => setA({ map: autoMap(fields) })}>Tự nối theo tên trường</button>
+          </div>
+          <div className="form-grid">
+            {HIRE_TARGETS.map(([k, label]) => (
+              <Field key={k} label={label} required={k === 'name'}>
+                <select className="input" value={a.map?.[k] || ''} onChange={(e) => setA({ map: { ...a.map, [k]: e.target.value || undefined } })}>
+                  <option value="">— Không lấy —</option>
+                  {fields.filter((f) => k !== 'manager' || f.type === 'user').map((f) => <option key={f.key} value={f.key}>{f.label}</option>)}
+                </select>
+              </Field>
+            ))}
+          </div>
+          {!a.map?.name && <small className="text-red">Chọn trường chứa họ tên nhân sự mới.</small>}
+          {unmapped.length > 0 && <p className="muted small">Trường không nối ({unmapped.map((f) => f.label).join(', ')}) vẫn lưu trên đề xuất để phòng Nhân sự xem lại.</p>}
+          <div className="form-grid">
+            <Field label="Mật khẩu mặc định cho tài khoản mới"
+              hint={a.has_password ? 'Đã đặt — để trống để giữ nguyên' : 'Để trống: tạo mật khẩu ngẫu nhiên, chỉ quản lý nhân sự xem được trên đề xuất'}>
+              <input className="input" type="password" autoComplete="new-password" value={a.password || ''} onChange={(e) => setA({ password: e.target.value })} placeholder="Ít nhất 6 ký tự" />
+            </Field>
+            {a.has_password && (
+              <Field label=" ">
+                <label className="check"><input type="checkbox" checked={!!a.clear_password} onChange={(e) => setA({ clear_password: e.target.checked })} /> Bỏ mật khẩu mặc định (dùng mật khẩu ngẫu nhiên)</label>
+              </Field>
+            )}
+          </div>
+          <label className="check"><input type="checkbox" checked={a.onboarding !== false} onChange={(e) => setA({ onboarding: e.target.checked })} /> Mở thủ tục nhận việc (các bước theo thiết lập LDL Asset)</label>
+          <p className="muted small">Tài khoản mới: tên đăng nhập = tên + họ không dấu (VD Nguyễn Văn An → <code>annguyen</code>), vai trò Thành viên, mở mọi ứng dụng đang bật.
+            Quản lý trực tiếp để trống → người đề xuất. Hồ sơ HRM ở trạng thái <b>Thử việc</b>, phòng Nhân sự nhận thông báo để bổ sung mã NV, CCCD, hợp đồng…</p>
+        </>
+      )}
     </div>
   );
 }
@@ -393,6 +468,7 @@ export function GroupEditor() {
               <div className="span-2"><Field label="Ghi chú / cam kết cuối phiếu"><textarea className="input" rows={2} value={g.print_note || ''} onChange={set('print_note')} placeholder="VD: Tôi cam kết hoàn ứng trong vòng 07 ngày kể từ ngày hoàn thành công việc." /></Field></div>
             </div>
           </div>
+          <AutomationCard g={g} setG={setG} />
           <div className="card">
             <h3 className="card-title">Xem trước biểu mẫu</h3>
             <div className="form-grid one">

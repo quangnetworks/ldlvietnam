@@ -492,6 +492,11 @@ r.get('/asset/people/:uid', async (c) => {
 // ================================================================ thủ tục nhận việc / nghỉ việc
 const stepKey = (label, i) => (label.startsWith('[assets]') ? 'assets' : `s${i + 1}`);
 const stepLabel = (label) => label.replace(/^\[assets\]\s*/, '');
+/** Danh sách bước (chưa làm) của thủ tục nhận việc / nghỉ việc theo thiết lập hiện tại. */
+export async function procedureSteps(kind) {
+  const st = await settings();
+  return (kind === 'onboard' ? st.onboard_steps : st.offboard_steps).map((label, i) => ({ key: stepKey(label, i), label: stepLabel(label), done: false }));
+}
 async function fullProcedure(id) {
   const p = await get(`SELECT p.*, u.name, u.color, u.title, u.active, d.name AS department_name, cb.name AS created_by_name
     FROM hr_procedures p JOIN users u ON u.id = p.user_id LEFT JOIN departments d ON d.id = u.department_id LEFT JOIN users cb ON cb.id = p.created_by
@@ -541,8 +546,7 @@ r.post('/asset/procedures', async (c) => {
   if (await get("SELECT 1 FROM hr_procedures WHERE user_id = ? AND kind = ? AND status = 'open'", u.id, b.kind)) {
     throw badRequest(`${u.name} đang có thủ tục ${b.kind === 'onboard' ? 'nhận việc' : 'nghỉ việc'} chưa hoàn tất`);
   }
-  const st = await settings();
-  const steps = (b.kind === 'onboard' ? st.onboard_steps : st.offboard_steps).map((label, i) => ({ key: stepKey(label, i), label: stepLabel(label), done: false }));
+  const steps = await procedureSteps(b.kind);
   const { lastId } = await run(`INSERT INTO hr_procedures(kind, user_id, effective_date, steps, resign_reason, note, created_by) VALUES (?,?,?,?,?,?,?)`,
     b.kind, u.id, b.effective_date, JSON.stringify(steps), String(b.resign_reason || '').trim().slice(0, 200) || null,
     String(b.note || '').trim().slice(0, 2000) || null, c.get('user').id);

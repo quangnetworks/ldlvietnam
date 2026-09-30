@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { ArrowLeft, Star, Eye, Pencil, Send, Ban, Trash2, CheckCircle2, XCircle, Undo2, Clock, Paperclip, Link2, History, Printer } from 'lucide-react';
+import { ArrowLeft, Star, Eye, Pencil, Send, Ban, Trash2, CheckCircle2, XCircle, Undo2, Clock, Paperclip, Link2, History, Printer, Zap, UserPlus, RotateCw, Copy } from 'lucide-react';
 import { api, toFormData } from '../api.js';
 import { useFetch, useToast } from '../context.jsx';
 import { Avatar, Spinner, FileChip, Modal, Field, Tabs } from '../components/ui.jsx';
@@ -17,6 +17,38 @@ const DECIDE = {
   reject: { title: 'Từ chối đề xuất', btn: 'Từ chối', cls: 'btn-danger', need: true },
   return: { title: 'Trả lại đề xuất', btn: 'Trả lại', cls: 'btn-primary', need: true },
 };
+
+/** Kết quả tự động hoá khi đề xuất được duyệt (VD tuyển dụng → tài khoản + hồ sơ HRM). */
+function AutomationCard({ q, act, toast }) {
+  const { label, result: r, can_run: canRun } = q.automation;
+  return (
+    <div className="card rq-auto">
+      <h3 className="card-title"><Zap size={16} /> Tự động hoá</h3>
+      <p className="small muted">{label}</p>
+      {!r && <p className="small">{q.status === 'approved' ? 'Chưa chạy.' : 'Sẽ chạy khi đề xuất được duyệt xong.'}</p>}
+      {r?.status === 'done' && (
+        <>
+          <p className="small text-green"><UserPlus size={14} /> Đã tạo nhân sự <b>{r.name}</b> — tài khoản <code>@{r.username}</code>{!r.user_exists && ' (đã bị xoá)'}</p>
+          {r.temp_password && (
+            <p className="small">Mật khẩu tạm: <code>{r.temp_password}</code>{' '}
+              <button className="icon-btn" title="Sao chép" onClick={() => { navigator.clipboard?.writeText(r.temp_password); toast('Đã sao chép mật khẩu'); }}><Copy size={13} /></button>
+              <small className="muted block">Chỉ quản lý nhân sự thấy — gửi cho nhân sự mới và nhắc đổi mật khẩu khi đăng nhập.</small></p>
+          )}
+          {r.procedure_id && <p className="small muted">Đã mở thủ tục nhận việc.</p>}
+          {r.warnings?.map((w) => <p key={w} className="small text-orange">• {w}</p>)}
+          {canRun && r.user_exists && <Link className="btn btn-sm btn-primary" to={`/hrm/employees/${r.user_id}`}>Mở hồ sơ HRM để cập nhật</Link>}
+        </>
+      )}
+      {r?.status === 'error' && (
+        <>
+          <p className="small text-red">Chưa tạo được: {r.error}</p>
+          {canRun && <button className="btn btn-sm" onClick={() => act(() => api.post(`/requests/${q.id}/automation/run`), 'Đã chạy lại tự động hoá')}><RotateCw size={14} /> Chạy lại</button>}
+        </>
+      )}
+      {r?.at && <small className="muted block">{fmtDateTime(r.at)}</small>}
+    </div>
+  );
+}
 
 export default function RequestDetail() {
   const { id } = useParams();
@@ -120,6 +152,7 @@ export default function RequestDetail() {
             {q.deadline_at && q.status === 'pending' && <p className={cx('small', q.is_overdue ? 'text-red' : 'muted')}>Hạn xử lý: {fmtDateTime(q.deadline_at)}</p>}
             {q.completed_at && <p className="small muted">Hoàn tất: {fmtDateTime(q.completed_at)}</p>}
           </div>
+          {q.automation && <AutomationCard q={q} act={act} toast={toast} />}
           <GroupGuide groupId={q.group_id} guide={q.group_guide} files={q.group_files} title="Biểu mẫu & quy trình" />
           <div className="card">
             <h3 className="card-title">Người theo dõi</h3>

@@ -1270,3 +1270,79 @@ test('asset: offboarding cannot complete until every asset is recovered; then th
   await hr.post('/asset/handovers', { kind: 'issue', employee_id: full.user_id, asset_ids: free.map((a) => a.id), reason: 'onboard', procedure_id: nv.id, auto_confirm: true });
   assert.equal((await hr.get(`/asset/procedures/${nv.id}`)).data.steps.find((s) => s.key === 'assets').done, true);
 });
+
+test('recruitment request: approval creates account + HRM profile + onboarding, idempotent, retry after error', async () => {
+  const admin = await login('admin');
+  const users = (await admin.get('/users')).data;
+  const id = (u) => users.find((x) => x.username === u).id;
+  const group = (await admin.get('/request-groups')).data.find((g) => g.name === 'Đề xuất tuyển dụng');
+  assert.ok(group, 'template group exists');
+  const full = (await admin.get(`/request-groups/${group.id}`)).data;
+  assert.equal(full.automation.type, 'hire');
+  assert.equal(full.automation.map.name, 'name');
+  // admin sets a default password → stored hashed, never returned
+  await admin.put(`/request-groups/${group.id}`, { ...full, approvers: [], followers: [], manager_approval: false,
+    automation: { ...full.automation, password: 'chaomung1' } });
+  const saved = (await admin.get(`/request-groups/${group.id}`)).data;
+  assert.equal(saved.automation.has_password, true);
+  assert.equal(saved.automation.password_hash, undefined);
+
+  const demo = await login('phuonglinh');
+  const approveAll = async (qid) => {
+    for (let k = 0; k < 6; k++) {
+      const q = (await admin.get(`/requests/${qid}`)).data;
+      if (q.status !== 'pending') return q;
+      const step = Math.min(...q.approvers.filter((a) => a.status === 'pending').map((a) => a.step));
+      const who = q.approvers.find((a) => a.status === 'pending' && a.step === step);
+      const u = users.find((x) => x.id === who.user_id);
+      await (await login(u.username)).post(`/requests/${qid}/decide`, { action: 'approve' });
+    }
+    return (await admin.get(`/requests/${qid}`)).data;
+  };
+  const submit = async (data) => {
+    const fd = new FormData();
+    fd.append('group_id', group.id);
+    fd.append('data', JSON.stringify(data));
+    fd.append('approvers', String(id('truongkd')));
+    return (await demo.post('/requests', fd)).data;
+  };
+  const q = await submit({ name: 'Nguyễn Văn Ấn', email: 'an.nguyen.moi@ldl.vn', phone: '0901234567', gender: 'Nam', title: 'Nhân viên kinh doanh',
+    department: 'Phòng sales', manager: id('truongkd'), office: 'Đội sales', employee_type: 'Toàn thời gian', hire_date: '2026-10-15',
+    probation_end: '2026-12-15', reason: 'Bổ sung địa bàn Hà Nam' });
+  assert.ok(q.id, JSON.stringify(q));
+  const done = await approveAll(q.id);
+  assert.equal(done.status, 'approved');
+  const res = done.automation.result;
+  assert.equal(res.status, 'done', JSON.stringify(res));
+  assert.equal(res.username, 'annguyen');
+  assert.equal(res.temp_password, null);
+  // new person can log in with the default password and has an HRM profile in probation
+  const newbie = await raw('/auth/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username: 'annguyen', password: 'chaomung1' }) });
+  assert.equal(newbie.status, 200);
+  const emp = (await admin.get(`/hrm/employees/${res.user_id}`)).data;
+  const flat = { ...emp, ...(emp.profile || {}), ...(emp.user || {}) };
+  assert.equal(flat.work_status, 'probation');
+  assert.equal(flat.hire_date, '2026-10-15');
+  assert.equal(flat.office, 'Đội sales');
+  assert.equal(flat.manager_id, id('truongkd'));
+  const procs = (await admin.get('/asset/procedures?kind=onboard')).data;
+  assert.ok(procs.some((p) => p.user_id === res.user_id && p.status === 'open'));
+  // idempotent: running again does not create a second account
+  await admin.post(`/requests/${q.id}/automation/run`);
+  assert.equal((await admin.get('/users')).data.filter((u) => u.email === 'an.nguyen.moi@ldl.vn').length, 1);
+  // requester (not HR) never sees temp passwords; second person with same name gets a suffix
+  const q2 = await submit({ name: 'Nguyễn Thị An', email: 'an.nguyen.moi@ldl.vn', title: 'Kế toán', department: 'Phòng sales', hire_date: '2026-10-20' });
+  const d2 = await approveAll(q2.id);
+  assert.equal(d2.status, 'approved');
+  assert.equal(d2.automation.result.status, 'error');
+  assert.match(d2.automation.result.error, /đã thuộc tài khoản @annguyen/);
+  assert.equal((await demo.post(`/requests/${q2.id}/automation/run`)).status, 403);
+  // HR fixes by clearing the default password → random temp password shown to HR only
+  await admin.put(`/request-groups/${group.id}`, { ...saved, approvers: [], followers: [], automation: { ...saved.automation, clear_password: true } });
+  await admin.put('/users/' + res.user_id, { email: 'an.nguyen@ldl.vn' });
+  const retry = (await admin.post(`/requests/${q2.id}/automation/run`)).data;
+  assert.equal(retry.automation.result.status, 'done', JSON.stringify(retry.automation));
+  assert.equal(retry.automation.result.username, 'annguyen2');
+  assert.match(retry.automation.result.temp_password, /^\w{10}$/);
+  assert.equal((await demo.get(`/requests/${q2.id}`)).data.automation.result.temp_password, undefined);
+});
