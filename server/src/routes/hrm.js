@@ -1,13 +1,14 @@
 /** HRM+ modules: LDL HRM (hồ sơ nhân sự), LDL Checkin (chấm công), LDL Timeoff (nghỉ phép). */
 import { Hono } from 'hono';
 import { all, get, run, getSetting, setSetting } from '../db.js';
-import { requireAdmin } from '../auth.js';
+import { requireAdmin, underSql, isSubordinate } from '../auth.js';
 import { badRequest, notFound, forbidden, toInt, idList, jsonBody, formBody, storeFiles, removeFile, sendFile } from '../util.js';
 import { publicFileLink } from '../files.js';
 import { audit } from '../platform.js';
 import { clientIp, ipMatches, validIpRule } from '../security.js';
 
 const r = new Hono();
+const SALES_ORDER = ['NSM', 'RSM', 'ASM', 'SS', 'PG', 'SREP', 'SREP_KA'];
 
 // ---------------------------------------------------------------- time (Asia/Ho_Chi_Minh, UTC+7, no DST)
 const VN_OFFSET = 7 * 3600 * 1000;
@@ -41,7 +42,7 @@ async function requireHr(c) {
 /** Admin / HR manager see everyone; a line manager sees direct reports; everyone sees themselves. */
 async function canSeeUser(viewer, userId) {
   if (viewer.id === userId || (await isHrManager(viewer))) return true;
-  return !!(await get('SELECT 1 FROM users WHERE id = ? AND manager_id = ?', userId, viewer.id));
+  return isSubordinate(viewer.id, userId);
 }
 
 // ================================================================ HRM
@@ -52,9 +53,11 @@ const DATE_FIELDS = ['id_issue_date', 'hire_date', 'probation_end', 'contract_en
 const WORK_STATUS = ['working', 'probation', 'leave', 'resigned'];
 
 const EMP_SELECT = `SELECT u.id, u.name, u.username, u.email, u.phone, u.title, u.color, u.birthday, u.address, u.department_id, u.manager_id,
-    u.active, d.name AS department_name, m.name AS manager_name, h.*,
+    u.active, u.sales_role, d.name AS department_name, m.name AS manager_name, h.*,
     (SELECT c.to_value || ' (' || c.effective_date || ')' FROM hr_careers c WHERE c.user_id = u.id AND c.type = 'promotion'
-      ORDER BY c.effective_date DESC, c.id DESC LIMIT 1) AS last_promotion
+      ORDER BY c.effective_date DESC, c.id DESC LIMIT 1) AS last_promotion,
+    (SELECT GROUP_CONCAT(t.name || CASE WHEN tm.is_concurrent THEN ' (KN)' ELSE '' END, ', ') FROM territory_members tm
+      JOIN territories t ON t.id = tm.territory_id WHERE tm.user_id = u.id) AS territory_names
   FROM users u LEFT JOIN departments d ON d.id = u.department_id LEFT JOIN users m ON m.id = u.manager_id
   LEFT JOIN hr_profiles h ON h.user_id = u.id`;
 const empView = (e) => ({ ...e, id: e.id ?? e.user_id, work_status: e.work_status || 'working' });
@@ -81,11 +84,19 @@ function employeeFilter(user, q) {
   const params = [];
   const view = q.view || q.status || 'working_all';
   if (view === 'all') { /* mọi nhân sự */ } else if (view === 'resigned') where.push("(h.work_status = 'resigned' OR u.active = 0)");
-  else if (view === 'mine') { where.push("u.manager_id = ? AND u.active = 1 AND IFNULL(h.work_status, 'working') <> 'resigned'"); params.push(user.id); }
+  else if (view === 'mine') { where.push(`${underSql('u.id')} AND u.active = 1 AND IFNULL(h.work_status, 'working') <> 'resigned'`); params.push(user.id); }
   else if (['working', 'probation', 'leave'].includes(view)) { where.push("IFNULL(h.work_status, 'working') = ? AND u.active = 1"); params.push(view); }
   else where.push("u.active = 1 AND IFNULL(h.work_status, 'working') <> 'resigned'");
   if (toInt(q.department_id)) { where.push('u.department_id = ?'); params.push(toInt(q.department_id)); }
   for (const k of ['office', 'employee_type', 'job_position', 'gender']) if (q[k]) { where.push(`h.${k} = ?`); params.push(q[k]); }
+  if (q.sales_role === 'none') where.push('u.sales_role IS NULL');
+  else if (q.sales_role) { where.push('u.sales_role = ?'); params.push(q.sales_role); }
+  // địa bàn: người phụ trách địa bàn đó và mọi địa bàn con (VD chọn "Miền Bắc" → RSM, ASM, SS, SREP… của miền)
+  if (toInt(q.territory_id)) {
+    where.push(`u.id IN (SELECT tm.user_id FROM territory_members tm WHERE tm.territory_id IN (WITH RECURSIVE sub(id) AS (SELECT ?
+      UNION ALL SELECT x.id FROM territories x JOIN sub ON x.parent_id = sub.id) SELECT id FROM sub))`);
+    params.push(toInt(q.territory_id));
+  }
   if (q.q) { const like = `%${q.q}%`; where.push("(u.name LIKE ? OR IFNULL(h.employee_code,'') LIKE ? OR IFNULL(u.phone,'') LIKE ? OR IFNULL(u.email,'') LIKE ?)"); params.push(like, like, like, like); }
   if (q.contract === 'expiring') { where.push("h.contract_end IS NOT NULL AND h.contract_end BETWEEN date('now') AND date('now', '+30 day')"); }
   return { where, params };
@@ -94,7 +105,7 @@ function employeeFilter(user, q) {
 const csvCell = (v) => { const t = v == null ? '' : String(v); return /[",\n;]/.test(t) ? `"${t.replace(/"/g, '""')}"` : t; };
 const EXPORT_COLS = [
   ['employee_code', 'Mã NV'], ['name', 'Họ tên'], ['username', 'Tài khoản'], ['work_status', 'Trạng thái'], ['title', 'Chức danh'],
-  ['department_name', 'Phòng ban'], ['manager_name', 'Quản lý trực tiếp'], ['job_position', 'Vị trí công việc'], ['employee_type', 'Phân loại nhân sự'],
+  ['department_name', 'Phòng ban'], ['manager_name', 'Quản lý trực tiếp'], ['sales_role', 'Vị trí kinh doanh'], ['territory_names', 'Địa bàn phụ trách'], ['job_position', 'Vị trí công việc'], ['employee_type', 'Phân loại nhân sự'],
   ['office', 'Văn phòng'], ['gender', 'Giới tính'], ['birthday', 'Ngày sinh'], ['phone', 'Điện thoại'], ['email', 'Email'],
   ['hire_date', 'Ngày bắt đầu'], ['official_date', 'Ngày chính thức'], ['contract_type', 'Hợp đồng'], ['contract_end', 'Hết hạn HĐ'],
   ['id_number', 'Số CCCD'], ['insurance_number', 'Số sổ BHXH'], ['tax_code', 'MST TNCN'], ['bank_account', 'Tài khoản ngân hàng'],
@@ -454,13 +465,20 @@ r.get('/hrm/report', async (c) => {
   const group = (col, label) => all(`SELECT IFNULL(NULLIF(${col}, ''), '${label}') AS name, COUNT(*) AS c ${base} WHERE ${active} GROUP BY 1 ORDER BY c DESC`);
   const today = vnDate();
   const year = today.slice(0, 4);
-  const [byType, byOffice, byGender, byContract, byPosition, people, hires, resigns, careers] = await Promise.all([
+  const [byType, byOffice, byGender, byContract, byPosition, people, hires, resigns, careers, bySales, byRegion] = await Promise.all([
     group('h.employee_type', 'Chưa phân loại'), group('h.office', 'Chưa có văn phòng'), group('h.gender', 'Chưa rõ'),
     group('h.contract_type', 'Chưa có hợp đồng'), group('h.job_position', 'Chưa có vị trí'),
     all(`SELECT u.birthday, h.hire_date ${base} WHERE ${active}`),
     all(`SELECT substr(h.hire_date, 1, 7) AS month, COUNT(*) AS c ${base} WHERE u.role <> 'guest' AND h.hire_date >= date('now', 'start of month', '-11 month') GROUP BY 1`),
     all(`SELECT substr(h.resign_date, 1, 7) AS month, COUNT(*) AS c ${base} WHERE u.role <> 'guest' AND h.resign_date >= date('now', 'start of month', '-11 month') GROUP BY 1`),
     all("SELECT type, COUNT(*) AS c FROM hr_careers WHERE substr(effective_date, 1, 4) = ? GROUP BY type", year),
+    all(`SELECT u.sales_role AS role, COUNT(*) AS c ${base} WHERE ${active} AND u.sales_role IS NOT NULL GROUP BY 1`),
+    // nhân sự kinh doanh theo miền (tính cả người phụ trách khu vực, tỉnh thuộc miền; mỗi người một lần)
+    all(`WITH RECURSIVE tree(id, region_id) AS (SELECT id, id FROM territories WHERE level = 'region'
+        UNION ALL SELECT x.id, tree.region_id FROM territories x JOIN tree ON x.parent_id = tree.id)
+      SELECT r.name, COUNT(DISTINCT tm.user_id) AS c FROM territories r JOIN tree ON tree.region_id = r.id
+        JOIN territory_members tm ON tm.territory_id = tree.id JOIN users u ON u.id = tm.user_id LEFT JOIN hr_profiles h ON h.user_id = u.id
+      WHERE ${active} GROUP BY r.id ORDER BY r.sort`),
   ]);
   const years = (from) => (from ? (Date.parse(today) - Date.parse(from)) / (365.25 * 864e5) : null);
   const bucket = (list, edges) => {
@@ -481,6 +499,8 @@ r.get('/hrm/report', async (c) => {
   const resigned12 = months.reduce((s, m) => s + m.resigns, 0);
   return c.json({
     total, year,
+    by_sales: SALES_ORDER.map((k) => ({ name: k.replace('_', ' '), c: bySales.find((x) => x.role === k)?.c || 0 })).filter((x) => x.c),
+    by_region: byRegion,
     by_type: byType, by_office: byOffice, by_gender: byGender, by_contract: byContract, by_position: byPosition,
     seniority: bucket(seniority, [['Dưới 1 năm', 0, 1], ['1 – 3 năm', 1, 3], ['3 – 5 năm', 3, 5], ['5 – 10 năm', 5, 10], ['Trên 10 năm', 10, 99]]),
     ages: bucket(ages, [['Dưới 25', 0, 25], ['25 – 34', 25, 35], ['35 – 44', 35, 45], ['45 – 54', 45, 55], ['Từ 55', 55, 120]]),
@@ -681,7 +701,7 @@ r.get('/checkin/team', async (c) => {
   const date = /^\d{4}-\d{2}-\d{2}$/.test(c.req.query('date') || '') ? c.req.query('date') : vnDate();
   const hr = await isHrManager(user);
   const users = await all(`SELECT u.id, u.name, u.color, u.title, d.name AS department_name FROM users u LEFT JOIN departments d ON d.id = u.department_id
-    WHERE u.active = 1 AND u.role <> 'guest' ${hr ? '' : 'AND u.manager_id = ?'} ORDER BY u.name COLLATE NOCASE`, ...(hr ? [] : [user.id]));
+    WHERE u.active = 1 AND u.role <> 'guest' ${hr ? '' : `AND ${underSql('u.id')}`} ORDER BY u.name COLLATE NOCASE`, ...(hr ? [] : [user.id]));
   const recs = await all('SELECT * FROM checkins WHERE date = ?', date);
   const leaves = await leaveRecords(await timeoffSettings(), { statuses: ['approved'], from: date, to: date });
   const byUser = Object.fromEntries(recs.map((x) => [x.user_id, evaluate(x, st)]));

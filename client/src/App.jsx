@@ -38,6 +38,7 @@ import { WebhooksPage } from './request/Webhooks.jsx';
 import ModuleShell from './components/ModuleShell.jsx';
 import { HrmHome, HrmEmployees, HrmEmployee, HrmSettings } from './hrm/Hrm.jsx';
 import { HrmContracts, HrmCareers, HrmReports } from './hrm/HrmRecords.jsx';
+import { SalesOrg } from './hrm/SalesOrg.jsx';
 import { MyAssets, AssetOverview, AssetList, AssetDetail, AssetPeople, AssetPerson } from './asset/AssetPages.jsx';
 import { HandoverList, HandoverDetail, ProcedureList, ProcedureDetail, AssetSettings } from './asset/AssetFlows.jsx';
 import { CheckinHome, CheckinTeam, CheckinSettings } from './hrm/Checkin.jsx';
@@ -168,6 +169,7 @@ export default function App() {
         <Route path="contracts" element={<HrmContracts />} />
         <Route path="careers" element={<HrmCareers />} />
         <Route path="reports" element={<HrmReports />} />
+        <Route path="sales" element={<SalesOrg />} />
         <Route path="settings" element={<HrmSettings />} />
       </Route>
       <Route path="/asset/handovers/:id" element={<RequireApp app="asset"><HandoverDetail /></RequireApp>} />

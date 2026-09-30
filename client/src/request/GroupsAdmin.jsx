@@ -194,7 +194,7 @@ export function GroupEditor() {
       const t = location.state?.template;
       setG({ name: t?.name || '', description: '', category: t?.category || 'Chung', flow: t?.flow || 'sequential', sla_hours: t?.sla_hours || '',
         custom_approvers: true, active: true, fields: (t?.fields || [{ label: 'Nội dung', type: 'textarea', required: true }]).map((f, i) => ({ key: `f${i + 1}`, ...f })),
-        approvers: [], followers: [], blocks: [{ mode: 'all', users: [] }], visibility: 'public', member_departments: [], member_users: [], notify_manager: false });
+        approvers: [], followers: [], blocks: [{ mode: 'all', users: [] }], visibility: 'public', member_departments: [], member_users: [], notify_manager: false, manager_levels: 1 });
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
@@ -311,6 +311,15 @@ export function GroupEditor() {
                 <div className="grow">
                   <label className="check"><input type="checkbox" checked={!!g.manager_approval} onChange={set('manager_approval')} /> <b>Quản lý trực tiếp duyệt trước</b></label>
                   <small className="muted block">Nhân viên gửi đề xuất → quản lý trực tiếp (hoặc trưởng phòng nếu chưa có quản lý) duyệt trước khi chuyển các phòng ban. Người không có cấp trên bỏ qua bước này.</small>
+                  {g.manager_approval && (
+                    <label className="row gap-sm mt-xs small">
+                      <span>Số cấp quản lý duyệt</span>
+                      <select className="input input-sm" style={{ width: 'auto' }} value={g.manager_levels || 1} onChange={(e) => setG({ ...g, manager_levels: Number(e.target.value) })}>
+                        {[1, 2, 3, 4, 5].map((n) => <option key={n} value={n}>{n === 1 ? '1 cấp (quản lý trực tiếp)' : `${n} cấp`}</option>)}
+                      </select>
+                      <span className="muted">VD đề xuất của SREP: 3 cấp = SS → ASM → RSM</span>
+                    </label>
+                  )}
                 </div>
               </div>
               <div className="stage-setup-row">

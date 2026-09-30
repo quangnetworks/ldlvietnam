@@ -2328,3 +2328,51 @@ td > span + .hr-pill, td > .hr-pill:not(:first-child) { margin-left: 6px; }
 .as-card-foot { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
 .as-card b.ellipsis { display: block; }
 .as-subhead { display: flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 600; color: var(--text-2); margin: 18px 0 10px; padding-top: 14px; border-top: 1px solid var(--line); }
+
+/* ================= LDL HRM → Cơ cấu kinh doanh (so-*) ================= */
+.so-role { display: inline-flex; align-items: center; font-size: 10.5px; font-weight: 700; letter-spacing: .03em; padding: 2px 7px; border-radius: 6px;
+  background: var(--tone-soft); color: color-mix(in srgb, var(--tone) 82%, var(--text)); white-space: nowrap; line-height: 1.5; }
+.so-mode { display: inline-flex; padding: 3px; border-radius: 10px; background: var(--bg-3); gap: 2px; }
+.so-mode button { display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border-radius: 8px; font-size: 13px; color: var(--text-2); transition: background .15s, color .15s; }
+.so-mode button.active { background: var(--bg); color: var(--text); box-shadow: 0 1px 3px rgba(0, 0, 0, .1); font-weight: 600; }
+.so-tree { display: flex; flex-direction: column; gap: 16px; position: relative; }
+.so-national { align-self: center; min-width: min(420px, 100%); max-width: 100%; background: var(--bg); border: 1px solid var(--line); border-radius: 16px; padding: 14px 16px;
+  box-shadow: var(--hr-card-shadow); position: relative; border-top: 4px solid var(--hr-amber); }
+.so-national::after { content: ''; position: absolute; left: 50%; bottom: -17px; width: 2px; height: 16px; background: var(--line); }
+.so-node-head { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+.so-level { display: inline-flex; align-items: center; gap: 6px; font-weight: 700; font-size: 14px; color: color-mix(in srgb, var(--tone) 80%, var(--text)); }
+.so-regions { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(460px, 100%), 1fr)); gap: 16px; align-items: start; }
+.so-region .hr-card-body > .so-members, .so-region .hr-card-body > .so-vacant { margin-bottom: 10px; }
+.so-areas { display: flex; flex-direction: column; gap: 8px; }
+.so-area { border: 1px solid var(--line); border-radius: 12px; padding: 8px 10px; background: var(--bg-2, var(--bg)); transition: border-color .15s, box-shadow .15s; }
+.so-area.open { border-color: color-mix(in srgb, var(--hr-violet) 30%, var(--line)); box-shadow: 0 0 0 3px var(--hr-violet-soft); }
+.so-area-head { display: flex; align-items: center; gap: 6px; }
+.so-toggle { display: inline-flex; align-items: center; gap: 6px; flex: 1; min-width: 0; text-align: left; padding: 2px 0; font-size: 14px; }
+.so-toggle small { font-size: 11px; }
+.so-count { margin-left: auto; font-size: 11.5px; color: var(--muted); background: var(--bg-3); padding: 1px 8px; border-radius: 999px; white-space: nowrap; }
+.so-area > .so-members, .so-area > .so-vacant { margin: 6px 0 0 21px; }
+.so-provinces { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(200px, 100%), 1fr)); gap: 8px; margin: 10px 0 2px 21px; animation: hr-fade .25s var(--ease) both; }
+.so-province { border: 1px dashed var(--line); border-radius: 10px; padding: 7px 9px; background: var(--bg); min-width: 0; }
+.so-province-head { display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--text-2); margin-bottom: 6px; }
+.so-province-head b { color: var(--text); font-weight: 600; flex: 1; min-width: 0; }
+.so-province-head .so-tools { margin-left: auto; }
+.so-members { display: flex; flex-wrap: wrap; gap: 6px; }
+.so-member { display: inline-flex; align-items: center; gap: 6px; max-width: 100%; padding: 3px 6px 3px 3px; border-radius: 999px; background: var(--bg-3); border: 1px solid transparent;
+  transition: border-color .15s, background .15s, transform .15s; }
+.so-member:hover { border-color: var(--line); background: var(--bg); transform: translateY(-1px); }
+.so-member.concurrent { background: transparent; border: 1px dashed var(--line); }
+.so-member.hit { border-color: var(--hr-amber); box-shadow: 0 0 0 3px var(--hr-amber-soft); }
+.so-member-link { display: inline-flex; align-items: center; gap: 6px; min-width: 0; color: var(--text); font-size: 13px; }
+.so-member-link:hover span { color: var(--blue-2); }
+.so-x { display: grid; place-items: center; width: 18px; height: 18px; border-radius: 50%; color: var(--muted); }
+.so-x:hover { background: var(--hr-red-soft); color: var(--hr-red); }
+.so-vacant { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; color: var(--muted); font-style: italic; }
+.so-tools { display: inline-flex; gap: 0; opacity: .55; transition: opacity .15s; }
+.so-area:hover .so-tools, .so-province:hover .so-tools, .hr-card-head .so-tools, .so-national .so-tools, .so-tools:focus-within { opacity: 1; }
+.so-posts { display: flex; flex-wrap: wrap; gap: 4px; }
+.so-role-pick { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 8px; }
+.so-role-opt { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; padding: 8px 10px; border-radius: 10px; border: 1px solid var(--line); text-align: left; transition: border-color .15s, background .15s; }
+.so-role-opt b { color: color-mix(in srgb, var(--tone) 82%, var(--text)); font-size: 13px; }
+.so-role-opt small { color: var(--muted); font-size: 11.5px; line-height: 1.3; }
+.so-role-opt.active { border-color: var(--tone); background: var(--tone-soft); box-shadow: 0 0 0 2px var(--tone-soft); }
+@media (max-width: 560px) { .so-toggle small { display: none; } .so-provinces, .so-area > .so-members, .so-area > .so-vacant { margin-left: 0; } .so-national::after { display: none; } }

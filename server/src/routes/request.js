@@ -293,7 +293,16 @@ async function approverPlan(group, extra, creatorId) {
   };
   const final = group.final_approver_id && group.final_approver_id !== creatorId ? group.final_approver_id : null;
   if (final) used.add(final); // giữ chỗ cho chặng cuối
-  if (group.manager_approval) addStep([await directManagerOf(creatorId)], 'manager', 'all');
+  if (group.manager_approval) {
+    // duyệt qua N cấp quản lý (VD SS → ASM → RSM); dừng khi hết cấp trên
+    let cur = creatorId;
+    for (let i = 0; i < Math.min(5, Math.max(1, group.manager_levels || 1)); i++) {
+      const m = await directManagerOf(cur);
+      if (!m || m === creatorId) break;
+      addStep([m], 'manager', 'all');
+      cur = m;
+    }
+  }
   const fixed = await all('SELECT user_id, step FROM request_group_approvers WHERE group_id = ? ORDER BY step', group.id);
   const extras = group.custom_approvers ? extra : [];
   const flow = FLOWS.includes(group.flow) ? group.flow : 'sequential';
@@ -635,7 +644,7 @@ async function exportGroup(id) {
   return {
     name: g.name, description: g.description, category: g.category, fields: parseJson(g.fields, []), flow: g.flow,
     block_modes: parseJson(g.block_modes || 'null', null), sla_hours: g.sla_hours, active: !!g.active, custom_approvers: !!g.custom_approvers,
-    manager_approval: !!g.manager_approval, notify_manager: !!g.notify_manager, visibility: g.visibility || 'public', guide: g.guide,
+    manager_approval: !!g.manager_approval, manager_levels: g.manager_levels || 1, notify_manager: !!g.notify_manager, visibility: g.visibility || 'public', guide: g.guide,
     print_title: g.print_title, print_code: g.print_code, print_note: g.print_note, final_approver: final?.username || null,
     approvers, followers: followers.map((f) => f.username),
     member_departments: members.filter((m) => m.department).map((m) => m.department), member_users: members.filter((m) => m.username).map((m) => m.username),
@@ -742,9 +751,9 @@ r.post('/request-groups/:id/duplicate', requireAdmin, async (c) => {
   if (!data) throw notFound('Nhóm đề xuất không tồn tại');
   const src = await get('SELECT * FROM request_groups WHERE id = ?', toInt(c.req.param('id')));
   const { lastId } = await run(`INSERT INTO request_groups(name, description, category, fields, flow, custom_approvers, sla_hours, active, created_by, guide,
-      manager_approval, final_approver_id, print_title, print_code, print_note, block_modes, visibility, notify_manager)
+      manager_approval, final_approver_id, print_title, print_code, print_note, block_modes, visibility, notify_manager, manager_levels)
     SELECT ?, description, category, fields, flow, custom_approvers, sla_hours, 0, ?, guide,
-      manager_approval, final_approver_id, print_title, print_code, print_note, block_modes, visibility, notify_manager FROM request_groups WHERE id = ?`,
+      manager_approval, final_approver_id, print_title, print_code, print_note, block_modes, visibility, notify_manager, manager_levels FROM request_groups WHERE id = ?`,
   `${src.name} (Bản sao)`.slice(0, 200), c.get('user').id, src.id);
   await batch([
     ['INSERT INTO request_group_approvers(group_id, user_id, step) SELECT ?, user_id, step FROM request_group_approvers WHERE group_id = ?', [lastId, src.id]],
@@ -850,6 +859,7 @@ function parseGroup(b) {
     print_title: String(b.print_title || '').trim().slice(0, 200) || null, print_code: String(b.print_code || '').trim().slice(0, 50) || null,
     print_note: String(b.print_note || '').trim().slice(0, 2000) || null,
     notify_manager: b.notify_manager ? 1 : 0, visibility: b.visibility === 'private' ? 'private' : 'public',
+    manager_levels: Math.min(5, Math.max(1, toInt(b.manager_levels, 1))),
     member_departments: idList(b.member_departments), member_users: idList(b.member_users),
     ...parseBlocks(b),
   };
@@ -873,8 +883,8 @@ function parseBlocks(b) {
 /** Luồng duyệt theo chặng + mẫu in. */
 function saveGroupExtras(id, g) {
   return run(`UPDATE request_groups SET manager_approval = ?, final_approver_id = ?, print_title = ?, print_code = ?, print_note = ?,
-    block_modes = ?, visibility = ?, notify_manager = ? WHERE id = ?`,
-  g.manager_approval, g.final_approver_id, g.print_title, g.print_code, g.print_note, g.block_modes, g.visibility, g.notify_manager, id);
+    block_modes = ?, visibility = ?, notify_manager = ?, manager_levels = ? WHERE id = ?`,
+  g.manager_approval, g.final_approver_id, g.print_title, g.print_code, g.print_note, g.block_modes, g.visibility, g.notify_manager, g.manager_levels, id);
 }
 
 async function saveGroupRelations(id, g) {

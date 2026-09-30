@@ -6,6 +6,7 @@ import {
   FileText, TrendingUp, Save, Settings2, ShieldCheck, ListChecks, CalendarHeart, Package,
 } from 'lucide-react';
 import { PersonAssets } from '../asset/AssetPages.jsx';
+import { SalesFacts, RoleBadge } from './SalesOrg.jsx';
 import { HrHero, Kpi, HrCard, Pill, HBars, StackBar, WORK_TONE, WORK_COLOR, daysLeft } from './hrUi.jsx';
 import { api } from '../api.js';
 import { useApp, useFetch, useToast } from '../context.jsx';
@@ -114,8 +115,17 @@ const COLUMN_SETS = {
   work: { label: 'Công việc', cols: [['title', 'Chức danh'], ['manager_name', 'Quản lý trực tiếp'], ['office', 'Văn phòng'], ['employee_type', 'Phân loại nhân sự'],
     ['official_date', 'Ngày chính thức', 'date'], ['last_promotion', 'Thăng tiến gần nhất']] },
   legal: { label: 'Hợp đồng & pháp lý', cols: [['contract_type', 'Hợp đồng'], ['contract_end', 'Hết hạn HĐ', 'date'], ['id_number', 'Số CCCD'], ['insurance_number', 'Số sổ BHXH'], ['tax_code', 'MST TNCN']] },
+  sales: { label: 'Kinh doanh', cols: [['sales_role', 'Vị trí kinh doanh'], ['territory_names', 'Địa bàn phụ trách'], ['manager_name', 'Quản lý trực tiếp'], ['office', 'Văn phòng']] },
   contact: { label: 'Hồ sơ & liên hệ', cols: [['gender', 'Giới tính'], ['birthday', 'Ngày sinh', 'date'], ['phone', 'Điện thoại'], ['email', 'Email'], ['resign_date', 'Ngày nghỉ việc', 'date']] },
 };
+
+/** Địa bàn theo thứ tự cây (toàn quốc → miền → khu vực → tỉnh) cho ô chọn. */
+function orderTerritories(list) {
+  const out = [];
+  const walk = (pid) => list.filter((t) => (t.parent_id ?? null) === pid).sort((a, b) => a.sort - b.sort).forEach((t) => { out.push(t); walk(t.id); });
+  walk(null);
+  return out;
+}
 
 export function HrmEmployees() {
   const { departments } = useApp();
@@ -127,14 +137,20 @@ export function HrmEmployees() {
   const [office, setOffice] = useState('');
   const [type, setType] = useState('');
   const [contract, setContract] = useState('');
+  const [salesRole, setSalesRole] = useState('');
+  const [territory, setTerritory] = useState('');
+  const [sales] = useFetch(() => api.get('/sales/structure'), []);
   const [colSet, setColSet] = useState('overview');
   const [importing, setImporting] = useState(false);
   const dq = useDebounced(q);
-  const params = { q: dq, view, department_id: dep, office, employee_type: type, contract };
-  const [items, reload, loading, error] = useFetch(() => api.get('/hrm/employees', params), [dq, view, dep, office, type, contract]);
+  const params = { q: dq, view, department_id: dep, office, employee_type: type, contract, sales_role: salesRole, territory_id: territory };
+  const [items, reload, loading, error] = useFetch(() => api.get('/hrm/employees', params), [dq, view, dep, office, type, contract, salesRole, territory]);
+  const pickSales = (setter) => (v) => { setter(v); if (v) setColSet('sales'); };
+  const indent = { national: '', region: '— ', area: '—— ', province: '——— ' };
   if (error) return <div className="page"><div className="alert alert-error">{error.message}</div></div>;
   const cell = (e, [k, , kind]) => {
     if (k === 'work_status') return <StatusPill status={e.work_status} />;
+    if (k === 'sales_role') return e.sales_role ? <RoleBadge role={e.sales_role} /> : '—';
     if (k === 'seniority') return seniority(e.hire_date, e.resign_date);
     if (k === 'contract_end') return <span className={e.contract_end && e.contract_end < new Date(Date.now() + 30 * 864e5).toISOString().slice(0, 10) ? 'text-red' : ''}>{fmtDate(e.contract_end)}</span>;
     const v = e[k];
@@ -158,6 +174,10 @@ export function HrmEmployees() {
         <FilterSelect value={dep} onChange={setDep} options={[{ value: '', label: 'Tất cả phòng ban' }, ...departments.map((d) => ({ value: d.id, label: d.name }))]} />
         <FilterSelect value={office} onChange={setOffice} options={[{ value: '', label: 'Mọi văn phòng' }, ...(cat?.offices || []).map((o) => ({ value: o, label: o }))]} />
         <FilterSelect value={type} onChange={setType} options={[{ value: '', label: 'Mọi phân loại' }, ...(cat?.employee_types || []).map((o) => ({ value: o, label: o }))]} />
+        <FilterSelect value={salesRole} onChange={pickSales(setSalesRole)} options={[{ value: '', label: 'Mọi vị trí kinh doanh' },
+          ...Object.entries(sales?.roles || {}).map(([k, r]) => ({ value: k, label: r.label })), { value: 'none', label: 'Ngoài cơ cấu kinh doanh' }]} />
+        <FilterSelect value={territory} onChange={pickSales(setTerritory)} options={[{ value: '', label: 'Mọi địa bàn' },
+          ...orderTerritories((sales?.territories || []).filter((t) => t.level !== 'province')).map((t) => ({ value: t.id, label: `${indent[t.level]}${t.name}` }))]} />
         <FilterSelect value={contract} onChange={setContract} options={[{ value: '', label: 'Mọi hợp đồng' }, { value: 'expiring', label: 'HĐ sắp hết hạn (30 ngày)' }]} />
       </div>
       <div className="hr-colsets">
@@ -241,6 +261,7 @@ export function HrmEmployee({ selfId }) {
               {e.job_position && <span className="hr-fact tone-blue"><Briefcase size={13} /> {e.job_position}</span>}
               {e.office && <span className="hr-fact tone-violet"><MapPin size={13} /> {e.office}</span>}
               {e.manager_name && <span className="hr-fact tone-amber"><UserCog size={13} /> Quản lý: {e.manager_name}</span>}
+              <SalesFacts userId={e.id} />
               {e.contract_end && <span className={cx('hr-fact', daysLeft(e.contract_end) <= 30 ? 'tone-red' : 'tone-green')}><FileSignature size={13} /> HĐ đến {fmtDate(e.contract_end)}</span>}
             </div>
           </div>

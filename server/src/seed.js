@@ -296,6 +296,25 @@ export async function buildSeed() {
   add(`INSERT INTO hr_careers(user_id, type, effective_date, from_value, to_value, decision_no, created_by) VALUES (?, 'promotion', '2023-01-01', 'Chuyên viên kinh doanh', 'Trưởng phòng Kinh doanh', 'QĐ-01/2023', ?)`, users.kd, users.hr);
   add(`INSERT INTO hr_careers(user_id, type, effective_date, to_value, note, created_by) VALUES (?, 'reward', ?, 'Nhân viên xuất sắc quý', 'Vượt 120% chỉ tiêu doanh số', ?)`, users.nv1, dateOffset(-30), users.hr);
 
+  // ---------- Cơ cấu kinh doanh: khung Toàn quốc / Miền / Khu vực có sẵn từ migration 0022; seed thêm tỉnh mẫu và phân công
+  add("DELETE FROM territories WHERE level = 'province'");
+  const provinces = {
+    HN: ['Hà Nội'], NHN: ['Hà Nam', 'Nam Định', 'Ninh Bình'], DTB: ['Thái Nguyên', 'Lào Cai', 'Sơn La'], DH: ['Hải Phòng', 'Quảng Ninh', 'Hải Dương'],
+    BMT: ['Thanh Hóa', 'Nghệ An', 'Hà Tĩnh'], NMT: ['Đà Nẵng', 'Quảng Nam', 'Khánh Hòa'], DNB: ['Đồng Nai', 'Bình Dương', 'Bà Rịa - Vũng Tàu'],
+    HCM: ['TP. Hồ Chí Minh'], BMK: ['Long An', 'Tiền Giang', 'Đồng Tháp'], NMK: ['Cần Thơ', 'Kiên Giang', 'Cà Mau'],
+  };
+  for (const [code, names] of Object.entries(provinces)) {
+    names.forEach((n, i) => add(`INSERT INTO territories(name, level, parent_id, sort) SELECT ?, 'province', id, ? FROM territories
+      WHERE code = ? AND level = 'area'`, n, i + 1, code));
+  }
+  const assign = (uk, role, name, level, concurrent = 0) => add(`INSERT INTO territory_members(territory_id, user_id, role, is_concurrent, since)
+    SELECT id, ?, ?, ?, '2024-01-01' FROM territories WHERE name = ? AND level = ? LIMIT 1`, users[uk], role, concurrent, name, level);
+  assign('kd', 'NSM', 'Toàn quốc', 'national');
+  assign('nv1', 'SS', 'Hà Nội', 'province');
+  assign('nv1', 'SS', 'Hà Nam', 'province', 1);       // 1 SS phụ trách 2 tỉnh (kiêm nhiệm)
+  assign('nv2', 'SREP_KA', 'Hà Nội', 'area');         // SREP KA phụ trách siêu thị toàn khu vực Hà Nội
+  for (const [uk, role] of [['kd', 'NSM'], ['nv1', 'SS'], ['nv2', 'SREP_KA']]) add('UPDATE users SET sales_role = ? WHERE id = ?', role, users[uk]);
+
   // ---------- LDL Asset: tài sản gắn với nhân viên, biên bản bàn giao, thủ tục nhận việc
   const assetRows = [
     // [code, name, type, kind, serial, location, price, purchase, holder]
@@ -378,7 +397,7 @@ export async function buildSeed() {
   return S;
 }
 
-const TABLES = ['asset_transactions', 'asset_handover_items', 'asset_handovers', 'assets', 'hr_procedures', 'hr_documents', 'hr_careers', 'hr_contracts', 'request_group_members', 'chat_messages', 'chat_members', 'chat_channels', 'drive_shares', 'drive_items', 'leave_quotas', 'checkins', 'hr_profiles',
+const TABLES = ['territory_members', 'asset_transactions', 'asset_handover_items', 'asset_handovers', 'assets', 'hr_procedures', 'hr_documents', 'hr_careers', 'hr_contracts', 'request_group_members', 'chat_messages', 'chat_members', 'chat_channels', 'drive_shares', 'drive_items', 'leave_quotas', 'checkins', 'hr_profiles',
   'webhook_logs', 'webhooks', 'request_attachments', 'request_comments', 'request_stars', 'request_followers', 'request_approvers', 'requests',
   'request_group_stars', 'request_group_followers', 'request_group_approvers', 'notes', 'user_prefs', 'login_logs', 'app_access',
   'user_departments', 'user_group_members', 'user_groups', 'notifications', 'activity_logs', 'custom_filters', 'goals', 'task_attachments', 'task_results', 'task_comments', 'request_group_files', 'task_checklist',

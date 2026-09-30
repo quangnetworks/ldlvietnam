@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link, NavLink, Outlet, useLocation } from 'react-router-dom';
 import {
   LayoutDashboard, Users2, Settings, Fingerprint, UsersRound, Plane, CalendarDays, Scale, FolderOpen, Building2, Share2, Clock3,
-  Trash2, Menu, FileSignature, TrendingUp, BarChart3, Package, Boxes, UserCheck, Users, UserCog,
+  Trash2, Menu, FileSignature, TrendingUp, BarChart3, Package, Boxes, UserCheck, Users, UserCog, Network,
 } from 'lucide-react';
 import { api } from '../api.js';
 import { useApp, useFetch } from '../context.jsx';
@@ -15,6 +15,7 @@ const NAV = {
   hrm: [
     { to: '/hrm', end: true, label: 'Tổng quan', icon: LayoutDashboard },
     { to: '/hrm/employees', label: 'Danh sách nhân sự', icon: Users2, hr: true },
+    { to: '/hrm/sales', label: 'Cơ cấu kinh doanh', icon: Network },
     { to: '/hrm/contracts', label: 'Hợp đồng', icon: FileSignature, hr: true },
     { to: '/hrm/careers', label: 'Phát triển sự nghiệp', icon: TrendingUp, hr: true },
     { to: '/hrm/reports', label: 'Báo cáo nhân sự', icon: BarChart3, hr: true },

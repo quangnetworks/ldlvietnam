@@ -132,6 +132,15 @@ Webapp nội bộ gồm 2 phân hệ, giao diện và chức năng mô phỏng *
 - **LDL Checkin**: chấm công vào / ra (giờ Việt Nam), đi muộn / về sớm, bảng công tháng dạng lịch, bảng công nhân viên theo ngày, xuất CSV, giới hạn chấm công theo IP văn phòng.
 - **LDL Timeoff**: quỹ phép năm theo nhân viên, đơn nghỉ đi qua **LDL Request** (nhóm "Đề xuất nghỉ phép"), lịch nghỉ công ty.
 
+### Cơ cấu kinh doanh theo địa bàn — `/hrm/sales`
+- **Cấp bậc**: **NSM** (Toàn quốc) → **RSM** (Miền) → **ASM** (Khu vực) → **SS** (Tỉnh; 1 SS phụ trách 1 tỉnh hoặc 2 tỉnh) → **PG / SREP / SREP KA**.
+- **Cây địa bàn** mặc định: Toàn quốc → Miền Bắc (Hà Nội, Nam Hà Nội, Đông Tây Bắc, Duyên Hải) và Miền Trung Nam (Bắc Miền Trung, Nam Miền Trung, Đông Nam Bộ, Hồ Chí Minh, Bắc Mekong, Nam Mekong) → tỉnh. Thêm / đổi tên / xoá; dán cả danh sách tỉnh một lần; chuyển tỉnh sang khu vực khác, khu vực sang miền khác (VD tách Miền Trung Nam thành 2 miền).
+- **Phân công** theo vị trí (vị trí phải khớp cấp địa bàn), **kiêm nhiệm** (ASM kiêm thêm khu vực, SS phụ trách thêm tỉnh…), ngày bắt đầu; cảnh báo khu vực chưa có ASM, tỉnh chưa có SS; xem theo sơ đồ hoặc theo nhân sự; tìm theo tên / địa bàn.
+- **Đồng bộ quản lý trực tiếp**: mỗi người báo cáo cho cấp cao hơn gần nhất trên địa bàn chính (SREP → SS cùng tỉnh, không có SS thì ASM; SS → ASM; ASM → RSM; RSM → NSM), xem trước và chọn người cần cập nhật.
+- **Áp dụng toàn hệ thống** qua quản lý trực tiếp: cấp trên xem được **toàn bộ cấp dưới nhiều tầng** (Wework: công việc, lọc "Nhóm của tôi"; HRM: hồ sơ, view "Tôi quản lý", bảng công; Asset: tài sản của nhân viên); **LDL Request** cho chọn **số cấp quản lý duyệt** (1–5, VD đề xuất của SREP đi SS → ASM → RSM).
+- **LDL HRM**: lọc danh sách theo vị trí kinh doanh / địa bàn (gồm địa bàn con), nhóm cột "Kinh doanh", trích xuất kèm vị trí & địa bàn; hồ sơ hiện chip vị trí – địa bàn; báo cáo cơ cấu theo vị trí và theo miền.
+- Quyền: mọi nhân sự xem sơ đồ; quản trị viên và quản lý nhân sự chỉnh sửa.
+
 ### LDL Asset — `/asset` (tài sản, công cụ gắn với từng cá nhân)
 - **Tài sản của tôi**: mọi nhân viên xem tài sản, công cụ công ty đang giao cho mình; **xác nhận biên bản** bàn giao / thu hồi ngay trên hệ thống (có thông báo).
 - **Tài sản & công cụ**: mã tự sinh theo loại (VD LAP-0001), tài sản cố định / công cụ dụng cụ, serial, địa điểm, nhà cung cấp, ngày mua, nguyên giá, **khấu hao đường thẳng → giá trị còn lại**, bảo hành, tình trạng; tạo nhiều đơn vị một lần, **nhập / xuất Excel** (có file mẫu, cột "Người sử dụng" giao luôn); trạng thái Sẵn sàng / Đang sử dụng / Bảo trì / Hỏng / Mất / Đã thanh lý; lịch sử giao dịch từng tài sản; **điều chuyển** giữa hai nhân viên.

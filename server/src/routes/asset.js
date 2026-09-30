@@ -10,6 +10,7 @@ import { Hono } from 'hono';
 import { all, get, run, batch, notify, getSetting, setSetting } from '../db.js';
 import { badRequest, notFound, forbidden, toInt, idList, jsonBody } from '../util.js';
 import { audit } from '../platform.js';
+import { isSubordinate } from '../auth.js';
 
 const r = new Hono();
 const APP = 'asset';
@@ -59,7 +60,7 @@ async function requireManager(c) {
 /** Nhân viên xem của mình; quản lý tài sản xem tất cả; quản lý trực tiếp xem nhân viên cấp dưới. */
 async function canSeePerson(viewer, userId) {
   if (viewer.id === userId || (await isAssetManager(viewer))) return true;
-  return !!(await get('SELECT 1 FROM users WHERE id = ? AND manager_id = ?', userId, viewer.id));
+  return isSubordinate(viewer.id, userId);
 }
 
 const today = () => new Date(Date.now() + 7 * 3600e3).toISOString().slice(0, 10);

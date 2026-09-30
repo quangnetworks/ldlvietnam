@@ -68,7 +68,7 @@ export async function verifyFileToken(c, token) {
 }
 
 export const PUBLIC_USER_FIELDS =
-  'u.id, u.username, u.name, u.email, u.phone, u.title, u.department_id, u.manager_id, u.role, u.color, u.active, u.birthday, u.address, u.bio, u.profile, u.last_login_at, u.created_at, u.totp_enabled, u.expires_at, u.avatar_version, u.is_owner, '
+  'u.id, u.username, u.name, u.email, u.phone, u.title, u.department_id, u.manager_id, u.sales_role, u.role, u.color, u.active, u.birthday, u.address, u.bio, u.profile, u.last_login_at, u.created_at, u.totp_enabled, u.expires_at, u.avatar_version, u.is_owner, '
   + '(SELECT GROUP_CONCAT(ud.department_id) FROM user_departments ud WHERE ud.user_id = u.id) AS extra_departments';
 
 /** "3,5" (GROUP_CONCAT) → [3, 5] */
@@ -86,6 +86,16 @@ export function deptIn(col, user) {
 /** Điều kiện SQL "tài khoản (cột uCol) thuộc phòng ban depExpr" — tính cả phòng ban kiêm nhiệm. */
 export const inDeptSql = (uCol, depExpr) => `(${uCol}.department_id = ${depExpr}
   OR EXISTS (SELECT 1 FROM user_departments udx WHERE udx.user_id = ${uCol}.id AND udx.department_id = ${depExpr}))`;
+
+/**
+ * Điều kiện SQL "cột col là cấp dưới (trực tiếp hoặc gián tiếp, tối đa 10 cấp) của một người" — theo chuỗi quản lý trực tiếp
+ * (VD NSM thấy RSM, ASM, SS, PG/SREP bên dưới). Cần 1 tham số: id người quản lý.
+ */
+export const underSql = (col) => `${col} IN (WITH RECURSIVE sub(id, depth) AS (SELECT id, 1 FROM users WHERE manager_id = ?
+  UNION ALL SELECT x.id, sub.depth + 1 FROM users x JOIN sub ON x.manager_id = sub.id WHERE sub.depth < 10) SELECT id FROM sub)`;
+export async function isSubordinate(managerId, userId) {
+  return !!(await get(`SELECT 1 WHERE ${underSql('?')}`, userId, managerId));
+}
 
 export async function loadUser(id) {
   const u = await get(

@@ -6,7 +6,7 @@ import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
   Plus, Search, Trash2, Pencil, Paperclip, Upload, Download, FileText, TrendingUp, ArrowRightLeft, Award, AlertTriangle, BadgeDollarSign, FileSignature, Layers,
-  CheckCircle2, AlarmClock, History, XCircle, BarChart3, Users2, Users, UserPlus, UserMinus, Percent, Clock3, Activity, Shapes, Cake, MapPin, Briefcase,
+  CheckCircle2, AlarmClock, History, XCircle, BarChart3, Users2, Users, UserPlus, UserMinus, Percent, Clock3, Activity, Shapes, Cake, MapPin, Briefcase, Network, Map as MapIcon,
 } from 'lucide-react';
 import { api, toFormData } from '../api.js';
 import { useApp, useFetch, useToast } from '../context.jsx';
@@ -450,7 +450,7 @@ export function HrmReports() {
   const resigns = r.turnover.reduce((s, m) => s + m.resigns, 0);
   const exportCsv = () => downloadCsv('bao-cao-nhan-su', ['Chỉ tiêu', 'Nhóm', 'Số lượng'], [
     ...[['Phân loại nhân sự', r.by_type], ['Văn phòng', r.by_office], ['Giới tính', r.by_gender], ['Loại hợp đồng', r.by_contract], ['Vị trí', r.by_position],
-      ['Thâm niên', r.seniority], ['Độ tuổi', r.ages]].flatMap(([k, list]) => list.map((x) => [k, x.name, x.c])),
+      ['Vị trí kinh doanh', r.by_sales || []], ['Kinh doanh theo miền', r.by_region || []], ['Thâm niên', r.seniority], ['Độ tuổi', r.ages]].flatMap(([k, list]) => list.map((x) => [k, x.name, x.c])),
     ...r.turnover.map((m) => ['Biến động', m.month, `+${m.hires} / -${m.resigns}`]),
   ]);
   const rows = r.turnover.map((m) => ({ label: `T${Number(m.month.slice(5))}`, tip: `Tháng ${m.month.slice(5)}/${m.month.slice(0, 4)}`, hires: m.hires, resigns: m.resigns }));
@@ -477,7 +477,14 @@ export function HrmReports() {
         <HrCard i={10} className="hr-span-4" icon={MapPin} tone="blue" title="Văn phòng"><HBars items={r.by_office} total={r.total} /></HrCard>
         <HrCard i={11} className="hr-span-4" icon={FileSignature} tone="green" title="Loại hợp đồng"><HBars items={r.by_contract} total={r.total} /></HrCard>
         <HrCard i={12} className="hr-span-4" icon={Briefcase} tone="orange" title="Vị trí công việc"><HBars items={r.by_position} total={r.total} /></HrCard>
-        <HrCard i={13} className="hr-span-12" icon={TrendingUp} tone="violet" title={`Phát triển sự nghiệp năm ${r.year}`}>
+        {(r.by_sales?.length > 0 || r.by_region?.length > 0) && (
+          <>
+            <HrCard i={13} className="hr-span-6" icon={Network} tone="aqua" title="Cơ cấu kinh doanh theo vị trí"
+              action={<Link to="/hrm/sales" className="link-btn small">Xem sơ đồ</Link>}><HBars items={r.by_sales} color="var(--hr-cat-3)" /></HrCard>
+            <HrCard i={14} className="hr-span-6" icon={MapIcon} tone="orange" title="Nhân sự kinh doanh theo miền"><HBars items={r.by_region} color="var(--hr-cat-2)" /></HrCard>
+          </>
+        )}
+        <HrCard i={15} className="hr-span-12" icon={TrendingUp} tone="violet" title={`Phát triển sự nghiệp năm ${r.year}`}>
           <div className="hr-kpis compact">
             {r.careers.map((c) => { const t = CAREER_TYPES[c.type]; return <Kpi key={c.type} icon={t.icon} tone={t.tone} label={c.name} value={c.c} />; })}
           </div>

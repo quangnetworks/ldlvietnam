@@ -1,6 +1,6 @@
 import { Hono } from 'hono';
 import { all, get, run, batch, logActivity, notify, getSetting, setSetting, markSeen, findMentions } from '../db.js';
-import { requireAdmin, userDeptIds, inDeptSql } from '../auth.js';
+import { requireAdmin, userDeptIds, inDeptSql, underSql } from '../auth.js';
 import { publicFileLink } from '../files.js';
 import { readComment, saveCommentFiles, withCommentFiles, commentFileOr404, commentSnippet, purgeCommentFiles, editComment, deleteComment, notifyReply } from '../comments.js';
 import { audit } from '../platform.js';
@@ -58,7 +58,7 @@ function taskVisibilitySql(user) {
           OR EXISTS (SELECT 1 FROM task_followers tf WHERE tf.task_id = t.id AND tf.user_id = ?)
           OR EXISTS (SELECT 1 FROM project_members pm WHERE pm.project_id = t.project_id AND pm.user_id = ?)
           OR EXISTS (SELECT 1 FROM projects pp WHERE pp.id = t.project_id AND pp.owner_id = ?)
-          OR EXISTS (SELECT 1 FROM users su WHERE su.id = t.assignee_id AND su.manager_id = ?))`,
+          OR (t.assignee_id IS NOT NULL AND ${underSql('t.assignee_id')}))`,
     params: [user.id, user.id, user.id, user.id, user.id, user.id],
   };
 }
@@ -246,7 +246,7 @@ function buildTaskQuery(u, q) {
       where.push('EXISTS (SELECT 1 FROM task_followers f WHERE f.task_id = t.id AND f.user_id = ?)'); params.push(u.id); break;
     case 'starred':
       where.push('EXISTS (SELECT 1 FROM task_stars f WHERE f.task_id = t.id AND f.user_id = ?)'); params.push(u.id); break;
-    case 'team': where.push('t.assignee_id IN (SELECT id FROM users WHERE manager_id = ?)'); params.push(u.id); break;
+    case 'team': where.push(underSql('t.assignee_id')); params.push(u.id); break;
     case 'recurring': where.push('t.recurring IS NOT NULL'); break;
     default: break;
   }
@@ -1505,7 +1505,7 @@ r.get('/wework/members', async (c) => {
       (SELECT COUNT(*) FROM tasks t WHERE t.assignee_id = u.id AND t.status = 'done') AS done,
       (SELECT COUNT(*) FROM tasks t WHERE t.assignee_id = u.id AND t.status IN ('todo','doing') AND date(t.due_date) < date(?)) AS overdue
     FROM users u LEFT JOIN departments d ON d.id = u.department_id WHERE u.active = 1
-    ${team ? 'AND u.manager_id = ?' : ''}
+    ${team ? `AND ${underSql('u.id')}` : ''}
     ORDER BY u.name COLLATE NOCASE`, today(), ...(team ? [c.get('user').id] : [])));
 });
 
