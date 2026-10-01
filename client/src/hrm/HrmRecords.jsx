@@ -477,9 +477,9 @@ export function ImportProfilesModal({ onClose, onDone }) {
    */
   const run = async () => {
     setBusy(true);
-    const total = { created: 0, updated: 0, assignments: 0, past_posts: 0, careers: 0, contracts: 0, skipped: 0, errors: [], new_accounts: [] };
+    const total = { created: 0, updated: 0, assignments: 0, past_posts: 0, careers: 0, contracts: 0, skipped: 0, deactivated: 0, errors: [], new_accounts: [] };
     const add = (r, rowOffset = 0, sheet = null) => {
-      for (const k of ['created', 'updated', 'assignments', 'past_posts', 'careers', 'contracts', 'skipped']) total[k] += r[k] || 0;
+      for (const k of ['created', 'updated', 'assignments', 'past_posts', 'careers', 'contracts', 'skipped', 'deactivated']) total[k] += r[k] || 0;
       total.new_accounts.push(...r.new_accounts);
       total.errors.push(...r.errors.map((e) => (rowOffset ? e.replace(/dòng (\d+)/, (_, d) => `dòng ${Number(d) + rowOffset}`) : e))
         .filter((e) => !sheet || e.startsWith(sheet)));
@@ -579,6 +579,7 @@ export function ImportProfilesModal({ onClose, onDone }) {
             <Kpi icon={FileSignature} tone="amber" label="Hợp đồng" value={result.contracts} />
           </div>
           {result.skipped > 0 && <p className="muted small mt">Bỏ qua {result.skipped} dòng lịch sử / hợp đồng đã có.</p>}
+          {result.deactivated > 0 && <p className="small mt">Đã vô hiệu hoá {result.deactivated} tài khoản của nhân sự chuyển sang "Đã nghỉ việc".</p>}
           {result.new_accounts.length > 0 && <p className="small mt">Tài khoản mới: {result.new_accounts.slice(0, 40).map((u) => <code key={u} className="hr-code">{u}</code>).reduce((a, x) => [...a, a.length ? ' ' : '', x], [])}{result.new_accounts.length > 40 ? ' …' : ''}</p>}
           {result.assignments > 0 && <div className="alert alert-info mt small">Đã phân công vị trí kinh doanh. Vào <Link to="/hrm/sales">Cơ cấu kinh doanh</Link> → "Đồng bộ quản lý trực tiếp" để cập nhật cấp trên theo cơ cấu.</div>}
           {result.errors.length > 0 && (

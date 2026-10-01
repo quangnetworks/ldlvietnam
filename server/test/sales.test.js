@@ -206,7 +206,12 @@ test('resignation leaves sales positions vacant until a new person is assigned; 
   assert.equal(vac.prev_name, 'SS Bắc Ninh cũ');
   assert.equal(vac.industry, 'HMP');
   assert.equal(vac.reports, 1);
-  assert.equal((await hr.get('/users')).data.find((u) => u.username === 'ss.old').sales_role, null);
+  const ssOld = (await (await login('admin')).get('/users?all=1')).data.find((u) => u.username === 'ss.old');
+  assert.equal(ssOld.sales_role, null);
+  // nghỉ việc trên HRM → tài khoản bị vô hiệu hoá
+  assert.equal(upd.account, 'disabled');
+  assert.equal(ssOld.active, 0);
+  assert.equal((await raw('/auth/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username: 'ss.old', password: 'Ldl@2026' }) })).status, 401);
   const past = (await hr.get(`/sales/users/${id('ss.old')}?history=1`)).data;
   assert.ok(past.some((p) => p.territory_name === 'Bắc Ninh' && p.ended_at));
 

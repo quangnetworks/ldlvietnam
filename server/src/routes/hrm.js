@@ -256,6 +256,11 @@ async function importProfiles(c, body) {
     // nghỉ việc: rời mọi vị trí đang giữ trong cơ cấu (các vị trí đó để trống chờ người mới)
     const resigned = set.work_status === 'resigned';
     if (resigned) S.push(...vacateStmts(u.id));
+    // nghỉ việc: vô hiệu hoá tài khoản Account (trừ Chủ doanh nghiệp, chính mình, quản trị viên khi người nhập không phải quản trị viên)
+    if (resigned && !u.is_owner && u.id !== actor.id && !(u.role === 'admin' && actor.role !== 'admin') && !res.new_accounts.includes(u.username)) {
+      S.push(['UPDATE users SET active = 0 WHERE id = ? AND active = 1', [u.id]]);
+      res.deactivated = (res.deactivated || 0) + 1;
+    }
     // vị trí kinh doanh – địa bàn – ngành hàng (phân công chính)
     if (clean(row.sales_role)) {
       const role = SALES_ROLE_BY_TEXT[clean(row.sales_role).toLowerCase().replace(/\s+/g, ' ')];
@@ -381,9 +386,34 @@ r.put('/hrm/employees/:id', async (c) => {
     ON CONFLICT(user_id) DO UPDATE SET ${HR_FIELDS.map((k) => `${k} = excluded.${k}`).join(', ')}, updated_at = datetime('now')`, id, ...vals);
   // chuyển sang "Đã nghỉ việc": vị trí trong cơ cấu kinh doanh / trưởng phòng để trống cho đến khi có người mới
   const vacated = b.work_status === 'resigned' && u.work_status !== 'resigned' ? await vacateUser(id) : 0;
-  await audit(c.get('user').id, 'hrm.update', `Cập nhật hồ sơ nhân sự @${u.username}${vacated ? ` (nghỉ việc, để trống ${vacated} vị trí)` : ''}`);
-  return c.json({ ...empView(await get(`${EMP_SELECT} WHERE u.id = ?`, id)), vacated });
+  // nghỉ việc ⇄ tài khoản Account: tự vô hiệu hoá khi nghỉ việc, tự kích hoạt lại khi đi làm lại
+  const account = await syncAccountActive(c.get('user'), u, b.work_status ? b.work_status : 'working');
+  await audit(c.get('user').id, 'hrm.update', `Cập nhật hồ sơ nhân sự @${u.username}${vacated ? ` (nghỉ việc, để trống ${vacated} vị trí)` : ''}`
+    + (account === 'disabled' ? ' — đã vô hiệu hoá tài khoản' : account === 'enabled' ? ' — đã kích hoạt lại tài khoản' : ''));
+  return c.json({ ...empView(await get(`${EMP_SELECT} WHERE u.id = ?`, id)), vacated, account });
 });
+
+/**
+ * Đồng bộ trạng thái tài khoản theo HRM. Trả về 'disabled' | 'enabled' | 'kept_owner' | 'kept_admin' | 'kept_self' | null.
+ * Không khoá: Chủ doanh nghiệp, chính người đang thao tác, tài khoản quản trị (trừ khi người thao tác là quản trị viên).
+ */
+async function syncAccountActive(actor, u, nextStatus) {
+  const was = u.work_status;
+  if (nextStatus === was) return null;
+  if (nextStatus === 'resigned') {
+    if (u.is_owner) return 'kept_owner';
+    if (u.id === actor.id) return 'kept_self';
+    if (u.role === 'admin' && actor.role !== 'admin') return 'kept_admin';
+    const { changes } = await run('UPDATE users SET active = 0 WHERE id = ? AND active = 1', u.id);
+    return changes ? 'disabled' : null;
+  }
+  if (was === 'resigned') {
+    if (u.role === 'admin' && actor.role !== 'admin') return 'kept_admin';
+    const { changes } = await run('UPDATE users SET active = 1 WHERE id = ? AND active = 0', u.id);
+    return changes ? 'enabled' : null;
+  }
+  return null;
+}
 
 async function setDepartment(actor, targets, depId) {
   if (depId && !(await get('SELECT 1 FROM departments WHERE id = ?', depId))) throw badRequest('Phòng ban không tồn tại');

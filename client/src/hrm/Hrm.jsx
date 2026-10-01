@@ -306,10 +306,13 @@ export function HrmEmployee({ selfId }) {
   const self = e.id === user.id;
   const save = async () => {
     if (f.work_status === 'resigned' && e.work_status !== 'resigned'
-      && !window.confirm(`Chuyển ${e.name} sang "Đã nghỉ việc"? Các vị trí trong cơ cấu kinh doanh / trưởng phòng của người này sẽ được để trống cho đến khi có người mới.`)) return;
+      && !window.confirm(`Chuyển ${e.name} sang "Đã nghỉ việc"?\n• Tài khoản LDL của người này sẽ bị vô hiệu hoá (không đăng nhập được).\n• Các vị trí trong cơ cấu kinh doanh / trưởng phòng được để trống cho đến khi có người mới.`)) return;
     try {
       const r = await api.put(`/hrm/employees/${id}`, f);
-      toast(r.vacated ? `Đã lưu hồ sơ — ${r.vacated} vị trí trong cơ cấu kinh doanh đang để trống` : 'Đã lưu hồ sơ nhân sự');
+      const ACC = { disabled: 'đã vô hiệu hoá tài khoản', enabled: 'đã kích hoạt lại tài khoản', kept_owner: 'tài khoản Chủ doanh nghiệp không bị khoá',
+        kept_self: 'không tự khoá tài khoản của chính bạn', kept_admin: 'tài khoản quản trị — cần quản trị viên khoá / mở' };
+      const parts = [r.vacated && `${r.vacated} vị trí trong cơ cấu kinh doanh đang để trống`, ACC[r.account]].filter(Boolean);
+      toast(parts.length ? `Đã lưu hồ sơ — ${parts.join('; ')}` : 'Đã lưu hồ sơ nhân sự');
       reload();
     } catch (err) { toast(err.message, 'error'); }
   };

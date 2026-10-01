@@ -1383,3 +1383,31 @@ test('recruitment request: approval creates account + HRM profile + onboarding, 
   assert.match(retry.automation.result.temp_password, /^\w{10}$/);
   assert.equal((await demo.get(`/requests/${q2.id}`)).data.automation.result.temp_password, undefined);
 });
+
+test('HRM resigned ⇄ Account: auto-disable on resign, re-enable on return, owner/self protected, import disables', async () => {
+  const admin = await login('admin');
+  const hr = await login('chilan');
+  await hr.post('/hrm/employees/import', { create_accounts: true, password: 'Ldl@2026', rows: [
+    { username: 'nv.nghi', name: 'Nhân viên nghỉ' }, { username: 'nv.nghi2', name: 'Nhân viên nghỉ 2' }] });
+  const all = async () => (await admin.get('/users?all=1')).data;
+  const u = (await all()).find((x) => x.username === 'nv.nghi');
+  const loginAs = (username) => raw('/auth/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username, password: 'Ldl@2026' }) });
+  assert.equal((await loginAs('nv.nghi')).status, 200);
+  let r = (await hr.put(`/hrm/employees/${u.id}`, { work_status: 'resigned', resign_date: '2026-10-01' })).data;
+  assert.equal(r.account, 'disabled');
+  assert.equal((await all()).find((x) => x.id === u.id).active, 0);
+  assert.equal((await loginAs('nv.nghi')).status, 401);
+  r = (await hr.put(`/hrm/employees/${u.id}`, { work_status: 'working' })).data;
+  assert.equal(r.account, 'enabled');
+  assert.equal((await loginAs('nv.nghi')).status, 200);
+  // Chủ doanh nghiệp và chính mình không bị khoá
+  const owner = (await all()).find((x) => x.username === 'giamdoc');
+  assert.equal((await admin.put(`/hrm/employees/${owner.id}`, { work_status: 'resigned' })).data.account, 'kept_owner');
+  await admin.put(`/hrm/employees/${owner.id}`, { work_status: 'working' });
+  assert.equal((await hr.put(`/hrm/employees/${hr.user.id}`, { work_status: 'resigned' })).data.account, 'kept_self');
+  await hr.put(`/hrm/employees/${hr.user.id}`, { work_status: 'working' });
+  // nhập Excel trạng thái "Đã nghỉ việc" → khoá tài khoản
+  const imp = (await hr.post('/hrm/employees/import', { rows: [{ username: 'nv.nghi2', work_status: 'Đã nghỉ việc', resign_date: '01/10/2026' }] })).data;
+  assert.equal(imp.deactivated, 1);
+  assert.equal((await loginAs('nv.nghi2')).status, 401);
+});
