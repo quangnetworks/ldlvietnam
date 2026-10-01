@@ -1855,6 +1855,7 @@ button.rpt-task:hover { background: var(--hover); }
 .td-banner.review { background: rgba(245, 159, 0, 0.1); border: 1px solid rgba(245, 159, 0, 0.35); color: #b35c00; }
 .td-banner.info { background: var(--tint-blue); border: 1px solid color-mix(in srgb, var(--blue-2) 30%, transparent); color: var(--blue-2); }
 .td-banner b { color: var(--text); }
+.td-banner.muted-banner { background: var(--bg-2, rgba(0,0,0,0.03)); border: 1px dashed var(--line-2); color: var(--text-2); }
 
 /* ================================================================ Tablet & desktop: chống ô bị co / lệch ở mọi độ rộng */
 /* Trường biểu mẫu nhóm đề xuất: tự xuống dòng thay vì ép ô tên còn vài chục px */

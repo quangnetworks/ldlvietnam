@@ -151,6 +151,13 @@ export function TaskDetail({ id, onClose, onChanged, standalone }) {
             <button className="btn btn-sm btn-primary" onClick={() => update({ status: 'review' }, 'Đã gửi trưởng phòng duyệt — công việc chuyển sang Chờ đánh giá')}><Send size={14} /> Gửi duyệt hoàn thành</button>
           )}
         </div>
+      ) : t.approval_departments && !t.requires_approval && !t.locked ? (
+        <div className="td-banner muted-banner">
+          <ShieldCheck size={16} />
+          <small className="grow">Quản trị viên: công việc này <b>không</b> cần trưởng phòng duyệt — phòng ban của {t.assignee_name || 'người thực hiện'}:{' '}
+            {t.approval_departments.length ? t.approval_departments.map((d) => `${d.name} (${d.task_approval ? 'đã bật' : 'chưa bật'}${d.head_name ? `, TP: ${d.head_name}` : ', chưa có TP'})`).join('; ') : 'chưa thuộc phòng ban nào'}.
+            {' '}Bật tại Tài khoản → Phòng ban.</small>
+        </div>
       ) : null}
 
       <div className="td-body">
@@ -283,7 +290,10 @@ export function TaskDetail({ id, onClose, onChanged, standalone }) {
           </div>
           {t.subtasks.map((s) => (
             <div key={s.id} className="subtask" onClick={() => openTask(s.id)}>
-              <StatusCircle task={s} size={20} onChange={async (st) => { await api.put(`/tasks/${s.id}`, { status: st }); reload(); onChanged?.(); }} />
+              <StatusCircle task={s} size={20} onChange={async (st) => {
+                try { const r = await api.put(`/tasks/${s.id}`, { status: st }); if (st === 'done' && r?.status === 'review') toast('Đã gửi trưởng phòng duyệt — công việc chuyển sang Chờ đánh giá'); } catch (e) { toast(e.message, 'error'); }
+                reload(); onChanged?.();
+              }} />
               <span className={cx('grow', s.status === 'done' && 'strike')}>{s.title}</span>
               {s.assignee_name && <Avatar name={s.assignee_name} color={s.assignee_color} size={20} />}
             </div>

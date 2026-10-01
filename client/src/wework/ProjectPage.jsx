@@ -213,7 +213,8 @@ export default function ProjectPage() {
 
   const moveTask = async (taskId, patch) => {
     try {
-      await api.put(`/tasks/${taskId}`, patch);
+      const r = await api.put(`/tasks/${taskId}`, patch);
+      if (patch.status === 'done' && r?.status === 'review') toast('Đã gửi trưởng phòng duyệt — công việc chuyển sang Chờ đánh giá');
       bump();
     } catch (e) {
       toast(e.message, 'error');

@@ -179,8 +179,8 @@ export default function MyTasksPage() {
 
   const toggleDone = async (t) => {
     try {
-      await api.put(`/tasks/${t.id}`, { status: t.status === 'done' ? 'todo' : 'done' });
-      if (t.status !== 'done') toast('Đã hoàn thành công việc');
+      const r = await api.put(`/tasks/${t.id}`, { status: t.status === 'done' ? 'todo' : 'done' });
+      if (t.status !== 'done') toast(r?.status === 'review' ? 'Đã gửi trưởng phòng duyệt — công việc chuyển sang Chờ đánh giá' : 'Đã hoàn thành công việc');
       bump();
     } catch (e) { toast(e.message, 'error'); }
   };

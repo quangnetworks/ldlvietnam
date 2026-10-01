@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Star, Check, X, Repeat, MessageSquare, ListChecks, GitBranch, Play, Award, CornerDownRight, FolderTree, ChevronRight } from 'lucide-react';
 import { api } from '../api.js';
 import { Avatar } from '../components/ui.jsx';
+import { useToast } from '../context.jsx';
 import { TASK_STATUS, PRIORITY, RECURRING, fmtDate, stripHtml, cx } from '../utils.js';
 
 export function StatusCircle({ task, onChange, size = 26 }) {
@@ -105,8 +106,12 @@ export function TaskRow(props) {
 }
 
 function TaskRowInner({ t, onOpen, onChanged, selectable, selected, onSelect, showProject = true, depth = 0, orphan = false, expander }) {
+  const toast = useToast();
   const setStatus = async (status) => {
-    await api.put(`/tasks/${t.id}`, { status });
+    try {
+      const r = await api.put(`/tasks/${t.id}`, { status });
+      if (status === 'done' && r?.status === 'review') toast('Đã gửi trưởng phòng duyệt — công việc chuyển sang Chờ đánh giá');
+    } catch (e) { toast(e.message, 'error'); }
     onChanged?.();
   };
   const star = async (e) => {

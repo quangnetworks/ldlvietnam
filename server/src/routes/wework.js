@@ -671,6 +671,11 @@ async function fullTask(id, user) {
   t.can_approve = await canApproveTask(user, t);
   t.locked = t.status === 'done';
   t.can_reopen = t.locked && (t.requires_approval ? t.can_approve : t.can_edit);
+  // chẩn đoán cho quản trị viên: phòng ban của người thực hiện và trạng thái bật duyệt
+  if (isAdmin(user) && t.assignee_id) {
+    t.approval_departments = await all(`SELECT d.id, d.name, d.task_approval, h.name AS head_name FROM departments d JOIN users u ON u.id = ?
+      LEFT JOIN users h ON h.id = d.head_id WHERE ${inDeptSql('u', 'd.id')} ORDER BY d.name`, t.assignee_id);
+  }
   if (t.requires_approval) {
     const ids = (await taskApprovers(t)).filter((id) => id !== t.assignee_id);
     t.approvers = ids.length ? await all(`SELECT id, name, color FROM users WHERE id IN (${ids.map(() => '?').join(',')}) ORDER BY name`, ...ids) : [];
@@ -740,6 +745,10 @@ export async function createTask(user, data, followers = [], { creatorId = null,
   }
   const pos = (await get('SELECT COALESCE(MAX(position), 0) + 1 AS p FROM tasks WHERE IFNULL(project_id,0) = IFNULL(?,0)', data.project_id ?? null)).p;
   const assignee = data.assignee_id ?? user.id;
+  // tạo sẵn ở trạng thái "Hoàn thành" cũng phải qua trưởng phòng duyệt
+  if (data.status === 'done' && (await needsApproval({ assignee_id: assignee })) && !(await canApproveTask(user, { assignee_id: assignee }))) {
+    data.status = 'review';
+  }
   const { lastId: id } = await run(
     `INSERT INTO tasks(project_id, list_id, parent_id, title, description, creator_id, assignee_id, status, priority,
       start_date, due_date, recurring, position, goal_id, completed_at)

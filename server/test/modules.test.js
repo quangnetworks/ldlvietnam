@@ -805,6 +805,11 @@ test('task approval: only the department head approves; heads complete their own
   assert.equal((await mkt.put(`/tasks/${t.id}`, { status: 'done' })).data.status, 'review');
   d = (await kd.post(`/tasks/${t.id}/review`, { decision: 'approve' })).data;
   assert.equal(d.status, 'done');
+  // tạo sẵn ở trạng thái Hoàn thành cũng chuyển Chờ đánh giá
+  assert.equal((await demo.post('/tasks', { title: 'Việc đã làm xong', status: 'done' })).data.status, 'review');
+  // quản trị viên thấy chẩn đoán phòng ban của người thực hiện
+  assert.ok((await admin.get(`/tasks/${t.id}`)).data.approval_departments.some((x) => x.id === kdDep.id && x.task_approval === 1));
+  assert.equal((await demo.get(`/tasks/${t.id}`)).data.approval_departments, undefined);
   // trưởng phòng tự tích hoàn thành việc của mình
   const own = (await kd.post('/tasks', { title: 'Họp giao ban tuần' })).data;
   assert.equal((await kd.put(`/tasks/${own.id}`, { status: 'done' })).data.status, 'done');
