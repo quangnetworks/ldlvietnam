@@ -15,7 +15,9 @@
     "test": "node --no-warnings=ExperimentalWarning --test test/*.test.js",
     "cf:dev": "npm --prefix ../client run build && wrangler dev",
     "cf:deploy": "npm --prefix ../client run build && wrangler deploy",
-    "bench:scale": "node --no-warnings scripts/bench-scale.mjs"
+    "bench:scale": "node --no-warnings scripts/bench-scale.mjs",
+    "backup": "node --no-warnings=ExperimentalWarning scripts/backup.mjs",
+    "import:cloudflare": "node --no-warnings=ExperimentalWarning scripts/import-cloudflare.mjs"
   },
   "dependencies": {
     "@hono/node-server": "^2.1.1",

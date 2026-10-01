@@ -1,6 +1,7 @@
 /** Platform-level helpers shared by every module: app catalog, per-user app access, audit log. */
 import { all, get, run, batch, logActivity } from './db.js';
 import { forbidden } from './util.js';
+import { clientIp } from './security.js';
 
 /** Modules implemented in this code base that can be granted per user. */
 export const MODULES = {
@@ -64,7 +65,7 @@ export async function grantApps(userId, keys = null) {
 export const audit = (actorId, action, detail) => logActivity('system', 0, actorId, action, detail);
 
 export async function recordLogin(c, user, username, success) {
-  const ip = c.req.header('cf-connecting-ip') || c.req.header('x-forwarded-for')?.split(',')[0]?.trim() || null;
+  const ip = clientIp(c);
   await run('INSERT INTO login_logs(user_id, username, success, ip, user_agent) VALUES (?,?,?,?,?)',
     user?.id ?? null, username, success ? 1 : 0, ip, (c.req.header('user-agent') || '').slice(0, 300));
   if (success) await run("UPDATE users SET last_login_at = datetime('now') WHERE id = ?", user.id);

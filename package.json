@@ -10,7 +10,12 @@
     "dev:server": "npm --prefix server run dev",
     "dev:client": "npm --prefix client run dev",
     "seed": "npm --prefix server run seed",
-    "test": "npm --prefix server test"
+    "test": "npm --prefix server test",
+    "package": "node deploy/package.mjs",
+    "backup": "npm --prefix server run backup",
+    "import:cloudflare": "npm --prefix server run import:cloudflare --"
   },
-  "engines": { "node": ">=22.5" }
+  "engines": {
+    "node": ">=22.5"
+  }
 }

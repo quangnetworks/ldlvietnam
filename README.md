@@ -182,6 +182,15 @@ Webapp nội bộ gồm 2 phân hệ, giao diện và chức năng mô phỏng *
 Xem **[DEPLOY.md](DEPLOY.md)** — chỉ cần thêm 2 secret (`CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`) vào GitHub,
 workflow sẽ tự tạo D1, R2, dữ liệu ban đầu và deploy.
 
+## Chạy trên máy chủ riêng của công ty
+
+Xem **[SERVER.md](SERVER.md)**:
+
+- chạy bằng Docker (`docker compose up -d --build`);
+- hoặc dùng gói cài đặt Node.js (`npm run package`);
+- chuyển dữ liệu từ Cloudflare về máy chủ (`server/scripts/import-cloudflare.mjs`);
+- sao lưu, HTTPS.
+
 ## Chạy trên máy (Node.js)
 
 ```bash
@@ -197,4 +206,4 @@ Phát triển (hot reload): `npm run dev:server` và `npm run dev:client` (mở 
 
 Tạo lại dữ liệu mẫu: `npm run seed`. Kiểm thử API: `npm test`.
 
-Biến môi trường (Node): `PORT` (mặc định 4000), `DATA_DIR` (CSDL & tệp tải lên, mặc định `server/data`), `JWT_SECRET`.
+Biến môi trường (Node, đặt trực tiếp hoặc trong tệp `.env`): `PORT` (mặc định 4000), `DATA_DIR` (CSDL & tệp tải lên, mặc định `server/data`), `JWT_SECRET`, `DEMO_DATA=0` (cài mới không có dữ liệu mẫu, kèm `ADMIN_USERNAME` / `ADMIN_PASSWORD`).
