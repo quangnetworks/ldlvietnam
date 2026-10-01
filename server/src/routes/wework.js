@@ -114,7 +114,7 @@ async function checkOwnerFields(user, t, data) {
   }
 }
 
-// ---------------- duyệt hoàn thành (Tài khoản → Phòng ban → "Công việc cần quản lý duyệt hoàn thành")
+// ---------------- duyệt hoàn thành (Tài khoản → Phòng ban → "Chỉ trưởng phòng tích Hoàn thành")
 /** Công việc của người thuộc (một trong) các phòng ban bật duyệt hoàn thành. */
 async function needsApproval(t) {
   if (!t.assignee_id) return false;
@@ -122,26 +122,25 @@ async function needsApproval(t) {
     WHERE d.task_approval = 1 AND ${inDeptSql('u', 'd.id')}`, t.assignee_id));
 }
 /**
- * Cấp quản lý được duyệt hoàn thành: quản lý trực tiếp của người thực hiện, trưởng phòng ban của họ,
- * quản lý dự án, người giao việc (khác người thực hiện). Không có ai → người thực hiện tự hoàn thành.
+ * Người duyệt hoàn thành: CHỈ trưởng phòng của (các) phòng ban bật duyệt mà người thực hiện thuộc về.
+ * Trưởng phòng tự làm việc của mình → tự tích Hoàn thành. Phòng ban chưa có trưởng phòng → quản trị viên duyệt.
  */
 async function taskApprovers(t) {
-  const ids = new Set();
-  const a = t.assignee_id ? await get('SELECT id, manager_id FROM users WHERE id = ?', t.assignee_id) : null;
-  if (a?.manager_id) ids.add(a.manager_id);
-  if (a) for (const d of await all(`SELECT d.head_id FROM departments d JOIN users u ON u.id = ? WHERE d.head_id IS NOT NULL AND ${inDeptSql('u', 'd.id')}`, a.id)) ids.add(d.head_id);
-  if (t.project_id) {
-    for (const m of await all(`SELECT owner_id AS id FROM projects WHERE id = ? AND owner_id IS NOT NULL
-      UNION SELECT user_id FROM project_members WHERE project_id = ? AND role = 'manager'`, t.project_id, t.project_id)) ids.add(m.id);
-  }
-  if (t.creator_id) ids.add(t.creator_id);
-  ids.delete(t.assignee_id);
-  return [...ids];
+  if (!t.assignee_id) return [];
+  const rows = await all(`SELECT DISTINCT d.head_id FROM departments d JOIN users u ON u.id = ?
+    WHERE d.task_approval = 1 AND d.head_id IS NOT NULL AND ${inDeptSql('u', 'd.id')}`, t.assignee_id);
+  return rows.map((r) => r.head_id);
 }
+/** Ai nhận thông báo "gửi duyệt": trưởng phòng; chưa có trưởng phòng thì quản trị viên. */
+async function approvalRecipients(t) {
+  const heads = (await taskApprovers(t)).filter((id) => id !== t.assignee_id);
+  if (heads.length) return heads;
+  return (await all("SELECT id FROM users WHERE role = 'admin' AND active = 1")).map((u) => u.id);
+}
+
 async function canApproveTask(user, t) {
   if (isAdmin(user)) return true;
-  const list = await taskApprovers(t);
-  return list.includes(user.id) || (!list.length && t.assignee_id === user.id);
+  return (await taskApprovers(t)).includes(user.id);
 }
 
 /**
@@ -673,7 +672,7 @@ async function fullTask(id, user) {
   t.locked = t.status === 'done';
   t.can_reopen = t.locked && (t.requires_approval ? t.can_approve : t.can_edit);
   if (t.requires_approval) {
-    const ids = await taskApprovers(t);
+    const ids = (await taskApprovers(t)).filter((id) => id !== t.assignee_id);
     t.approvers = ids.length ? await all(`SELECT id, name, color FROM users WHERE id IN (${ids.map(() => '?').join(',')}) ORDER BY name`, ...ids) : [];
   }
   if (t.locked) { t.can_edit = false; t.can_contribute = false; }
@@ -822,7 +821,7 @@ async function applyTaskUpdate(user, t, data) {
 
   const changes = [];
   if (statusChanged && data.status === 'review' && (await needsApproval(t))) {
-    await notify(await taskApprovers(t), { actorId: user.id, app: APP, type: 'approval',
+    await notify(await approvalRecipients(t), { actorId: user.id, app: APP, type: 'approval',
       title: `${user.name} đã gửi duyệt hoàn thành công việc "${t.title}"`, link: `/wework/task/${t.id}` });
   }
   if (statusChanged) {

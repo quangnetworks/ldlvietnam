@@ -250,9 +250,22 @@ r.get('/departments', async (c) => c.json(await all(
   `SELECT d.*, h.name AS head_name, (SELECT COUNT(*) FROM users u WHERE ${inDeptSql('u', 'd.id')} AND u.active = 1) AS member_count
    FROM departments d LEFT JOIN users h ON h.id = d.head_id ORDER BY d.name COLLATE NOCASE`
 )));
+const NEED_HEAD = 'Bật "Chỉ trưởng phòng tích Hoàn thành" cần chọn Trưởng phòng cho phòng ban';
+/** Bật / tắt nhanh "Chỉ trưởng phòng tích Hoàn thành" của một phòng ban. */
+r.put('/departments/:id/task-approval', requireAdmin, async (c) => {
+  const id = toInt(c.req.param('id'));
+  const d = await get('SELECT id, name, head_id FROM departments WHERE id = ?', id);
+  if (!d) throw notFound('Phòng ban không tồn tại');
+  const on = !!(await jsonBody(c)).enabled;
+  if (on && !d.head_id) throw badRequest(NEED_HEAD);
+  await run('UPDATE departments SET task_approval = ? WHERE id = ?', on ? 1 : 0, id);
+  await audit(c.get('user').id, 'department.task_approval', `${on ? 'Bật' : 'Tắt'} "chỉ trưởng phòng tích Hoàn thành" — ${d.name}`);
+  return c.json({ id, task_approval: on ? 1 : 0 });
+});
 r.post('/departments', requireAdmin, async (c) => {
   const { name, code, parent_id, head_id, task_approval } = await jsonBody(c);
   if (!name?.trim()) throw badRequest('Tên phòng ban là bắt buộc');
+  if (task_approval && !toInt(head_id)) throw badRequest(NEED_HEAD);
   const { lastId } = await run('INSERT INTO departments(name, code, parent_id, head_id, task_approval) VALUES (?,?,?,?,?)',
     name.trim(), code || null, toInt(parent_id), toInt(head_id), task_approval ? 1 : 0);
   return c.json(await get('SELECT * FROM departments WHERE id = ?', lastId), 201);
@@ -261,6 +274,9 @@ r.put('/departments/:id', requireAdmin, async (c) => {
   const id = toInt(c.req.param('id'));
   const { name, code, parent_id, head_id, task_approval } = await jsonBody(c);
   if (toInt(parent_id) === id) throw badRequest('Phòng ban cha không hợp lệ');
+  const cur = await get('SELECT task_approval FROM departments WHERE id = ?', id);
+  if (!cur) throw notFound('Phòng ban không tồn tại');
+  if ((task_approval !== undefined ? task_approval : cur.task_approval) && !toInt(head_id)) throw badRequest(NEED_HEAD);
   await run('UPDATE departments SET name = COALESCE(?, name), code = ?, parent_id = ?, head_id = ? WHERE id = ?',
     name?.trim() || null, code || null, toInt(parent_id), toInt(head_id), id);
   if (task_approval !== undefined) await run('UPDATE departments SET task_approval = ? WHERE id = ?', task_approval ? 1 : 0, id);

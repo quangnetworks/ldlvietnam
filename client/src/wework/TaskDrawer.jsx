@@ -82,9 +82,9 @@ export function TaskDetail({ id, onClose, onChanged, standalone }) {
       toast(e.message, 'error');
     }
   };
-  // Phòng ban bật duyệt hoàn thành: nhân viên chọn "Hoàn thành" → máy chủ chuyển sang "Chờ đánh giá" cho quản lý duyệt
+  // Phòng ban bật duyệt hoàn thành: nhân viên chọn "Hoàn thành" → máy chủ chuyển sang "Chờ đánh giá" cho trưởng phòng duyệt
   const needApprove = t.requires_approval && !t.can_approve;
-  const setStatus = (s) => update({ status: s }, s === 'done' ? (needApprove ? 'Đã gửi quản lý duyệt hoàn thành' : 'Đã hoàn thành công việc') : null);
+  const setStatus = (s) => update({ status: s }, s === 'done' ? (needApprove ? 'Đã gửi trưởng phòng duyệt — công việc chuyển sang Chờ đánh giá' : 'Đã hoàn thành công việc') : null);
   const review = async (decision) => {
     let comment = '';
     if (decision === 'reject') {
@@ -106,7 +106,7 @@ export function TaskDetail({ id, onClose, onChanged, standalone }) {
         <select className="status-select" disabled={ro} value={t.status} onChange={(e) => setStatus(e.target.value)}
           style={{ color: TASK_STATUS[t.status].color, borderColor: TASK_STATUS[t.status].color }}>
           {Object.entries(TASK_STATUS).map(([k, s]) => (
-            <option key={k} value={k} disabled={k === 'done' && needApprove}>{k === 'done' && needApprove ? `${s.label} (cần quản lý duyệt)` : s.label}</option>
+            <option key={k} value={k} disabled={k === 'done' && needApprove}>{k === 'done' && needApprove ? `${s.label} (trưởng phòng duyệt)` : s.label}</option>
           ))}
         </select>
         <div className="grow" />
@@ -145,10 +145,10 @@ export function TaskDetail({ id, onClose, onChanged, standalone }) {
       ) : needApprove ? (
         <div className="td-banner info">
           <ShieldCheck size={18} />
-          <div className="grow"><b>{t.status === 'review' ? 'Đang chờ quản lý duyệt hoàn thành' : 'Phòng ban yêu cầu quản lý duyệt khi hoàn thành'}</b>
-            <small className="block">Người duyệt: {(t.approvers || []).map((a) => a.name).join(', ') || 'quản lý trực tiếp'}.</small></div>
+          <div className="grow"><b>{t.status === 'review' ? 'Chờ đánh giá — đang chờ trưởng phòng duyệt hoàn thành' : 'Phòng ban yêu cầu trưởng phòng duyệt khi hoàn thành'}</b>
+            <small className="block">Người duyệt: {(t.approvers || []).map((a) => a.name).join(', ') || 'quản trị viên (phòng ban chưa có trưởng phòng)'}. Bấm "Hoàn thành" sẽ chuyển sang "Chờ đánh giá".</small></div>
           {!ro && ['todo', 'doing', 'failed'].includes(t.status) && (
-            <button className="btn btn-sm btn-primary" onClick={() => update({ status: 'review' }, 'Đã gửi quản lý duyệt hoàn thành')}><Send size={14} /> Gửi duyệt hoàn thành</button>
+            <button className="btn btn-sm btn-primary" onClick={() => update({ status: 'review' }, 'Đã gửi trưởng phòng duyệt — công việc chuyển sang Chờ đánh giá')}><Send size={14} /> Gửi duyệt hoàn thành</button>
           )}
         </div>
       ) : null}

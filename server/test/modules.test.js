@@ -782,6 +782,38 @@ test('task completion approval per department: staff sends for review, manager a
   assert.equal((await demo.put(`/tasks/${t.id}`, { status: 'done' })).data.status, 'done');
 });
 
+test('task approval: only the department head approves; heads complete their own tasks; toggle per department', async () => {
+  const admin = await login('admin');
+  const kd = await login('truongkd');
+  const mkt = await login('minhtrang');
+  const demo = await login('demo');
+  const deps = (await admin.get('/departments')).data;
+  const kdDep = deps.find((d) => d.name === 'Phòng Kinh doanh');
+  const itDep = deps.find((d) => d.name === 'Phòng IT');
+  // phòng ban chưa có trưởng phòng: không bật được
+  assert.equal((await admin.put(`/departments/${itDep.id}/task-approval`, { enabled: true })).status, 400);
+  assert.equal((await kd.put(`/departments/${kdDep.id}/task-approval`, { enabled: true })).status, 403);
+  assert.equal((await admin.put(`/departments/${kdDep.id}/task-approval`, { enabled: true })).data.task_approval, 1);
+  // quản lý dự án (trưởng phòng khác) giao việc cho nhân viên Kinh doanh: không được duyệt, chỉ trưởng phòng KD duyệt
+  const p = (await mkt.post('/projects', { name: 'Dự án duyệt hoàn thành', members: [demo.user.id] })).data;
+  const t = (await mkt.post('/tasks', { title: 'Khảo sát điểm bán', project_id: p.id, assignee_id: demo.user.id })).data;
+  let d = (await demo.get(`/tasks/${t.id}`)).data;
+  assert.deepEqual(d.approvers.map((u) => u.id), [kd.user.id]);
+  assert.equal((await demo.put(`/tasks/${t.id}`, { status: 'done' })).data.status, 'review');
+  assert.equal((await mkt.get(`/tasks/${t.id}`)).data.can_approve, false);
+  assert.equal((await mkt.post(`/tasks/${t.id}/review`, { decision: 'approve' })).status, 403);
+  assert.equal((await mkt.put(`/tasks/${t.id}`, { status: 'done' })).data.status, 'review');
+  d = (await kd.post(`/tasks/${t.id}/review`, { decision: 'approve' })).data;
+  assert.equal(d.status, 'done');
+  // trưởng phòng tự tích hoàn thành việc của mình
+  const own = (await kd.post('/tasks', { title: 'Họp giao ban tuần' })).data;
+  assert.equal((await kd.put(`/tasks/${own.id}`, { status: 'done' })).data.status, 'done');
+  // tắt: nhân viên tự hoàn thành
+  await admin.put(`/departments/${kdDep.id}/task-approval`, { enabled: false });
+  const t2 = (await kd.post('/tasks', { title: 'Cập nhật giá', assignee_id: demo.user.id })).data;
+  assert.equal((await demo.put(`/tasks/${t2.id}`, { status: 'done' })).data.status, 'done');
+});
+
 test('request staged approval flow: direct manager → related departments → final approver; printable data', async () => {
   const admin = await login('admin');
   const users = (await admin.get('/users')).data;
