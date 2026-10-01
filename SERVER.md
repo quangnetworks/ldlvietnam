@@ -83,7 +83,9 @@ Khi chạy bản mới, các thay đổi CSDL (migration) tự áp dụng, dữ 
 
 ## Cách 3 — Windows Server (2012 R2 / 2016 / 2019 / 2022), chạy thẳng không cần cài gì
 
-Gói `ldl-workspace-…-windows.zip` có sẵn `node.exe` (Node.js 22, bản 64-bit). Máy chủ không cần cài Node.js, cũng không cần Internet.
+Gói `ldl-workspace-…-windows.zip` có sẵn `node.exe` (Node.js 22, bản 64-bit), khoảng 35 MB. Máy chủ không cần cài Node.js, cũng không cần Internet.
+
+Gói nhẹ `…-windows-lite.zip` (khoảng 2 MB) không kèm `node.exe`. Khi dùng gói này, tải `node.exe` theo đường dẫn trong `node\TAI-NODE.txt` (https://nodejs.org/dist/v22.23.3/win-x64/node.exe) rồi đặt vào thư mục `node\` (thành `node\node.exe`).
 
 1. **Giải nén** gói vào một thư mục cố định, ví dụ `C:\ldl-workspace`:
    - Chuột phải tệp zip → Extract All.
@@ -117,7 +119,7 @@ Gói `ldl-workspace-…-windows.zip` có sẵn `node.exe` (Node.js 22, bản 64-
 - Về lâu dài nên dùng Windows Server 2016 trở lên, hoặc một máy Linux / Docker.
 - Microsoft đã ngừng cập nhật bảo mật cho Server 2012 từ 10/2023. Chỉ nên mở hệ thống trong mạng nội bộ, không đưa thẳng ra Internet.
 
-Tạo gói Windows (trên máy có Internet): `npm run package:windows`.
+Tạo gói Windows (trên máy có Internet): `npm run package:windows`. Gói nhẹ: `npm run package:windows -- --no-node`.
 
 ## Cấu hình (`.env`)
 

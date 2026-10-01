@@ -4,6 +4,7 @@
  *   npm run package            → release/ldl-workspace-<phiên bản>-<ngày>.tar.gz   (Linux / macOS, cần Node.js 22.5+)
  *   npm run package:windows    → release/ldl-workspace-<phiên bản>-<ngày>-windows.zip
  *                                kèm sẵn node.exe (Windows x64) — giải nén là chạy, kể cả Windows Server 2012 R2
+ *   npm run package:windows -- --no-node   → …-windows-lite.zip (không kèm node.exe, tự đặt node\\node.exe sau)
  *
  * Gói gồm: giao diện đã build, mã server + migration, thư viện chạy (node_modules thuần JavaScript),
  * Dockerfile + docker-compose.yml, script chạy / sao lưu / nhập dữ liệu và SERVER.md.
@@ -17,6 +18,7 @@ import { fileURLToPath } from 'node:url';
 
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const windows = process.argv.includes('--windows');
+const bundleNode = windows && !process.argv.includes('--no-node');   // --no-node: gói nhẹ, tự tải node.exe sau
 const NODE_WIN = process.env.NODE_WIN_VERSION || 'v22.23.3';
 const npm = process.platform === 'win32' ? 'npm.cmd' : 'npm';
 const run = (cmd, args, cwd) => {
@@ -26,7 +28,7 @@ const run = (cmd, args, cwd) => {
 
 const version = JSON.parse(fs.readFileSync(path.join(repo, 'package.json'), 'utf8')).version;
 const d = new Date(Date.now() + 7 * 3600e3);
-const name = `ldl-workspace-${version}-${d.toISOString().slice(0, 10).replace(/-/g, '')}${windows ? '-windows' : ''}`;
+const name = `ldl-workspace-${version}-${d.toISOString().slice(0, 10).replace(/-/g, '')}${windows ? (bundleNode ? '-windows' : '-windows-lite') : ''}`;
 const outDir = path.join(repo, 'release');
 const stage = path.join(outDir, 'ldl-workspace');
 const copy = (from, to) => fs.cpSync(path.join(repo, from), path.join(stage, to ?? from), {
@@ -58,7 +60,7 @@ console.log('→ Cài thư viện chạy (bỏ công cụ phát triển)…');
 run(npm, ['ci', '--omit=dev', '--no-audit', '--no-fund'], path.join(stage, 'server'));
 fs.writeFileSync(path.join(stage, 'VERSION'), `${name}\n`);
 
-if (windows) {
+if (bundleNode) {
   console.log(`→ Tải node.exe ${NODE_WIN} (Windows x64)…`);
   const base = `https://nodejs.org/dist/${NODE_WIN}`;
   const [exe, sums] = await Promise.all([
@@ -69,6 +71,11 @@ if (windows) {
   if (!sums.includes(`${sha}  win-x64/node.exe`)) { console.error('✗ Sai mã kiểm tra SHA-256 của node.exe'); process.exit(1); }
   fs.mkdirSync(path.join(stage, 'node'), { recursive: true });
   fs.writeFileSync(path.join(stage, 'node', 'node.exe'), Buffer.from(exe));
+}
+
+if (windows && !bundleNode) {
+  fs.mkdirSync(path.join(stage, 'node'), { recursive: true });
+  fs.writeFileSync(path.join(stage, 'node', 'TAI-NODE.txt'), `Tai node.exe (Windows 64-bit) tai:\r\nhttps://nodejs.org/dist/${NODE_WIN}/win-x64/node.exe\r\nroi dat vao thu muc nay (node\\node.exe).\r\n`);
 }
 
 console.log('→ Nén…');
