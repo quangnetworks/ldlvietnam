@@ -7,7 +7,11 @@ Bản này chạy cùng mã nguồn với bản Cloudflare. Điểm khác là d�
 
 Sao lưu thư mục `data/` là giữ được toàn bộ dữ liệu.
 
-Có 2 cách cài. **Docker** (khuyên dùng) chạy trên Linux, hoặc Windows Server có Docker Desktop. **Node.js** không cần Docker.
+Có 3 cách cài:
+
+- **Docker**: khuyên dùng trên Linux.
+- **Gói Node.js**: Linux hoặc macOS, không cần Docker.
+- **Gói Windows**: có sẵn `node.exe`, dùng cho Windows Server 2012 R2 trở lên.
 
 | Yêu cầu tối thiểu (300–500 nhân sự) | |
 |---|---|
@@ -76,7 +80,44 @@ Khi chạy bản mới, các thay đổi CSDL (migration) tự áp dụng, dữ 
    journalctl -u ldl-workspace -f
    ```
 
-   Trên Windows Server: dùng Task Scheduler (chạy `start.cmd` khi khởi động), hoặc NSSM để tạo dịch vụ.
+
+## Cách 3 — Windows Server (2012 R2 / 2016 / 2019 / 2022), chạy thẳng không cần cài gì
+
+Gói `ldl-workspace-…-windows.zip` có sẵn `node.exe` (Node.js 22, bản 64-bit). Máy chủ không cần cài Node.js, cũng không cần Internet.
+
+1. **Giải nén** gói vào một thư mục cố định, ví dụ `C:\ldl-workspace`:
+   - Chuột phải tệp zip → Extract All.
+   - Nên đặt thư mục ở ổ có nhiều dung lượng, vì dữ liệu nằm trong `C:\ldl-workspace\data`.
+2. **Cấu hình**:
+   - Chép `.env.example` thành `.env`.
+   - Mở `.env` bằng Notepad, đặt `ADMIN_PASSWORD` (và `PORT` nếu cổng 4000 đã có chương trình khác dùng).
+   - Nếu `COMPANY_NAME` có tiếng Việt có dấu, lưu tệp với Encoding **UTF-8**.
+3. **Chạy thử**: nhấp đúp `start.cmd`, rồi mở `http://localhost:4000` trên chính máy chủ.
+   - Đóng cửa sổ đen là dừng chương trình.
+4. **Chạy ngầm cùng Windows**: chuột phải `install-service.cmd` → **Run as administrator**. Tệp này sẽ:
+   - đăng ký Task Scheduler "LDL Workspace": chạy khi khởi động máy, tài khoản SYSTEM, tự chạy lại nếu bị dừng;
+   - đăng ký "LDL Workspace - Sao luu": sao lưu 01:30 mỗi đêm vào `data\backups`;
+   - mở cổng trên Windows Firewall;
+   - chạy ngay và kiểm tra `http://127.0.0.1:<cổng>`.
+5. Máy khác trong công ty mở `http://<IP-máy-chủ>:4000`. Xem IP bằng lệnh `ipconfig`.
+
+| Việc | Cách làm |
+|---|---|
+| Xem nhật ký | `C:\ldl-workspace\data\server.log` |
+| Dừng / chạy lại | Task Scheduler → "LDL Workspace" → End / Run |
+| Sao lưu ngay | nhấp đúp `backup.cmd` |
+| Cập nhật bản mới | `uninstall-service.cmd` (Run as administrator) → giải nén bản mới **đè lên** thư mục cũ, giữ nguyên `data\` và `.env` → `install-service.cmd` |
+| Gỡ | `uninstall-service.cmd` (dữ liệu trong `data\` được giữ nguyên) |
+
+**Lưu ý về Windows Server 2012**:
+
+- Node.js 22 chính thức hỗ trợ từ Windows 10 / Server 2016. Các tệp `.cmd` đã đặt `NODE_SKIP_PLATFORM_CHECK=1` để Node.js vẫn chạy được trên 2012 / 2012 R2.
+- Đây là cấu hình Node.js không cam kết hỗ trợ. Bản **2012 R2 đã cập nhật Windows Update đầy đủ** thường chạy ổn. Bản 2012 đời đầu (không R2) có thể không chạy được.
+- Nếu `start.cmd` báo lỗi ngay khi mở, chụp màn hình gửi lại để xử lý.
+- Về lâu dài nên dùng Windows Server 2016 trở lên, hoặc một máy Linux / Docker.
+- Microsoft đã ngừng cập nhật bảo mật cho Server 2012 từ 10/2023. Chỉ nên mở hệ thống trong mạng nội bộ, không đưa thẳng ra Internet.
+
+Tạo gói Windows (trên máy có Internet): `npm run package:windows`.
 
 ## Cấu hình (`.env`)
 
@@ -106,12 +147,17 @@ docker compose up -d
 - Nếu có tệp đính kèm tải lỗi, chạy lại với `--files-only` để chỉ tải phần còn thiếu.
 - Nếu đã có sẵn tệp xuất D1 (`wrangler d1 export ldlvietnam-workspace-db --remote --output d1.sql`), dùng `--dump d1.sql`.
 - Tài khoản và mật khẩu giữ nguyên như trên Cloudflare.
+- **Máy chủ Windows (gói zip)**: gói không có npm / wrangler. Vì vậy hãy chạy lệnh trên ở một máy tính bất kỳ có Node.js 22.5 trở lên và mã nguồn (`git clone`). Sau đó:
+  1. Chạy `uninstall-service.cmd` trên máy chủ, hoặc dừng task "LDL Workspace".
+  2. Chép thư mục `data\` vừa tạo đè vào `C:\ldl-workspace\data\`.
+  3. Chạy lại `install-service.cmd`.
 - Từ lúc chuyển xong, dữ liệu mới chỉ ghi vào máy chủ. Hãy thông báo cho mọi người dùng địa chỉ mới.
 
 ## Sao lưu
 
 - **Docker**: `docker compose exec ldl-workspace npm run -s backup`
 - **Node.js**: `./backup.sh`
+- **Windows**: `backup.cmd`. `install-service.cmd` đã tự đặt lịch 01:30 hằng đêm.
 
 Mỗi lần sao lưu tạo `data/backups/app-YYYYMMDD-HHMM.db` và giữ 14 bản gần nhất (đổi bằng `--keep 30`). Tệp đính kèm được chép cộng dồn vào `data/backups/uploads/`. Lệnh chạy được cả khi ứng dụng đang hoạt động.
 

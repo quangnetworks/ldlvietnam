@@ -13,7 +13,8 @@
     "test": "npm --prefix server test",
     "package": "node deploy/package.mjs",
     "backup": "npm --prefix server run backup",
-    "import:cloudflare": "npm --prefix server run import:cloudflare --"
+    "import:cloudflare": "npm --prefix server run import:cloudflare --",
+    "package:windows": "node deploy/package.mjs --windows"
   },
   "engines": {
     "node": ">=22.5"

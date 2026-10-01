@@ -188,6 +188,7 @@ Xem **[SERVER.md](SERVER.md)**:
 
 - chạy bằng Docker (`docker compose up -d --build`);
 - hoặc dùng gói cài đặt Node.js (`npm run package`);
+- hoặc dùng gói Windows có sẵn `node.exe` (`npm run package:windows`, chạy cả trên Windows Server 2012 R2);
 - chuyển dữ liệu từ Cloudflare về máy chủ (`server/scripts/import-cloudflare.mjs`);
 - sao lưu, HTTPS.
 
