@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import {
   BarChart3, Download, FolderKanban, Building2, CheckSquare, Target, Users, Info, CheckCircle2, CalendarRange, Lock, ShieldCheck,
-  Search, ExternalLink, Award, MessageSquare,
+  Search, ExternalLink, Award, MessageSquare, LayoutDashboard, TrendingUp, Clock3, AlertTriangle, Gauge, Trophy, Hourglass,
+  Grid2x2, ListChecks, PieChart, Activity, CalendarDays, UserCheck, UserPlus, Sigma,
 } from 'lucide-react';
 import { api } from '../api.js';
 import { useApp, useFetch, useToast } from '../context.jsx';
@@ -10,6 +11,7 @@ import { Avatar, Spinner, Empty, FilterSelect, Modal, Field, UserPicker, MultiSe
 import { TASK_BUCKETS, Donut, RingMeter, MiniStack, StackedColumns, SeriesTable, Legend, useChartTable } from '../components/charts.jsx';
 import { isoDate, fmtDate, cx } from '../utils.js';
 import { useWework } from './WeworkLayout.jsx';
+import './reports.css';
 
 const RANGES = [
   { value: '7', label: '7 ngày qua' },
@@ -171,10 +173,92 @@ function ReportAccessModal({ onClose }) {
   );
 }
 
-function Card({ title, action, children, className }) {
+// ---------------------------------------------------------------- hiệu ứng
+const reduceMotion = () => typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+
+/** Số chạy từ 0 lên giá trị (≈0.8s, chậm dần) khi lần đầu hiện trên màn hình; giữ nguyên số thập phân. */
+function CountUp({ value, suffix = '' }) {
+  const target = Number(value) || 0;
+  const decimals = String(value).includes('.') ? String(value).split('.')[1].length : 0;
+  const [shown, setShown] = useState(reduceMotion() ? target : 0);
+  const ref = useRef(null);
+  const from = useRef(0);
+  useEffect(() => {
+    if (reduceMotion()) { setShown(target); return undefined; }
+    let raf = 0; let io;
+    const run = () => {
+      const start = performance.now(); const a = from.current;
+      const tick = (t) => {
+        const p = Math.min(1, (t - start) / 800);
+        const v = a + (target - a) * (1 - (1 - p) ** 3);
+        setShown(v);
+        if (p < 1) raf = requestAnimationFrame(tick); else from.current = target;
+      };
+      raf = requestAnimationFrame(tick);
+    };
+    if (from.current === 0 && 'IntersectionObserver' in window && ref.current) {
+      io = new IntersectionObserver(([e]) => { if (e.isIntersecting) { io.disconnect(); run(); } }, { threshold: 0.3 });
+      io.observe(ref.current);
+    } else run();
+    return () => { cancelAnimationFrame(raf); io?.disconnect(); };
+  }, [target]);
+  return <span ref={ref} className="rpt-num">{Number(shown).toLocaleString('vi-VN', { minimumFractionDigits: decimals, maximumFractionDigits: decimals })}{suffix}</span>;
+}
+
+/** Khối hiện dần (trượt nhẹ lên) khi cuộn tới. */
+function useReveal() {
+  const ref = useRef(null);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return undefined;
+    if (reduceMotion() || !('IntersectionObserver' in window)) { el.classList.add('in'); return undefined; }
+    const io = new IntersectionObserver(([e]) => { if (e.isIntersecting) { el.classList.add('in'); io.disconnect(); } }, { threshold: 0.08, rootMargin: '0px 0px -40px 0px' });
+    io.observe(el);
+    return () => io.disconnect();
+  }, []);
+  return ref;
+}
+
+/** Khối chương của báo cáo: số thứ tự, biểu tượng, tiêu đề, mô tả ngắn; màu nhấn riêng để phân biệt từng khối. */
+function Section({ id, n, icon: Icon, title, desc, tone, children }) {
+  const ref = useReveal();
+  return (
+    <section id={id} ref={ref} className={cx('rpt-block reveal', tone)}>
+      <header className="rpt-block-head">
+        <span className="rpt-block-icon"><Icon size={18} /></span>
+        <div className="grow">
+          <div className="rpt-block-kicker">Phần {n}</div>
+          <h2>{title}</h2>
+          {desc && <p>{desc}</p>}
+        </div>
+      </header>
+      <div className="rpt-block-body">{children}</div>
+    </section>
+  );
+}
+
+/** Ô chỉ số nổi bật đầu báo cáo. */
+function Kpi({ icon: Icon, label, value, suffix, hint, tone, pct, onClick, i }) {
+  const Tag = onClick ? 'button' : 'div';
+  return (
+    <Tag type={onClick ? 'button' : undefined} className={cx('rpt-kpi', tone, onClick && 'clickable')} onClick={onClick} style={{ '--i': i }}
+      title={onClick ? 'Xem danh sách công việc' : undefined}>
+      <span className="rpt-kpi-icon"><Icon size={18} /></span>
+      <span className="rpt-kpi-label">{label}</span>
+      <b className="rpt-kpi-value"><CountUp value={value} suffix={suffix} /></b>
+      {pct != null && <span className="rpt-kpi-bar" aria-hidden><i style={{ '--w': `${Math.max(0, Math.min(100, pct))}%` }} /></span>}
+      {hint && <small className="rpt-kpi-hint">{hint}</small>}
+    </Tag>
+  );
+}
+
+function Card({ title, icon: Icon, hint, action, children, className }) {
   return (
     <section className={cx('rpt-card', className)}>
-      <header className="rpt-card-head"><h3>{title}</h3>{action}</header>
+      <header className="rpt-card-head">
+        <h3>{Icon && <span className="rpt-card-icon"><Icon size={15} /></span>}<span>{title}{hint && <small>{hint}</small>}</span></h3>
+        {action}
+      </header>
       <div className="rpt-card-body">{children}</div>
     </section>
   );
@@ -182,10 +266,10 @@ function Card({ title, action, children, className }) {
 
 function SummaryCard({ icon: Icon, title, value, rows, tint, onOpen }) {
   return (
-    <section className="rpt-sum">
+    <section className={cx('rpt-sum', tint)}>
       <header><span className={cx('rpt-sum-icon', tint)}><Icon size={16} /></span>{title}</header>
       <div className="rpt-sum-body">
-        {onOpen ? <Num className="rpt-sum-value" onClick={() => onOpen(null)} title={`Xem ${title.toLowerCase()}`}>{value}</Num> : <b className="rpt-sum-value">{value}</b>}
+        {onOpen ? <Num className="rpt-sum-value" onClick={() => onOpen(null)} title={`Xem ${title.toLowerCase()}`}><CountUp value={value} /></Num> : <b className="rpt-sum-value"><CountUp value={value} /></b>}
         <div className="rpt-sum-rows">
           <small className="muted">{title.toUpperCase()}</small>
           {rows.map((r) => (
@@ -199,11 +283,14 @@ function SummaryCard({ icon: Icon, title, value, rows, tint, onOpen }) {
   );
 }
 
-function PersonRow({ p, right, sub, onOpen }) {
+function PersonRow({ p, right, sub, onOpen, rank }) {
   const Tag = onOpen ? 'button' : 'div';
   return (
     <Tag type={onOpen ? 'button' : undefined} className={cx('rpt-person', onOpen && 'clickable')} onClick={onOpen} title={onOpen ? 'Xem danh sách công việc' : undefined}>
-      <Avatar name={p.name} color={p.color} uid={p.id} size={34} />
+      <span className="rpt-avatar">
+        <Avatar name={p.name} color={p.color} uid={p.id} size={34} />
+        {rank && rank <= 3 && <i className={cx('rpt-rank', `r${rank}`)}>{rank}</i>}
+      </span>
       <div className="grow"><b className="ellipsis block">{p.name}</b><small className="muted">{sub}</small></div>
       {right}
     </Tag>
@@ -260,7 +347,8 @@ export function ReportView({ projectId }) {
   const dailyRows = useMemo(() => (r?.daily || []).map((d) => ({ label: dm(d.day), tip: fmtDate(d.day), values: vals(d) })), [r]);
   const weeklyRows = useMemo(() => (r?.weekly || []).map((w) => {
     const end = isoDate(new Date(new Date(`${w.week}T00:00:00`).getTime() + 6 * 864e5));
-    return { label: `${dm(w.week)}–${dm(end)}`, tip: `Tuần ${fmtDate(w.week)} – ${fmtDate(end)}`, values: vals(w) };
+    // nhãn trục ngắn (ngày đầu tuần) để không chồng nhau; khoảng ngày đầy đủ nằm trong tooltip / bảng
+    return { label: dm(w.week), tip: `Tuần ${fmtDate(w.week)} – ${fmtDate(end)}`, values: vals(w) };
   }), [r]);
   const deptRows = useMemo(() => (r?.department_chart || []).map((p) => ({ label: p.name.length > 14 ? `${p.name.slice(0, 13)}…` : p.name, tip: p.name, values: vals(p) })), [r]);
 
@@ -292,8 +380,14 @@ export function ReportView({ projectId }) {
   const nt = r.not_on_time;
   const pct = (a, b) => (b ? Math.round((a / b) * 1000) / 10 : 0);
 
+  const doneCount = s.on_time + s.late;
+  const sections = [
+    ['rpt-s-overview', 'Tổng quan'], ['rpt-s-progress', 'Tiến độ'], ['rpt-s-members', 'Thành viên'],
+    ...(!projectId ? [['rpt-s-projects', 'Dự án & phòng ban'], ['rpt-goals', 'Mục tiêu']] : []),
+  ];
+
   return (
-    <div className={cx('rpt', loading && 'refetching')}>
+    <div className={cx('rpt ww-rpt', loading && 'refetching')}>
       {modals}
       <div className="rpt-filters glass">
         <CalendarRange size={16} className="muted" />
@@ -314,6 +408,27 @@ export function ReportView({ projectId }) {
         <span className="rpt-scan"><CheckCircle2 size={15} /> Đã quét <b>{r.scanned}</b> công việc · {fmtDate(r.from)} – {fmtDate(r.to)}</span>
       </div>
 
+      {/* Chỉ số nổi bật của kỳ */}
+      <div className="rpt-kpis">
+        <Kpi i={0} icon={ListChecks} tone="blue" label="Tổng công việc" value={s.total} hint={`${fmtDate(r.from)} – ${fmtDate(r.to)}`} onClick={() => open('Tất cả công việc')} />
+        <Kpi i={1} icon={Gauge} tone="green" label="Tỷ lệ hoàn thành" value={pct(doneCount, s.total)} suffix="%" pct={pct(doneCount, s.total)}
+          hint={`${doneCount}/${s.total} công việc đã xong`} onClick={() => open('Công việc đã hoàn thành', { bucket: 'done' })} />
+        <Kpi i={2} icon={Clock3} tone="teal" label="Hoàn thành đúng hạn" value={pct(s.on_time, doneCount)} suffix="%" pct={pct(s.on_time, doneCount)}
+          hint={`${s.on_time} đúng hạn · ${s.late} muộn`} onClick={() => open('Hoàn thành đúng hạn', { bucket: 'on_time' })} />
+        <Kpi i={3} icon={AlertTriangle} tone={s.overdue ? 'red' : 'gray'} label="Đang quá hạn" value={s.overdue}
+          hint={`trên ${nt.open} công việc đang thực hiện`} onClick={() => open('Công việc quá hạn', { bucket: 'overdue' })} />
+        <Kpi i={4} icon={Hourglass} tone="purple" label="Chờ đánh giá" value={r.review.total}
+          hint={r.review.overdue ? `${r.review.overdue} đã quá hạn duyệt` : 'Không có việc chờ quá hạn'} onClick={() => open('Công việc chờ đánh giá', { bucket: 'review' })} />
+      </div>
+
+      <nav className="rpt-nav" aria-label="Các phần của báo cáo">
+        {sections.map(([id, label], i) => (
+          <button key={id} type="button" onClick={() => document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' })}>
+            <i>{String(i + 1).padStart(2, '0')}</i>{label}
+          </button>
+        ))}
+      </nav>
+
       {!projectId && (
         <div className="rpt-sums">
           <SummaryCard icon={FolderKanban} tint="blue" title="Dự án" value={r.cards.projects.total} onOpen={(k) => openProjects('project', k)}
@@ -331,163 +446,173 @@ export function ReportView({ projectId }) {
 
       {!s.total ? <Empty icon={BarChart3} title="Không có công việc trong khoảng thời gian này">Thử mở rộng khoảng thời gian hoặc đổi mốc ngày.</Empty> : (
         <>
-          <h4 className="rpt-section">Báo cáo công việc</h4>
-          <div className="rpt-grid four">
-            <Card title="Trạng thái công việc">
-              <Donut series={TASK_BUCKETS} values={vals(s)} centerLabel="công việc" onSelect={(k) => open(bucketTitle(k), k ? { bucket: k } : {})} />
-            </Card>
-            <Card title="Thành viên xuất sắc">
-              {r.excellent.length ? r.excellent.map((m) => (
-                <PersonRow key={m.id} p={m} sub={<><b>{m.on_time + m.late}</b>/{m.total} công việc đã hoàn thành</>}
-                  onOpen={() => open(`Công việc của ${m.name}`, { assignee_id: m.id })}
-                  right={<span className="rpt-rate"><span style={{ width: `${m.rate}%` }} /><b>{m.rate}%</b></span>} />
-              )) : <p className="muted small">Chưa có thành viên hoàn thành công việc</p>}
-            </Card>
-            <Card title="Công việc không đúng hạn">
-              <div className="rpt-late">
-                <RingMeter pct={pct(nt.overdue, nt.open)} color="var(--viz-overdue)" label="Quá hạn" />
-                <div><Num className="rpt-big red" onClick={() => open('Công việc quá hạn', { bucket: 'overdue' })}>{nt.overdue}</Num><small>công việc quá hạn<br />trên <Num onClick={() => open('Công việc đang thực hiện', { bucket: 'open' })}><b>{nt.open}</b></Num> công việc đang thực hiện</small></div>
-              </div>
-              <div className="rpt-late">
-                <RingMeter pct={pct(nt.late, nt.done)} color="var(--viz-late)" label="Hoàn thành muộn" />
-                <div><Num className="rpt-big amber" onClick={() => open('Công việc hoàn thành muộn', { bucket: 'late' })}>{nt.late}</Num><small>công việc hoàn thành muộn<br />trên <Num onClick={() => open('Công việc đã hoàn thành', { bucket: 'done' })}><b>{nt.done}</b></Num> công việc đã hoàn thành</small></div>
-              </div>
-              <p className="rpt-note"><Info size={14} /> {nt.no_due ? <Num onClick={() => open('Công việc không có thời hạn', { no_due: 1 })}><b>{nt.no_due}</b></Num> : <b>0</b>} công việc được tạo không có thời hạn</p>
-            </Card>
-            <div className="rpt-stack">
-              <Card title="Ma trận Eisenhower">
-                <div className="rpt-eisen" role="table" aria-label="Ma trận Eisenhower">
-                  {[['imp', 'important', 'Quan trọng'], ['both', 'critical', 'Quan trọng & khẩn cấp'], ['none', 'normal', 'Bình thường'], ['urg', 'urgent', 'Khẩn cấp']].map(([cls, pr, label]) => {
-                    const n = r.eisenhower[cls === 'imp' ? 'important' : cls === 'urg' ? 'urgent' : cls];
-                    return pr && n ? (
-                      <button key={cls} type="button" className={cx('q clickable', cls)} onClick={() => open(`Công việc: ${label}`, { priority: pr })}><b>{n}</b><small>{label}</small></button>
-                    ) : <div key={cls} className={cx('q', cls)}><b>{n}</b><small>{label}</small></div>;
-                  })}
-                </div>
+          <Section id="rpt-s-overview" n="01" icon={LayoutDashboard} tone="blue" title="Tổng quan công việc"
+            desc="Trạng thái, chất lượng đúng hạn và mức độ ưu tiên của các công việc trong kỳ. Bấm vào số hoặc biểu đồ để xem danh sách.">
+            <div className="rpt-grid four">
+              <Card title="Trạng thái công việc" icon={PieChart}>
+                <Donut series={TASK_BUCKETS} values={vals(s)} centerLabel="công việc" onSelect={(k) => open(bucketTitle(k), k ? { bucket: k } : {})} />
               </Card>
-              <Card title="Đang chờ đánh giá">
-                <div className="rpt-review">
-                  <Num className="rpt-big green" onClick={() => open('Công việc chờ đánh giá', { bucket: 'review' })}>{r.review.total}</Num>
-                  <div><small className="muted">ĐANG CHỜ ĐÁNH GIÁ</small><div>{r.review.overdue ? <Num className="text-red" onClick={() => open('Chờ đánh giá đã quá hạn', { review_overdue: 1 })}><b>{r.review.overdue}</b></Num> : <b>0</b>}/{r.review.total} quá hạn</div></div>
+              <Card title="Thành viên xuất sắc" icon={Trophy} hint="Tỷ lệ hoàn thành cao nhất">
+                {r.excellent.length ? r.excellent.map((m, i) => (
+                  <PersonRow key={m.id} p={m} rank={i + 1} sub={<><b>{m.on_time + m.late}</b>/{m.total} công việc đã hoàn thành</>}
+                    onOpen={() => open(`Công việc của ${m.name}`, { assignee_id: m.id })}
+                    right={<span className="rpt-rate"><span style={{ width: `${m.rate}%` }} /><b>{m.rate}%</b></span>} />
+                )) : <p className="muted small">Chưa có thành viên hoàn thành công việc</p>}
+              </Card>
+              <Card title="Công việc không đúng hạn" icon={AlertTriangle}>
+                <div className="rpt-late">
+                  <RingMeter pct={pct(nt.overdue, nt.open)} color="var(--viz-overdue)" label="Quá hạn" />
+                  <div><Num className="rpt-big red" onClick={() => open('Công việc quá hạn', { bucket: 'overdue' })}><CountUp value={nt.overdue} /></Num><small>công việc quá hạn<br />trên <Num onClick={() => open('Công việc đang thực hiện', { bucket: 'open' })}><b>{nt.open}</b></Num> công việc đang thực hiện</small></div>
                 </div>
-                <p className="rpt-note"><b>{r.review.projects_with_review}/{r.review.projects_total}</b> dự án & phòng ban có công việc chờ duyệt</p>
+                <div className="rpt-late">
+                  <RingMeter pct={pct(nt.late, nt.done)} color="var(--viz-late)" label="Hoàn thành muộn" />
+                  <div><Num className="rpt-big amber" onClick={() => open('Công việc hoàn thành muộn', { bucket: 'late' })}><CountUp value={nt.late} /></Num><small>công việc hoàn thành muộn<br />trên <Num onClick={() => open('Công việc đã hoàn thành', { bucket: 'done' })}><b>{nt.done}</b></Num> công việc đã hoàn thành</small></div>
+                </div>
+                <p className="rpt-note"><Info size={14} /> {nt.no_due ? <Num onClick={() => open('Công việc không có thời hạn', { no_due: 1 })}><b>{nt.no_due}</b></Num> : <b>0</b>} công việc được tạo không có thời hạn</p>
+              </Card>
+              <div className="rpt-stack">
+                <Card title="Ma trận Eisenhower" icon={Grid2x2}>
+                  <div className="rpt-eisen" role="table" aria-label="Ma trận Eisenhower">
+                    {[['imp', 'important', 'Quan trọng'], ['both', 'critical', 'Quan trọng & khẩn cấp'], ['none', 'normal', 'Bình thường'], ['urg', 'urgent', 'Khẩn cấp']].map(([cls, pr, label]) => {
+                      const n = r.eisenhower[cls === 'imp' ? 'important' : cls === 'urg' ? 'urgent' : cls];
+                      return pr && n ? (
+                        <button key={cls} type="button" className={cx('q clickable', cls)} onClick={() => open(`Công việc: ${label}`, { priority: pr })}><b><CountUp value={n} /></b><small>{label}</small></button>
+                      ) : <div key={cls} className={cx('q', cls)}><b>{n}</b><small>{label}</small></div>;
+                    })}
+                  </div>
+                </Card>
+                <Card title="Đang chờ đánh giá" icon={Hourglass}>
+                  <div className="rpt-review">
+                    <Num className="rpt-big green" onClick={() => open('Công việc chờ đánh giá', { bucket: 'review' })}><CountUp value={r.review.total} /></Num>
+                    <div><small className="muted">ĐANG CHỜ ĐÁNH GIÁ</small><div>{r.review.overdue ? <Num className="text-red" onClick={() => open('Chờ đánh giá đã quá hạn', { review_overdue: 1 })}><b>{r.review.overdue}</b></Num> : <b>0</b>}/{r.review.total} quá hạn</div></div>
+                  </div>
+                  <p className="rpt-note"><b>{r.review.projects_with_review}/{r.review.projects_total}</b> dự án & phòng ban có công việc chờ duyệt</p>
+                </Card>
+              </div>
+            </div>
+          </Section>
+
+          <Section id="rpt-s-progress" n="02" icon={TrendingUp} tone="teal" title="Tiến độ theo thời gian"
+            desc="Diễn biến luỹ kế theo ngày và tổng hợp theo tuần. Chuyển sang dạng bảng bằng nút góc phải mỗi biểu đồ.">
+            <div className="rpt-grid two-one">
+              <Card title="Quá trình hoàn thành theo ngày" icon={Activity} action={dailyToggle}>
+                {dailyMode === 'chart' ? (
+                  <>
+                    <Legend series={TASK_BUCKETS} className="top" />
+                    <StackedColumns series={TASK_BUCKETS} rows={dailyRows} yLabel="Số lượng công việc (luỹ kế)" onSelect={(i) => openDay(i, null)} />
+                  </>
+                ) : <SeriesTable series={TASK_BUCKETS} rows={dailyRows} labelHead="Ngày" onCell={openDay} />}
+              </Card>
+              <Card title="Tổng hợp theo tuần" icon={CalendarDays} action={weeklyToggle}>
+                {weeklyMode === 'chart' ? (
+                  <>
+                    <Legend series={TASK_BUCKETS} className="top" />
+                    <StackedColumns series={TASK_BUCKETS} rows={weeklyRows} labelEvery={1} yLabel="Số lượng công việc" onSelect={(i) => openWeek(i, null)} />
+                  </>
+                ) : <SeriesTable series={TASK_BUCKETS} rows={weeklyRows} labelHead="Tuần" onCell={openWeek} />}
               </Card>
             </div>
-          </div>
+          </Section>
 
-          <div className="rpt-grid two-one">
-            <Card title="Quá trình hoàn thành theo ngày" action={dailyToggle}>
-              {dailyMode === 'chart' ? (
-                <>
-                  <Legend series={TASK_BUCKETS} className="top" />
-                  <StackedColumns series={TASK_BUCKETS} rows={dailyRows} yLabel="Số lượng công việc (luỹ kế)" onSelect={(i) => openDay(i, null)} />
-                </>
-              ) : <SeriesTable series={TASK_BUCKETS} rows={dailyRows} labelHead="Ngày" onCell={openDay} />}
-            </Card>
-            <Card title="Tổng hợp theo tuần" action={weeklyToggle}>
-              {weeklyMode === 'chart' ? (
-                <>
-                  <Legend series={TASK_BUCKETS} className="top" />
-                  <StackedColumns series={TASK_BUCKETS} rows={weeklyRows} labelEvery={1} yLabel="Số lượng công việc" onSelect={(i) => openWeek(i, null)} />
-                </>
-              ) : <SeriesTable series={TASK_BUCKETS} rows={weeklyRows} labelHead="Tuần" onCell={openWeek} />}
-            </Card>
-          </div>
-
-          <h4 className="rpt-section">Theo thành viên</h4>
-          <div className="rpt-grid two-one-one">
-            <Card title="Công việc được giao theo thành viên" action={<button className="link-btn" onClick={() => csvMembers('cong-viec-duoc-giao', r.assigned, 'công việc được giao')}><Download size={14} /> Xuất Excel</button>}>
-              <MemberTable rows={r.assigned} unit="công việc được giao" onOpen={(m, b) => open(`Được giao cho ${m.name}${b ? ` · ${BUCKET_LABEL[b]}` : ''}`, { assignee_id: m.id, ...(b && { bucket: b }) })} />
-            </Card>
-            <Card title="Còn nhiều việc nhất">
-              {r.most_open.map((m) => <PersonRow key={m.id} p={m} sub={<><b>{m.open}</b>/{m.total} công việc đang thực hiện</>} onOpen={() => open(`${m.name} · đang thực hiện`, { assignee_id: m.id, bucket: 'open' })} />)}
-              {!r.most_open.length && <p className="muted small">Không có</p>}
-            </Card>
-            <Card title="Làm muộn nhiều nhất">
-              {r.most_late.map((m) => <PersonRow key={m.id} p={m} sub={<><b className="text-red">{m.overdue}</b> quá hạn · <b>{m.late}</b> hoàn thành muộn</>} onOpen={() => open(`${m.name} · quá hạn & hoàn thành muộn`, { assignee_id: m.id, bucket: 'overdue,late' })} />)}
-              {!r.most_late.length && <p className="muted small">Không có ai trễ hạn 🎉</p>}
-            </Card>
-          </div>
-          <div className="rpt-grid two-one-one">
-            <Card title="Công việc đã tạo theo thành viên" action={<button className="link-btn" onClick={() => csvMembers('cong-viec-da-tao', r.created, 'công việc đã tạo')}><Download size={14} /> Xuất Excel</button>}>
-              <MemberTable rows={r.created} unit="công việc đã tạo" onOpen={(m, b) => open(`Do ${m.name} tạo${b ? ` · ${BUCKET_LABEL[b]}` : ''}`, { creator_id: m.id, ...(b && { bucket: b }) })} />
-            </Card>
-            <Card title="Tạo nhiều công việc nhất">
-              {r.most_created.map((m) => <PersonRow key={m.id} p={m} sub={<><b>{m.total}</b> công việc</>} onOpen={() => open(`Do ${m.name} tạo`, { creator_id: m.id })} />)}
-            </Card>
-            <Card title="Chưa giao nhiều nhất">
-              {r.most_unassigned.map((m) => <PersonRow key={m.id} p={m} sub={<><b>{m.n}</b> chưa giao</>} onOpen={() => open(`${m.name} · chưa giao`, { creator_id: m.id, unassigned: 1 })} />)}
-              {!r.most_unassigned.length && <p className="muted small">Mọi công việc đều đã có người thực hiện</p>}
-            </Card>
-          </div>
+          <Section id="rpt-s-members" n="03" icon={Users} tone="purple" title="Theo thành viên"
+            desc="Khối lượng được giao, công việc đã tạo và những người cần hỗ trợ thêm.">
+            <div className="rpt-grid two-one-one">
+              <Card title="Công việc được giao theo thành viên" icon={UserCheck} action={<button className="link-btn" onClick={() => csvMembers('cong-viec-duoc-giao', r.assigned, 'công việc được giao')}><Download size={14} /> Xuất Excel</button>}>
+                <MemberTable rows={r.assigned} unit="công việc được giao" onOpen={(m, b) => open(`Được giao cho ${m.name}${b ? ` · ${BUCKET_LABEL[b]}` : ''}`, { assignee_id: m.id, ...(b && { bucket: b }) })} />
+              </Card>
+              <Card title="Còn nhiều việc nhất" icon={ListChecks}>
+                {r.most_open.map((m) => <PersonRow key={m.id} p={m} sub={<><b>{m.open}</b>/{m.total} công việc đang thực hiện</>} onOpen={() => open(`${m.name} · đang thực hiện`, { assignee_id: m.id, bucket: 'open' })} />)}
+                {!r.most_open.length && <p className="muted small">Không có</p>}
+              </Card>
+              <Card title="Làm muộn nhiều nhất" icon={Clock3}>
+                {r.most_late.map((m) => <PersonRow key={m.id} p={m} sub={<><b className="text-red">{m.overdue}</b> quá hạn · <b>{m.late}</b> hoàn thành muộn</>} onOpen={() => open(`${m.name} · quá hạn & hoàn thành muộn`, { assignee_id: m.id, bucket: 'overdue,late' })} />)}
+                {!r.most_late.length && <p className="muted small">Không có ai trễ hạn 🎉</p>}
+              </Card>
+            </div>
+            <div className="rpt-grid two-one-one">
+              <Card title="Công việc đã tạo theo thành viên" icon={UserPlus} action={<button className="link-btn" onClick={() => csvMembers('cong-viec-da-tao', r.created, 'công việc đã tạo')}><Download size={14} /> Xuất Excel</button>}>
+                <MemberTable rows={r.created} unit="công việc đã tạo" onOpen={(m, b) => open(`Do ${m.name} tạo${b ? ` · ${BUCKET_LABEL[b]}` : ''}`, { creator_id: m.id, ...(b && { bucket: b }) })} />
+              </Card>
+              <Card title="Tạo nhiều công việc nhất" icon={TrendingUp}>
+                {r.most_created.map((m) => <PersonRow key={m.id} p={m} sub={<><b>{m.total}</b> công việc</>} onOpen={() => open(`Do ${m.name} tạo`, { creator_id: m.id })} />)}
+              </Card>
+              <Card title="Chưa giao nhiều nhất" icon={Users}>
+                {r.most_unassigned.map((m) => <PersonRow key={m.id} p={m} sub={<><b>{m.n}</b> chưa giao</>} onOpen={() => open(`${m.name} · chưa giao`, { creator_id: m.id, unassigned: 1 })} />)}
+                {!r.most_unassigned.length && <p className="muted small">Mọi công việc đều đã có người thực hiện</p>}
+              </Card>
+            </div>
+          </Section>
 
           {!projectId && (
             <>
-              <h4 className="rpt-section">Dự án, phòng ban</h4>
-              <div className="rpt-grid two-one">
-                <Card title="Dự án & phòng ban" action={<button className="link-btn" onClick={() => downloadCsv('du-an-phong-ban', ['Dự án / phòng ban', 'Loại', 'Tổng', ...TASK_BUCKETS.map((b) => b.label)], r.projects.map((p) => [p.name, p.kind === 'department' ? 'Phòng ban' : 'Dự án', p.total, ...TASK_BUCKETS.map((b) => p[b.key])]))}><Download size={14} /> Xuất Excel</button>}>
-                  <div className="table-wrap rpt-table">
-                    <table className="table compact">
-                      <thead><tr><th>Dự án & phòng ban</th><th />{TASK_BUCKETS.map((b) => <th key={b.key} className="num" title={b.label}><i className="viz-key" style={{ background: b.color }} />{b.short}</th>)}</tr></thead>
-                      <tbody>{r.projects.map((p) => (
-                        <tr key={p.id}>
-                          <td className="rpt-name"><span className="row gap-sm">
-                            <button type="button" className="row gap-sm rpt-link plain" onClick={() => openProject(p, null)} title="Xem danh sách công việc">
-                              <span className="proj-dot lg" style={{ background: p.color || 'var(--blue-2)' }}>{p.name.trim()[0]}</span>
-                              <span><b>{p.name}</b><small className="muted block">{p.kind === 'department' ? 'Phòng ban' : 'Dự án'} · {p.total} công việc</small></span></button>
-                            <Link to={`/wework/project/${p.id}`} className="icon-btn sm" title="Mở dự án"><ExternalLink size={13} /></Link></span></td>
-                          <td><MiniStack series={TASK_BUCKETS} values={vals(p)} width={72} /></td>
-                          {TASK_BUCKETS.map((b) => <td key={b.key} className={cx('num', !p[b.key] && 'muted')}>{p[b.key] ? <Num onClick={() => openProject(p, b.key)}>{p[b.key]}</Num> : 0}</td>)}
-                        </tr>
-                      ))}</tbody>
-                    </table>
-                  </div>
-                </Card>
-                <div className="rpt-stack">
-                  <Card title="Tổng hợp dự án">
-                    <Donut series={HEALTH} values={r.project_health} centerLabel="dự án" size={150} thickness={18}
-                      onSelect={(k) => setPlist({ title: k ? `Dự án & phòng ban: ${HEALTH.find((h) => h.key === k).label}` : 'Dự án & phòng ban có công việc trong kỳ', list: r.projects.filter((p) => !k || p.health === k) })} />
-                  </Card>
-                  <Card title="Phân bổ công việc theo phòng ban" action={deptToggle}>
-                    {!deptRows.length ? <p className="muted small">Chưa có công việc thuộc phòng ban</p> : deptMode === 'chart' ? (
-                      <>
-                        <Legend series={TASK_BUCKETS} className="top" />
-                        <StackedColumns series={TASK_BUCKETS} rows={deptRows} labelEvery={1} height={220} showTotal={false} onSelect={(i) => openProject(r.department_chart[i], null)} />
-                      </>
-                    ) : <SeriesTable series={TASK_BUCKETS} rows={deptRows} labelHead="Phòng ban" onCell={(i, b) => openProject(r.department_chart[i], b)} />}
-                  </Card>
-                </div>
-              </div>
-
-              <h4 className="rpt-section" id="rpt-goals">Mục tiêu & thống kê</h4>
-              <div className="rpt-grid two-one">
-                <Card title="Danh sách mục tiêu" className="rpt-goals-card">
-                  {!r.goals.length ? <p className="muted small">Chưa có mục tiêu</p> : (
+              <Section id="rpt-s-projects" n="04" icon={FolderKanban} tone="orange" title="Dự án & phòng ban"
+                desc="Phân bổ công việc và sức khoẻ tiến độ của từng dự án, phòng ban.">
+                <div className="rpt-grid two-one">
+                  <Card title="Dự án & phòng ban" icon={FolderKanban} action={<button className="link-btn" onClick={() => downloadCsv('du-an-phong-ban', ['Dự án / phòng ban', 'Loại', 'Tổng', ...TASK_BUCKETS.map((b) => b.label)], r.projects.map((p) => [p.name, p.kind === 'department' ? 'Phòng ban' : 'Dự án', p.total, ...TASK_BUCKETS.map((b) => p[b.key])]))}><Download size={14} /> Xuất Excel</button>}>
                     <div className="table-wrap rpt-table">
                       <table className="table compact">
-                        <thead><tr><th>Mục tiêu</th><th>Phụ trách</th><th style={{ width: '30%' }}>Hoàn thành</th><th>Thời hạn</th></tr></thead>
-                        <tbody>{r.goals.slice(0, 12).map((g) => (
-                          <tr key={g.id}>
-                            <td><Num className="plain" onClick={() => open(`Mục tiêu: ${g.title}`, { goal_id: g.id }, 'mọi công việc gắn với mục tiêu')}><b>{g.title}</b></Num><small className="muted block">{g.department_name || '—'}</small></td>
-                            <td><span className="row gap-sm"><Avatar name={g.user_name} color={g.user_color} size={24} />{g.user_name}</span></td>
-                            <td><div className="rpt-rate wide"><span style={{ width: `${g.progress}%` }} /><b>{g.progress}%</b></div></td>
-                            <td className={g.due_date && g.due_date < r.today && g.progress < 100 ? 'text-red' : ''}>{fmtDate(g.due_date) || '—'}</td>
+                        <thead><tr><th>Dự án & phòng ban</th><th />{TASK_BUCKETS.map((b) => <th key={b.key} className="num" title={b.label}><i className="viz-key" style={{ background: b.color }} />{b.short}</th>)}</tr></thead>
+                        <tbody>{r.projects.map((p) => (
+                          <tr key={p.id}>
+                            <td className="rpt-name"><span className="row gap-sm">
+                              <button type="button" className="row gap-sm rpt-link plain" onClick={() => openProject(p, null)} title="Xem danh sách công việc">
+                                <span className="proj-dot lg" style={{ background: p.color || 'var(--blue-2)' }}>{p.name.trim()[0]}</span>
+                                <span><b>{p.name}</b><small className="muted block">{p.kind === 'department' ? 'Phòng ban' : 'Dự án'} · {p.total} công việc</small></span></button>
+                              <Link to={`/wework/project/${p.id}`} className="icon-btn sm" title="Mở dự án"><ExternalLink size={13} /></Link></span></td>
+                            <td><MiniStack series={TASK_BUCKETS} values={vals(p)} width={72} /></td>
+                            {TASK_BUCKETS.map((b) => <td key={b.key} className={cx('num', !p[b.key] && 'muted')}>{p[b.key] ? <Num onClick={() => openProject(p, b.key)}>{p[b.key]}</Num> : 0}</td>)}
                           </tr>
                         ))}</tbody>
                       </table>
                     </div>
-                  )}
-                </Card>
-                <Card title="Các con số thống kê">
-                  <p className="rpt-hint">Chỉ tính các công việc trong khoảng thời gian được chọn</p>
-                  <div className="rpt-stats">
-                    <div><b>{r.stats.per_week}</b><small>công việc trung bình mỗi tuần</small></div>
-                    <div><b>{r.stats.per_week_per_person}</b><small>công việc trung bình mỗi tuần, mỗi người</small></div>
-                    <div><b>{r.stats.per_project}</b><small>công việc trung bình mỗi dự án</small></div>
-                    <div>{r.stats.comments ? <Num onClick={() => open('Công việc có bình luận', { with_comments: 1 })}><b>{r.stats.comments}</b></Num> : <b>0</b>}<small>tổng số bình luận</small></div>
+                  </Card>
+                  <div className="rpt-stack">
+                    <Card title="Tổng hợp dự án" icon={PieChart}>
+                      <Donut series={HEALTH} values={r.project_health} centerLabel="dự án" size={150} thickness={18}
+                        onSelect={(k) => setPlist({ title: k ? `Dự án & phòng ban: ${HEALTH.find((h) => h.key === k).label}` : 'Dự án & phòng ban có công việc trong kỳ', list: r.projects.filter((p) => !k || p.health === k) })} />
+                    </Card>
+                    <Card title="Phân bổ công việc theo phòng ban" icon={Building2} action={deptToggle}>
+                      {!deptRows.length ? <p className="muted small">Chưa có công việc thuộc phòng ban</p> : deptMode === 'chart' ? (
+                        <>
+                          <Legend series={TASK_BUCKETS} className="top" />
+                          <StackedColumns series={TASK_BUCKETS} rows={deptRows} labelEvery={1} height={220} showTotal={false} onSelect={(i) => openProject(r.department_chart[i], null)} />
+                        </>
+                      ) : <SeriesTable series={TASK_BUCKETS} rows={deptRows} labelHead="Phòng ban" onCell={(i, b) => openProject(r.department_chart[i], b)} />}
+                    </Card>
                   </div>
-                </Card>
-              </div>
+                </div>
+              </Section>
+
+              <Section id="rpt-goals" n="05" icon={Target} tone="green" title="Mục tiêu & thống kê"
+                desc="Tiến độ các mục tiêu và các con số trung bình của kỳ báo cáo.">
+                <div className="rpt-grid two-one">
+                  <Card title="Danh sách mục tiêu" icon={Target} className="rpt-goals-card">
+                    {!r.goals.length ? <p className="muted small">Chưa có mục tiêu</p> : (
+                      <div className="table-wrap rpt-table">
+                        <table className="table compact">
+                          <thead><tr><th>Mục tiêu</th><th>Phụ trách</th><th style={{ width: '30%' }}>Hoàn thành</th><th>Thời hạn</th></tr></thead>
+                          <tbody>{r.goals.slice(0, 12).map((g) => (
+                            <tr key={g.id}>
+                              <td><Num className="plain" onClick={() => open(`Mục tiêu: ${g.title}`, { goal_id: g.id }, 'mọi công việc gắn với mục tiêu')}><b>{g.title}</b></Num><small className="muted block">{g.department_name || '—'}</small></td>
+                              <td><span className="row gap-sm"><Avatar name={g.user_name} color={g.user_color} size={24} />{g.user_name}</span></td>
+                              <td><div className="rpt-rate wide"><span style={{ width: `${g.progress}%` }} /><b>{g.progress}%</b></div></td>
+                              <td className={g.due_date && g.due_date < r.today && g.progress < 100 ? 'text-red' : ''}>{fmtDate(g.due_date) || '—'}</td>
+                            </tr>
+                          ))}</tbody>
+                        </table>
+                      </div>
+                    )}
+                  </Card>
+                  <Card title="Các con số thống kê" icon={Sigma} hint="Chỉ tính công việc trong kỳ đã chọn">
+                    <div className="rpt-stats">
+                      <div><b><CountUp value={r.stats.per_week} /></b><small>công việc trung bình mỗi tuần</small></div>
+                      <div><b><CountUp value={r.stats.per_week_per_person} /></b><small>công việc trung bình mỗi tuần, mỗi người</small></div>
+                      <div><b><CountUp value={r.stats.per_project} /></b><small>công việc trung bình mỗi dự án</small></div>
+                      <div>{r.stats.comments ? <Num onClick={() => open('Công việc có bình luận', { with_comments: 1 })}><b><CountUp value={r.stats.comments} /></b></Num> : <b>0</b>}<small>tổng số bình luận</small></div>
+                    </div>
+                  </Card>
+                </div>
+              </Section>
             </>
           )}
         </>
@@ -504,10 +629,13 @@ export default function ReportsPage() {
   const allowed = meta ? meta.can_view_reports : canReports;
   return (
     <div className="ww-page">
-      <div className="ww-main wide rpt-page">
+      <div className="ww-main wide rpt-page ww-rpt-page">
         <div className="rpt-head">
-          <span className="rpt-head-icon"><BarChart3 size={18} /></span>
-          <div className="grow"><h1>Báo cáo</h1><div className="rpt-tabs"><span className="active">Báo cáo tổng hợp</span></div></div>
+          <span className="rpt-head-icon"><BarChart3 size={20} /></span>
+          <div className="grow">
+            <h1>Báo cáo công việc</h1>
+            <p className="rpt-head-sub">Bức tranh tổng thể về tiến độ, chất lượng và khối lượng công việc của tổ chức</p>
+          </div>
           {user.role === 'admin' && <button className="btn btn-sm" onClick={() => setAccess(true)}><ShieldCheck size={15} /> Phân quyền xem báo cáo</button>}
         </div>
         {!meta && !allowed ? <Spinner /> : allowed ? <ReportView /> : (
