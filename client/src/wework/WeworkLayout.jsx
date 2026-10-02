@@ -116,16 +116,18 @@ export default function WeworkLayout() {
       <div className="wework">
         {mobileNav && <div className="side-backdrop" onClick={() => setMobileNav(false)} />}
         <aside className={cx('ww-side', mobileNav && 'open')}>
-          <Link to="/" className="brand side-brand" title="Về trang chủ">
-            <img className="brand-logo" src="/logo-192.png" alt="LDL" />
-            <span className="brand-name">{company}</span>
-          </Link>
+          <div className="ww-brandrow">
+            <Link to="/" className="brand side-brand" title="Về trang chủ">
+              <img className="brand-logo" src="/logo-192.png" alt="LDL" />
+              <span className="brand-name">{company}</span>
+            </Link>
+            <AppSwitcher dark />
+          </div>
           <div className="ww-user">
             <UserMenu dark />
             <div className="grow" />
             <ContactsButton dark />
             <NotificationBell app="wework" dark />
-            <AppSwitcher dark />
           </div>
           <QuickSearch />
           <div className="ww-scroll">
@@ -179,6 +181,7 @@ export default function WeworkLayout() {
             <button className="icon-btn on-dark" onClick={() => ctx.openCreate({})} aria-label="Tạo công việc"><PlusSquare size={19} /></button>
             <ContactsButton dark />
             <NotificationBell app="wework" dark />
+            <AppSwitcher dark />
             <UserMenu dark showName={false} />
           </header>
           <Outlet />

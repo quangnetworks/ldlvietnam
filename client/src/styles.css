@@ -1174,6 +1174,12 @@ a.home2-stat:hover { background: rgba(255,255,255,.18); }
 .side-brand .brand-logo { width: 30px; height: 30px; }
 .side-brand .brand-name { font-size: 13.5px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .side-brand:hover .brand-name { text-decoration: underline; }
+/* Wework: logo + nút "Tất cả ứng dụng" cùng hàng (hàng người dùng bên dưới quá hẹp để chứa thêm nút) */
+.ww-brandrow { display: flex; align-items: center; gap: 2px; padding-right: 6px; }
+.ww-brandrow .side-brand { flex: 1; min-width: 0; }
+.ww-brandrow .icon-btn { flex: none; margin-top: 6px; }
+.ww-user { min-width: 0; }
+.ww-user .user-btn { min-width: 0; }
 .rail-logo { display: grid; place-items: center; margin-bottom: 12px; }
 .rail-logo img { width: 38px; height: 38px; border-radius: 6px; }
 .brand:hover .brand-name { text-decoration: underline; text-underline-offset: 3px; }
