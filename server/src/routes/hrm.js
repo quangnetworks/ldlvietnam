@@ -26,7 +26,9 @@ async function jsonSetting(key, defaults) {
   try { return { ...defaults, ...JSON.parse((await getSetting(key)) || '{}') }; } catch { return { ...defaults }; }
 }
 const hrmSettings = () => jsonSetting('hrm_settings', { managers: [] });
-const checkinSettings = () => jsonSetting('checkin_settings', { start: '08:30', end: '17:30', grace: 10, ip_only: false, ip_rules: [], work_saturday: true });
+// photo_rules: [{ office, staff, sales }] — bắt buộc chụp ảnh + định vị khi chấm công bằng điện thoại, theo văn phòng
+// (office '' = nhân viên chưa gán văn phòng); staff / sales: áp dụng cho nhân viên văn phòng / đội sales (users.sales_role).
+const checkinSettings = () => jsonSetting('checkin_settings', { start: '08:30', end: '17:30', grace: 10, ip_only: false, ip_rules: [], work_saturday: true, photo_rules: [] });
 const timeoffSettings = async () => {
   const st = await jsonSetting('timeoff_settings', { group_id: null, annual_days: 12, count_saturday: false });
   if (!st.group_id) st.group_id = (await get("SELECT id FROM request_groups WHERE name = 'Đề xuất nghỉ phép'"))?.id ?? null;
@@ -899,37 +901,80 @@ async function checkIpForCheckin(c, st) {
   if (!st.ip_rules.some((x) => ipMatches(ip, x))) throw forbidden(`Chỉ chấm công được từ mạng công ty (IP hiện tại: ${ip || 'không xác định'})`);
 }
 
+const isMobileUa = (ua) => /Android|iPhone|iPad|iPod|Mobile|Windows Phone/i.test(ua || '');
+const MAX_CHECKIN_PHOTO = 10 * 1024 * 1024;
+
+/** Quy tắc chụp ảnh áp cho nhân viên: theo văn phòng trên hồ sơ HRM và việc có thuộc đội sales hay không. */
+async function photoRuleFor(userId, st) {
+  const u = await get('SELECT u.sales_role, h.office FROM users u LEFT JOIN hr_profiles h ON h.user_id = u.id WHERE u.id = ?', userId);
+  const office = String(u?.office || '').trim();
+  const sales = !!u?.sales_role;
+  const rule = (st.photo_rules || []).find((x) => x.office === office);
+  return { required: !!rule && (sales ? !!rule.sales : !!rule.staff), sales, office: office || null };
+}
+
+function parseGeo(f) {
+  const lat = Number(f.lat); const lng = Number(f.lng);
+  if (f.lat === undefined || f.lat === '' || !Number.isFinite(lat) || !Number.isFinite(lng) || Math.abs(lat) > 90 || Math.abs(lng) > 180) return null;
+  const acc = Number(f.accuracy);
+  return { lat, lng, accuracy: Number.isFinite(acc) && acc >= 0 ? Math.round(acc) : null };
+}
+
+/** Chấm công vào / ra. Trên điện thoại, nếu văn phòng của nhân viên bật quy tắc chụp ảnh thì bắt buộc kèm ảnh + vị trí. */
+async function punch(c, kind) {
+  const user = c.get('user');
+  const st = await checkinSettings();
+  const { fields, files } = await formBody(c);
+  const mobile = fields.mobile === '1' || fields.mobile === true || isMobileUa(c.req.header('user-agent'));
+  const rule = await photoRuleFor(user.id, st);
+  const needPhoto = mobile && rule.required;
+  const geo = parseGeo(fields);
+  const photo = files[0] || null;
+  if (photo && (!/^image\//.test(photo.type || '') || photo.size > MAX_CHECKIN_PHOTO)) throw badRequest('Ảnh chấm công không hợp lệ (chỉ nhận ảnh, tối đa 10MB)');
+  if (needPhoto && !photo) throw badRequest('Văn phòng của bạn yêu cầu chụp ảnh khi chấm công bằng điện thoại');
+  if (needPhoto && !geo) throw badRequest('Cần bật định vị (GPS) để chấm công bằng điện thoại');
+  // Đội sales làm việc bên ngoài: ảnh + vị trí thay cho yêu cầu mạng công ty.
+  if (!(needPhoto && rule.sales)) await checkIpForCheckin(c, st);
+
+  const date = vnDate();
+  const existing = await get('SELECT * FROM checkins WHERE user_id = ? AND date = ?', user.id, date);
+  if (kind === 'in' && existing?.check_in_at) throw badRequest('Hôm nay bạn đã chấm công vào');
+  if (kind === 'out' && !existing?.check_in_at) throw badRequest('Bạn chưa chấm công vào hôm nay');
+  const [stored] = photo ? await storeFiles([photo]) : [];
+  const extra = [stored?.filename ?? null, geo?.lat ?? null, geo?.lng ?? null, geo?.accuracy ?? null, mobile ? 1 : 0];
+  if (kind === 'in') {
+    const note = String(fields.note || '').slice(0, 300) || null;
+    await run(`INSERT INTO checkins(user_id, date, check_in_at, ip, note, in_photo, in_lat, in_lng, in_accuracy, in_mobile) VALUES (?,?,?,?,?,?,?,?,?,?)
+      ON CONFLICT(user_id, date) DO UPDATE SET check_in_at = excluded.check_in_at, ip = excluded.ip, in_photo = excluded.in_photo,
+        in_lat = excluded.in_lat, in_lng = excluded.in_lng, in_accuracy = excluded.in_accuracy, in_mobile = excluded.in_mobile`,
+    user.id, date, utcStamp(), clientIp(c), note, ...extra);
+  } else {
+    if (existing.out_photo) removeFile(existing.out_photo); // chấm công ra lại: thay ảnh cũ
+    await run('UPDATE checkins SET check_out_at = ?, out_photo = ?, out_lat = ?, out_lng = ?, out_accuracy = ?, out_mobile = ? WHERE id = ?',
+      utcStamp(), ...extra, existing.id);
+  }
+  return c.json(evaluate(await get('SELECT * FROM checkins WHERE user_id = ? AND date = ?', user.id, date), st));
+}
+
 r.get('/checkin/today', async (c) => {
   const user = c.get('user');
   const st = await checkinSettings();
   const date = vnDate();
   const rec = await get('SELECT * FROM checkins WHERE user_id = ? AND date = ?', user.id, date);
   return c.json({ date, now: utcStamp(), settings: { start: st.start, end: st.end, grace: st.grace, ip_only: st.ip_only },
-    record: rec ? evaluate(rec, st) : null, ip: clientIp(c) });
+    photo: await photoRuleFor(user.id, st), record: rec ? evaluate(rec, st) : null, ip: clientIp(c) });
 });
 
-r.post('/checkin/in', async (c) => {
-  const user = c.get('user');
-  const st = await checkinSettings();
-  await checkIpForCheckin(c, st);
-  const date = vnDate();
-  const note = String((await jsonBody(c)).note || '').slice(0, 300) || null;
-  const existing = await get('SELECT * FROM checkins WHERE user_id = ? AND date = ?', user.id, date);
-  if (existing?.check_in_at) throw badRequest('Hôm nay bạn đã chấm công vào');
-  await run(`INSERT INTO checkins(user_id, date, check_in_at, ip, note) VALUES (?,?,?,?,?)
-    ON CONFLICT(user_id, date) DO UPDATE SET check_in_at = excluded.check_in_at, ip = excluded.ip`, user.id, date, utcStamp(), clientIp(c), note);
-  return c.json(evaluate(await get('SELECT * FROM checkins WHERE user_id = ? AND date = ?', user.id, date), st));
-});
+r.post('/checkin/in', (c) => punch(c, 'in'));
+r.post('/checkin/out', (c) => punch(c, 'out'));
 
-r.post('/checkin/out', async (c) => {
-  const user = c.get('user');
-  const st = await checkinSettings();
-  await checkIpForCheckin(c, st);
-  const date = vnDate();
-  const rec = await get('SELECT * FROM checkins WHERE user_id = ? AND date = ?', user.id, date);
-  if (!rec?.check_in_at) throw badRequest('Bạn chưa chấm công vào hôm nay');
-  await run('UPDATE checkins SET check_out_at = ? WHERE id = ?', utcStamp(), rec.id);
-  return c.json(evaluate(await get('SELECT * FROM checkins WHERE id = ?', rec.id), st));
+r.get('/checkin/:id/photo/:kind', async (c) => {
+  const kind = c.req.param('kind');
+  if (kind !== 'in' && kind !== 'out') throw notFound();
+  const rec = await get('SELECT * FROM checkins WHERE id = ?', toInt(c.req.param('id')));
+  if (!rec?.[`${kind}_photo`]) throw notFound('Không có ảnh chấm công');
+  if (!(await canSeeUser(c.get('user'), rec.user_id))) throw forbidden();
+  return sendFile(c, { filename: rec[`${kind}_photo`], original_name: `cham-cong-${rec.date}-${kind === 'in' ? 'vao' : 'ra'}.jpg`, mime: 'image/jpeg' }, true);
 });
 
 async function monthData(uid, month, st) {
@@ -1001,7 +1046,10 @@ r.put('/checkin/settings', requireAdmin, async (c) => {
   const bad = rules.filter((x) => !validIpRule(x));
   if (bad.length) throw badRequest(`Dải IP không hợp lệ: ${bad.join(', ')}`);
   const next = { start: time(b.start, '08:30'), end: time(b.end, '17:30'), grace: Math.min(120, Math.max(0, toInt(b.grace, 10))),
-    ip_only: !!b.ip_only && rules.length > 0, ip_rules: rules, work_saturday: b.work_saturday !== false };
+    ip_only: !!b.ip_only && rules.length > 0, ip_rules: rules, work_saturday: b.work_saturday !== false,
+    photo_rules: [...new Map((Array.isArray(b.photo_rules) ? b.photo_rules : [])
+      .map((x) => ({ office: String(x?.office || '').trim().slice(0, 100), staff: !!x?.staff, sales: !!x?.sales }))
+      .filter((x) => x.staff || x.sales).map((x) => [x.office, x])).values()].slice(0, 100) };
   await setSetting('checkin_settings', JSON.stringify(next));
   await audit(c.get('user').id, 'checkin.settings', 'Cập nhật cài đặt LDL Checkin');
   return c.json(next);

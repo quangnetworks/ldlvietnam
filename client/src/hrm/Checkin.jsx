@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import { ChevronLeft, ChevronRight, Download, LogIn, LogOut, Clock, Search } from 'lucide-react';
-import { api } from '../api.js';
+import { ChevronLeft, ChevronRight, Download, LogIn, LogOut, Clock, Search, Camera, MapPin } from 'lucide-react';
+import { api, toFormData } from '../api.js';
+import { CheckinCamera, isMobileDevice, mapUrl } from './CheckinCamera.jsx';
 import { useApp, useFetch, useToast } from '../context.jsx';
 import { Avatar, Spinner, Field, Empty, FilterSelect, useShowMore, foldVi } from '../components/ui.jsx';
 import { cx } from '../utils.js';
@@ -77,6 +78,38 @@ function Timesheet({ userId }) {
   );
 }
 
+/** Ảnh chấm công (vào / ra) kèm liên kết bản đồ vị trí. */
+function PunchPhoto({ rec, kind }) {
+  const src = api.url(`/checkin/${rec.id}/photo/${kind}`);
+  const lat = rec[`${kind}_lat`]; const lng = rec[`${kind}_lng`];
+  return (
+    <figure className="ci-photo">
+      <a href={src} target="_blank" rel="noreferrer"><img src={src} alt={`Ảnh chấm công ${kind === 'in' ? 'vào' : 'ra'}`} loading="lazy" /></a>
+      <figcaption>
+        {kind === 'in' ? 'Vào' : 'Ra'} {rec[`${kind}_time`] || ''}
+        {lat != null && <a className="link row gap-xs" href={mapUrl(lat, lng)} target="_blank" rel="noreferrer"><MapPin size={12} /> Bản đồ{rec[`${kind}_accuracy`] != null ? ` ±${rec[`${kind}_accuracy`]}m` : ''}</a>}
+      </figcaption>
+    </figure>
+  );
+}
+
+/** Biểu tượng nhỏ trong bảng: mở ảnh / bản đồ. */
+function PunchLinks({ rec }) {
+  if (!rec) return null;
+  const items = ['in', 'out'].filter((k) => rec[`${k}_photo`] || rec[`${k}_lat`] != null);
+  if (!items.length) return null;
+  return (
+    <span className="row ci-links">
+      {items.map((k) => (
+        <span key={k} className="row gap-xs">
+          {rec[`${k}_photo`] && <a className="icon-btn" href={api.url(`/checkin/${rec.id}/photo/${k}`)} target="_blank" rel="noreferrer" title={`Ảnh chấm công ${k === 'in' ? 'vào' : 'ra'}`}><Camera size={14} /></a>}
+          {rec[`${k}_lat`] != null && <a className="icon-btn" href={mapUrl(rec[`${k}_lat`], rec[`${k}_lng`])} target="_blank" rel="noreferrer" title={`Vị trí chấm công ${k === 'in' ? 'vào' : 'ra'}`}><MapPin size={14} /></a>}
+        </span>
+      ))}
+    </span>
+  );
+}
+
 export function CheckinHome() {
   const { user, users } = useApp();
   const toast = useToast();
@@ -85,14 +118,22 @@ export function CheckinHome() {
   const [today, reload] = useFetch(() => api.get('/checkin/today'), []);
   const [busy, setBusy] = useState(false);
   const [key, setKey] = useState(0);
+  const [camera, setCamera] = useState(null); // 'in' | 'out' khi đang mở hộp thoại chụp ảnh
   const other = uid && uid !== user.id ? users.find((u) => u.id === uid) : null;
+  const mobile = isMobileDevice();
+  const send = async (kind, shot) => {
+    const body = shot ? toFormData({ mobile: 1, lat: shot.lat, lng: shot.lng, accuracy: shot.accuracy }, [shot.file]) : (mobile ? { mobile: 1 } : {});
+    const r = await api.post(`/checkin/${kind}`, body);
+    toast(kind === 'in' ? `Đã chấm công vào lúc ${r.in_time}${r.late_minutes ? ` (muộn ${r.late_minutes} phút)` : ''}` : `Đã chấm công ra lúc ${r.out_time}`);
+    reload(); setKey((k) => k + 1);
+  };
   const act = async (kind) => {
+    if (mobile && today?.photo?.required) { setCamera(kind); return; }
     setBusy(true);
-    try {
-      const r = await api.post(`/checkin/${kind}`, {});
-      toast(kind === 'in' ? `Đã chấm công vào lúc ${r.in_time}${r.late_minutes ? ` (muộn ${r.late_minutes} phút)` : ''}` : `Đã chấm công ra lúc ${r.out_time}`);
-      reload(); setKey((k) => k + 1);
-    } catch (e) { toast(e.message, 'error'); } finally { setBusy(false); }
+    try { await send(kind); } catch (e) { toast(e.message, 'error'); } finally { setBusy(false); }
+  };
+  const confirmShot = async (shot) => {
+    try { await send(camera, shot); setCamera(null); } catch (e) { toast(e.message, 'error'); }
   };
   if (other || (uid && uid !== user.id)) {
     return (
@@ -119,7 +160,9 @@ export function CheckinHome() {
               ) : (
                 <div className="ci-done">Bạn đã hoàn thành chấm công hôm nay</div>
               )}
-              {today.settings.ip_only && <small className="muted">Chỉ chấm công được từ mạng công ty · IP của bạn: {today.ip || '—'}</small>}
+              {today.photo?.required && <small className="muted row gap-sm"><Camera size={13} /> Chấm công bằng điện thoại cần chụp ảnh và bật định vị</small>}
+              {today.settings.ip_only && !(today.photo?.required && today.photo.sales && mobile)
+                && <small className="muted">Chỉ chấm công được từ mạng công ty · IP của bạn: {today.ip || '—'}</small>}
             </>
           )}
         </div>
@@ -132,9 +175,15 @@ export function CheckinHome() {
               <div><small className="muted">Số giờ</small><b>{rec.hours ?? '—'}</b></div>
             </div>
           )}
+          {rec && (rec.in_photo || rec.out_photo) && (
+            <div className="ci-photos">
+              {['in', 'out'].map((k) => rec[`${k}_photo`] && <PunchPhoto key={k} rec={rec} kind={k} />)}
+            </div>
+          )}
         </div>
       </div>
       <Timesheet key={key} userId={user.id} />
+      {camera && <CheckinCamera kind={camera} userName={user.name} office={today?.photo?.office} onConfirm={confirmShot} onClose={() => setCamera(null)} />}
     </div>
   );
 }
@@ -179,7 +228,7 @@ export function CheckinTeam() {
           </div>
           {!items.length ? <Empty title={all.length ? 'Không có nhân viên phù hợp bộ lọc' : 'Bạn chưa quản lý nhân viên nào'} /> : (<>
             <div className="table-wrap"><table className="table">
-              <thead><tr><th>Nhân viên</th><th>Phòng ban</th><th>Giờ vào</th><th>Giờ ra</th><th>Số giờ</th><th>Trạng thái</th><th /></tr></thead>
+              <thead><tr><th>Nhân viên</th><th>Phòng ban</th><th>Giờ vào</th><th>Giờ ra</th><th>Số giờ</th><th>Trạng thái</th><th>Ảnh / vị trí</th><th /></tr></thead>
               <tbody>{shown.map((u) => {
                 const r = u.record;
                 return (
@@ -190,6 +239,7 @@ export function CheckinTeam() {
                     <td>{u.leave ? <span className="badge badge-purple">{u.leave}</span>
                       : r?.check_in_at ? (r.late_minutes > 0 ? <span className="badge badge-orange">Muộn {r.late_minutes} phút</span> : <span className="badge badge-green">Đúng giờ</span>)
                         : <span className="badge badge-gray">Chưa chấm công</span>}</td>
+                    <td><PunchLinks rec={r} /></td>
                     <td><Link to={`/checkin?user_id=${u.id}`} className="link">Bảng công</Link></td>
                   </tr>
                 );
@@ -227,6 +277,42 @@ export function CheckinSettings() {
         </Field>
         <button className="btn btn-primary mt" onClick={save}>Lưu</button>
       </div>
+      <PhotoRules f={f} setF={setF} onSave={save} />
+    </div>
+  );
+}
+
+/** Cài đặt chụp ảnh + định vị khi chấm công bằng điện thoại, theo từng văn phòng. */
+function PhotoRules({ f, setF, onSave }) {
+  const [cat] = useFetch(() => api.get('/hrm/catalog'), []);
+  const rules = f.photo_rules || [];
+  const offices = [...new Set([...(cat?.offices || []), ...rules.map((x) => x.office).filter(Boolean)])];
+  const rows = [...offices.map((o) => [o, o]), ['', 'Chưa gán văn phòng']];
+  const ruleOf = (o) => rules.find((x) => x.office === o) || { office: o, staff: false, sales: false };
+  const toggle = (o, k) => {
+    const next = { ...ruleOf(o), [k]: !ruleOf(o)[k] };
+    setF({ ...f, photo_rules: [...rules.filter((x) => x.office !== o), next] });
+  };
+  return (
+    <div className="card mt">
+      <h3 className="card-title row gap-sm"><Camera size={16} /> Chụp ảnh & định vị khi chấm công bằng điện thoại</h3>
+      <p className="muted">Khi bật, nhân viên chấm công trên điện thoại phải chụp ảnh tại chỗ; ảnh được in sẵn thời gian, toạ độ GPS và tên nhân viên.
+        Văn phòng lấy theo hồ sơ LDL HRM; đội sales là nhân viên đang có vị trí trong LDL Sales.
+        Đội sales đã bật ở đây được chấm công ngoài mạng công ty (ảnh + vị trí thay cho kiểm tra IP).</p>
+      {!cat ? <Spinner /> : (
+        <div className="table-wrap"><table className="table compact">
+          <thead><tr><th>Văn phòng</th><th className="center">Nhân viên văn phòng</th><th className="center">Đội sales</th></tr></thead>
+          <tbody>{rows.map(([o, label]) => (
+            <tr key={o || '_none'}>
+              <td>{o ? label : <span className="muted">{label}</span>}</td>
+              {['staff', 'sales'].map((k) => (
+                <td key={k} className="center"><input type="checkbox" checked={ruleOf(o)[k]} onChange={() => toggle(o, k)} aria-label={`${label} – ${k === 'staff' ? 'nhân viên văn phòng' : 'đội sales'}`} /></td>
+              ))}
+            </tr>
+          ))}</tbody>
+        </table></div>
+      )}
+      <button className="btn btn-primary mt" onClick={onSave}>Lưu</button>
     </div>
   );
 }

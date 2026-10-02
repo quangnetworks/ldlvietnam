@@ -936,6 +936,20 @@ textarea.input { height: auto; resize: vertical; }
 .ci-today { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
 .ci-today > div { display: flex; flex-direction: column; gap: 4px; align-items: flex-start; }
 .ci-today b { font-size: 22px; }
+.ci-photos { display: flex; gap: 12px; margin-top: 14px; flex-wrap: wrap; }
+.ci-photo { margin: 0; width: 140px; }
+.ci-photo img { width: 140px; height: 105px; object-fit: cover; border-radius: 10px; border: 1px solid var(--line); display: block; }
+.ci-photo figcaption { font-size: 12px; color: var(--muted); margin-top: 4px; display: flex; flex-direction: column; gap: 2px; }
+.ci-cam-backdrop { place-items: center; padding: 12px; }
+.ci-cam { background: var(--bg); border-radius: 16px; padding: 14px; width: min(480px, 100%); display: flex; flex-direction: column; gap: 10px; box-shadow: var(--shadow); }
+.ci-cam-view { background: #000; border-radius: 12px; overflow: hidden; aspect-ratio: 3 / 4; display: grid; place-items: center; }
+.ci-cam-view video { width: 100%; height: 100%; object-fit: cover; }
+.ci-cam-view img { width: 100%; height: 100%; object-fit: contain; } /* ảnh đã chụp: hiện đủ dấu thời gian / vị trí */
+.ci-cam-view video { transform: scaleX(-1); }
+.ci-cam-geo { display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--orange); }
+.ci-cam-geo.ok { color: var(--green); }
+.ci-cam-actions { justify-content: flex-end; }
+.ci-links { gap: 8px; }
 .cal-grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 4px; }
 .cal-head { text-align: center; font-size: 12px; font-weight: 600; color: var(--muted); padding: 4px 0; }
 .cal-cell { min-height: 64px; border: 1px solid var(--line); border-radius: 6px; padding: 4px 6px; display: flex; flex-direction: column; gap: 2px; font-size: 11px; overflow: hidden; background: var(--bg); }

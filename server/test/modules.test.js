@@ -136,6 +136,51 @@ test('Checkin: in/out once per day; manager sees team; timesheet', async () => {
   assert.ok(team.data.items.some((u) => u.id === demo.user.id && u.record));
 });
 
+test('Checkin: photo + GPS required on mobile per office; sales may punch outside the office network', async () => {
+  const admin = await login('admin');
+  const MOBILE = { 'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) Mobile/15E148' };
+  const shot = (geo = { lat: 21.0285, lng: 105.8542, accuracy: 12 }) => {
+    const fd = new FormData();
+    for (const [k, v] of Object.entries(geo)) fd.append(k, String(v));
+    fd.append('files', new File([new Uint8Array([0xff, 0xd8, 0xff, 0xd9])], 'checkin-in.jpg', { type: 'image/jpeg' }));
+    return fd;
+  };
+  const base = { start: '08:30', end: '17:30', grace: 10, work_saturday: true };
+  const set = await admin.put('/checkin/settings', { ...base, ip_only: false, ip_rules: [], photo_rules: [
+    { office: 'Văn phòng Hà Nội', staff: true, sales: true }, { office: 'Văn phòng Hà Nội', staff: true, sales: true },
+    { office: 'Văn phòng TP. Hồ Chí Minh', staff: false, sales: false }, { office: '', staff: false, sales: true }] });
+  assert.equal(set.status, 200);
+  assert.deepEqual(set.data.photo_rules.map((x) => x.office), ['Văn phòng Hà Nội', '']); // dedupe, bỏ dòng tắt hết
+
+  // Nhân viên văn phòng Hà Nội trên điện thoại: bắt buộc ảnh + GPS
+  const kt = await login('thuhuyen', {}, MOBILE);
+  assert.deepEqual((await kt.get('/checkin/today')).data.photo, { required: true, sales: false, office: 'Văn phòng Hà Nội' });
+  assert.equal((await kt.post('/checkin/in', { mobile: 1 })).status, 400);
+  assert.equal((await kt.post('/checkin/in', shot({}))).status, 400); // có ảnh, thiếu vị trí
+  const ok = await kt.post('/checkin/in', shot());
+  assert.equal(ok.status, 200);
+  assert.ok(ok.data.in_photo && ok.data.in_lat === 21.0285 && ok.data.in_mobile === 1);
+  const photo = await kt.get(`/checkin/${ok.data.id}/photo/in`);
+  assert.equal(photo.status, 200);
+  assert.equal(photo.headers.get('content-type'), 'image/jpeg');
+  assert.equal((await (await login('phuonglinh')).get(`/checkin/${ok.data.id}/photo/in`)).status, 403);
+  assert.equal((await admin.get(`/checkin/${ok.data.id}/photo/in`)).status, 200);
+  assert.equal((await admin.get(`/checkin/${ok.data.id}/photo/out`)).status, 404);
+
+  // Văn phòng TP.HCM không bật: chấm công điện thoại như cũ; trên máy tính không bao giờ yêu cầu ảnh
+  assert.equal((await (await login('duylinh', {}, MOBILE)).post('/checkin/in', { mobile: 1 })).status, 200);
+
+  // Chỉ cho phép mạng công ty: đội sales có ảnh + GPS được chấm ngoài văn phòng, nhân viên văn phòng thì không
+  await admin.put('/checkin/settings', { ...base, ip_only: true, ip_rules: ['10.255.255.1'], photo_rules: set.data.photo_rules });
+  const sales = await login('phuonglinh', {}, MOBILE);
+  assert.equal((await sales.get('/checkin/today')).data.photo.sales, true);
+  assert.equal((await sales.post('/checkin/in', shot())).status, 200);
+  assert.equal((await kt.post('/checkin/out', shot())).status, 403);
+  assert.equal((await (await login('minhtrang', {}, MOBILE)).post('/checkin/in', { mobile: 1 })).status, 403);
+
+  await admin.put('/checkin/settings', { ...base, ip_only: false, ip_rules: [], photo_rules: [] });
+});
+
 test('Timeoff: leave request via Request is counted after approval', async () => {
   const demo = await login('phuonglinh');
   const s0 = (await demo.get('/timeoff/summary')).data;
