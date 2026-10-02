@@ -2487,3 +2487,8 @@ button.stat-tile.active { border-color: var(--blue); box-shadow: 0 0 0 3px var(-
 @media (min-width: 601px) { .al-panel.sheet-mode { width: min(100%, 560px); margin: 0 auto; border-left: 1px solid var(--line); border-right: 1px solid var(--line); } }
 @media (max-width: 360px) { .al-panel.sheet-mode .al-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
 @media (orientation: landscape) and (max-height: 500px) { .al-panel.sheet-mode .al-grid { grid-template-columns: repeat(6, minmax(0, 1fr)); } }
+
+/* Wework: tuỳ chọn "Tự thêm kỳ vào tên" của công việc lặp lại */
+.rec-title { display: flex; flex-direction: column; gap: 4px; margin-top: -4px; }
+.rec-title small b { color: var(--text); font-weight: 600; word-break: break-word; }
+.rec-title-check { font-size: 12.5px; margin-top: 2px; }

@@ -30,6 +30,26 @@ export const PRIORITY = {
 
 export const RECURRING = { daily: 'Hằng ngày', weekly: 'Hằng tuần', monthly: 'Hằng tháng' };
 
+// Tên theo kỳ lặp — giống server/src/routes/wework.js (periodLabel / stripPeriod), dùng để xem trước tên
+const PERIOD_SUFFIX = / – (?:Ngày \d{2}\/\d{2}\/\d{4}|Tuần \d{1,2}\/\d{4} \(\d{2}\/\d{2} – \d{2}\/\d{2}\)|Tháng \d{2}\/\d{4})$/;
+export const stripPeriod = (title) => String(title || '').replace(PERIOD_SUFFIX, '').trim();
+export function periodLabel(recurring, ref) {
+  const d = new Date(`${String(ref || new Date(Date.now() + 7 * 3600e3).toISOString()).slice(0, 10)}T00:00:00Z`);
+  if (Number.isNaN(d.getTime())) return null;
+  const p2 = (n) => String(n).padStart(2, '0');
+  const dm = (x) => `${p2(x.getUTCDate())}/${p2(x.getUTCMonth() + 1)}`;
+  if (recurring === 'daily') return `Ngày ${dm(d)}/${d.getUTCFullYear()}`;
+  if (recurring === 'monthly') return `Tháng ${p2(d.getUTCMonth() + 1)}/${d.getUTCFullYear()}`;
+  if (recurring === 'weekly') {
+    const mon = new Date(d); mon.setUTCDate(d.getUTCDate() - ((d.getUTCDay() + 6) % 7));
+    const sun = new Date(mon); sun.setUTCDate(mon.getUTCDate() + 6);
+    const thu = new Date(mon); thu.setUTCDate(mon.getUTCDate() + 3);
+    const week = Math.floor((thu - Date.UTC(thu.getUTCFullYear(), 0, 1)) / (7 * 86400e3)) + 1;
+    return `Tuần ${week}/${thu.getUTCFullYear()} (${dm(mon)} – ${dm(sun)})`;
+  }
+  return null;
+}
+
 const pad = (n) => String(n).padStart(2, '0');
 
 export function parseDate(v) {

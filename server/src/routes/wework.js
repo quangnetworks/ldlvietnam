@@ -715,6 +715,7 @@ function parseTaskBody(b, partial) {
     if (b.recurring && !RECURRING.includes(b.recurring)) throw badRequest('Chu kỳ lặp không hợp lệ');
     out.recurring = b.recurring || null;
   }
+  if (b.recurring_title !== undefined) out.recurring_title = b.recurring_title ? 1 : 0;
   if (b.position !== undefined) out.position = toInt(b.position, 0);
   if (b.goal_id !== undefined) out.goal_id = toInt(b.goal_id) || null;
   if (out.start_date && out.due_date && out.start_date.slice(0, 10) > out.due_date.slice(0, 10)) {
@@ -743,6 +744,7 @@ export async function createTask(user, data, followers = [], { creatorId = null,
     const l = await get('SELECT project_id FROM task_lists WHERE id = ?', data.list_id);
     if (!l || l.project_id !== data.project_id) data.list_id = null;
   }
+  if (data.recurring_title) data.title = periodTitle(data.title, data.recurring, true, data.start_date || data.due_date);
   const pos = (await get('SELECT COALESCE(MAX(position), 0) + 1 AS p FROM tasks WHERE IFNULL(project_id,0) = IFNULL(?,0)', data.project_id ?? null)).p;
   const assignee = data.assignee_id ?? user.id;
   // tạo sẵn ở trạng thái "Hoàn thành" cũng phải qua trưởng phòng duyệt
@@ -751,11 +753,11 @@ export async function createTask(user, data, followers = [], { creatorId = null,
   }
   const { lastId: id } = await run(
     `INSERT INTO tasks(project_id, list_id, parent_id, title, description, creator_id, assignee_id, status, priority,
-      start_date, due_date, recurring, position, goal_id, completed_at)
-     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+      start_date, due_date, recurring, recurring_title, position, goal_id, completed_at)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
     data.project_id ?? null, data.list_id ?? null, data.parent_id ?? null, data.title, data.description ?? null,
     creatorId ?? user.id, assignee, data.status ?? 'todo', data.priority ?? 'normal',
-    data.start_date ?? null, data.due_date ?? null, data.recurring ?? null, data.position ?? pos, data.goal_id ?? null,
+    data.start_date ?? null, data.due_date ?? null, data.recurring ?? null, data.recurring_title ? 1 : 0, data.position ?? pos, data.goal_id ?? null,
     data.status === 'done' ? new Date().toISOString() : null
   );
   await batch([...new Set(followers)].map((f) => ['INSERT OR IGNORE INTO task_followers(task_id, user_id) VALUES (?,?)', [id, f]]));
@@ -773,6 +775,37 @@ r.post('/tasks', async (c) => {
   const id = await createTask(c.get('user'), parseTaskBody(b, false), idList(b.followers));
   return c.json(await fullTask(id, c.get('user')), 201);
 });
+
+// ---------------------------------------------------------------- tên theo kỳ lặp
+// "Báo cáo doanh số – Tuần 41/2026 (05/10 – 11/10)", "… – Tháng 10/2026", "… – Ngày 05/10/2026"
+const PERIOD_SUFFIX = / – (?:Ngày \d{2}\/\d{2}\/\d{4}|Tuần \d{1,2}\/\d{4} \(\d{2}\/\d{2} – \d{2}\/\d{2}\)|Tháng \d{2}\/\d{4})$/;
+export const stripPeriod = (title) => String(title || '').replace(PERIOD_SUFFIX, '').trim();
+const vnToday = () => new Date(Date.now() + 7 * 3600e3).toISOString().slice(0, 10);
+
+/** Nhãn kỳ chứa ngày `ref` (YYYY-MM-DD…); tuần theo chuẩn ISO (thứ 2 → chủ nhật). */
+export function periodLabel(recurring, ref) {
+  const d = new Date(`${String(ref || vnToday()).slice(0, 10)}T00:00:00Z`);
+  if (Number.isNaN(d.getTime())) return null;
+  const p2 = (n) => String(n).padStart(2, '0');
+  const dm = (x) => `${p2(x.getUTCDate())}/${p2(x.getUTCMonth() + 1)}`;
+  if (recurring === 'daily') return `Ngày ${dm(d)}/${d.getUTCFullYear()}`;
+  if (recurring === 'monthly') return `Tháng ${p2(d.getUTCMonth() + 1)}/${d.getUTCFullYear()}`;
+  if (recurring === 'weekly') {
+    const mon = new Date(d); mon.setUTCDate(d.getUTCDate() - ((d.getUTCDay() + 6) % 7));
+    const sun = new Date(mon); sun.setUTCDate(mon.getUTCDate() + 6);
+    const thu = new Date(mon); thu.setUTCDate(mon.getUTCDate() + 3); // thứ 5 quyết định tuần thuộc năm nào
+    const week = Math.floor((thu - Date.UTC(thu.getUTCFullYear(), 0, 1)) / (7 * 86400e3)) + 1;
+    return `Tuần ${week}/${thu.getUTCFullYear()} (${dm(mon)} – ${dm(sun)})`;
+  }
+  return null;
+}
+
+/** Tên công việc = tên gốc (bỏ nhãn kỳ cũ) + nhãn kỳ hiện tại khi bật "tự thêm kỳ vào tên". */
+function periodTitle(title, recurring, enabled, ref) {
+  const base = stripPeriod(title);
+  const label = enabled && recurring ? periodLabel(recurring, ref) : null;
+  return label ? `${base} – ${label}` : base;
+}
 
 function shiftDate(value, recurring) {
   if (!value) return null;
@@ -817,6 +850,12 @@ async function applyTaskUpdate(user, t, data) {
   const start = data.start_date !== undefined ? data.start_date : t.start_date;
   const due = data.due_date !== undefined ? data.due_date : t.due_date;
   if (start && due && start.slice(0, 10) > due.slice(0, 10)) throw badRequest('Thời hạn phải sau ngày bắt đầu');
+  // Tên theo kỳ: tính lại khi đổi tên / chu kỳ / ngày hoặc bật-tắt tuỳ chọn
+  const labelOn = data.recurring_title !== undefined ? !!data.recurring_title : !!t.recurring_title;
+  if ((labelOn || t.recurring_title) && ['title', 'recurring', 'recurring_title', 'start_date', 'due_date'].some((k) => data[k] !== undefined)) {
+    const title = periodTitle(data.title ?? t.title, data.recurring !== undefined ? data.recurring : t.recurring, labelOn, start || due);
+    if (title !== t.title || data.title !== undefined) data.title = title;
+  }
 
   const keys = Object.keys(data);
   const sets = keys.map((k) => `${k} = ?`);
@@ -846,7 +885,7 @@ async function applyTaskUpdate(user, t, data) {
         project_id: next.project_id, list_id: next.list_id, parent_id: next.parent_id, title: next.title,
         description: next.description, assignee_id: next.assignee_id, priority: next.priority,
         start_date: shiftDate(next.start_date, recurring), due_date: shiftDate(next.due_date, recurring),
-        recurring, goal_id: next.goal_id,
+        recurring, recurring_title: next.recurring_title, goal_id: next.goal_id,
       }, watchers, { creatorId: t.creator_id, skipAssignCheck: true }); // kỳ tiếp theo giữ người giao việc ban đầu
       await run('UPDATE tasks SET recurring = NULL WHERE id = ?', t.id);
       await logActivity('task', t.id, user.id, 'recurring', `Tạo kỳ lặp tiếp theo #${nid}`);

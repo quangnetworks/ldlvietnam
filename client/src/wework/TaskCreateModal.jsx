@@ -4,7 +4,7 @@ import { useApp, useFetch, useToast } from '../context.jsx';
 import { Modal, Field, UserPicker, RichEditor } from '../components/ui.jsx';
 import { useAssignable, createTaskList } from './taskParts.jsx';
 import { useWework } from './WeworkLayout.jsx';
-import { RECURRING } from '../utils.js';
+import { RECURRING, periodLabel, stripPeriod } from '../utils.js';
 
 export default function TaskCreateModal({ defaults, onClose, onCreated }) {
   const { users, user } = useApp();
@@ -12,7 +12,7 @@ export default function TaskCreateModal({ defaults, onClose, onCreated }) {
   const toast = useToast();
   const [form, setForm] = useState({
     title: '', description: '', project_id: '', list_id: '', assignee_id: user.id, followers: [], start_date: '',
-    due_date: '', priority: 'normal', recurring: '', status: 'todo', ...defaults,
+    due_date: '', priority: 'normal', recurring: '', recurring_title: false, status: 'todo', ...defaults,
   });
   const [lists, setLists] = useState([]);
   const [members, setMembers] = useState(null);
@@ -35,7 +35,7 @@ export default function TaskCreateModal({ defaults, onClose, onCreated }) {
     if (!form.title.trim()) return setError('Vui lòng nhập tên công việc');
     setBusy(true);
     try {
-      const t = await api.post('/tasks', { ...form, recurring: form.recurring || null, list_id: form.list_id || null, project_id: form.project_id || null, goal_id: form.goal_id || null });
+      const t = await api.post('/tasks', { ...form, recurring: form.recurring || null, recurring_title: !!form.recurring && form.recurring_title, list_id: form.list_id || null, project_id: form.project_id || null, goal_id: form.goal_id || null });
       toast('Đã tạo công việc');
       onCreated(t);
     } catch (err) {
@@ -109,6 +109,17 @@ export default function TaskCreateModal({ defaults, onClose, onCreated }) {
             {Object.entries(RECURRING).map(([k, l]) => <option key={k} value={k}>{l}</option>)}
           </select>
         </Field>
+        {form.recurring && (
+          <div className="span-2 rec-title">
+            <label className="check">
+              <input type="checkbox" checked={!!form.recurring_title} onChange={(e) => setForm((f) => ({ ...f, recurring_title: e.target.checked }))} />
+              Tự thêm {form.recurring === 'monthly' ? 'tháng' : form.recurring === 'weekly' ? 'tuần' : 'ngày'} vào tên công việc (cập nhật theo từng kỳ)
+            </label>
+            {form.recurring_title && (
+              <small className="muted">Tên sẽ là: <b>{stripPeriod(form.title) || 'Tên công việc'} – {periodLabel(form.recurring, form.start_date || form.due_date)}</b></small>
+            )}
+          </div>
+        )}
         <div className="span-2">
           <Field label="Mô tả"><RichEditor value={form.description} onChange={set('description')} placeholder="Mô tả chi tiết công việc..." minHeight={100} /></Field>
         </div>

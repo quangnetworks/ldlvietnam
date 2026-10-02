@@ -206,3 +206,40 @@ test('attachments: unicode names kept, unsafe types never rendered inline', asyn
   const res2 = await fetch(`${base}/documents/${doc.id}/attachments/${pdf.id}?inline=1`, { headers: { Authorization: `Bearer ${token}` } });
   assert.match(res2.headers.get('content-disposition'), /^inline/);
 });
+
+test('tasks: recurring title gets the week / month / day of each period', async () => {
+  const demo = await login('demo');
+  const kd = await login('truongkd');
+  const { periodLabel, stripPeriod } = await import('../src/routes/wework.js');
+  assert.equal(periodLabel('weekly', '2026-10-07'), 'Tuần 41/2026 (05/10 – 11/10)');
+  assert.equal(periodLabel('weekly', '2027-01-01'), 'Tuần 53/2026 (28/12 – 03/01)'); // ISO: tuần chứa thứ 5 quyết định năm
+  assert.equal(periodLabel('weekly', '2026-12-29'), 'Tuần 53/2026 (28/12 – 03/01)');
+  assert.equal(periodLabel('monthly', '2026-10-31'), 'Tháng 10/2026');
+  assert.equal(periodLabel('daily', '2026-03-05'), 'Ngày 05/03/2026');
+  assert.equal(stripPeriod('Báo cáo – Tháng 10/2026'), 'Báo cáo');
+
+  // Hằng tuần: tên có tuần; hoàn thành → kỳ sau có tuần mới
+  const { data: w } = await kd.post('/tasks', { title: 'Báo cáo doanh số', assignee_id: demo.user.id,
+    start_date: '2026-10-05', due_date: '2026-10-09', recurring: 'weekly', recurring_title: true });
+  assert.equal(w.title, 'Báo cáo doanh số – Tuần 41/2026 (05/10 – 11/10)');
+  assert.equal(w.recurring_title, 1);
+  await demo.put(`/tasks/${w.id}`, { status: 'done' });
+  const next = (await demo.get('/tasks?scope=recurring&q=Báo cáo doanh số')).data.items.find((t) => t.id !== w.id);
+  assert.equal(next.title, 'Báo cáo doanh số – Tuần 42/2026 (12/10 – 18/10)');
+  assert.equal((await demo.get(`/tasks/${w.id}`)).data.title, 'Báo cáo doanh số – Tuần 41/2026 (05/10 – 11/10)'); // kỳ cũ giữ tên
+
+  // Hằng tháng qua năm mới; đổi ngày → đổi nhãn; đổi tên giữ nhãn; tắt → bỏ nhãn
+  const { data: m } = await kd.post('/tasks', { title: 'Báo cáo tài chính', start_date: '2026-12-01', due_date: '2026-12-05',
+    recurring: 'monthly', recurring_title: true });
+  assert.equal(m.title, 'Báo cáo tài chính – Tháng 12/2026');
+  assert.equal((await kd.put(`/tasks/${m.id}`, { start_date: '2027-01-01', due_date: '2027-01-05' })).data.title, 'Báo cáo tài chính – Tháng 01/2027');
+  assert.equal((await kd.put(`/tasks/${m.id}`, { title: 'BC tài chính – Tháng 01/2027' })).data.title, 'BC tài chính – Tháng 01/2027');
+  assert.equal((await kd.put(`/tasks/${m.id}`, { title: 'BC tài chính tổng hợp' })).data.title, 'BC tài chính tổng hợp – Tháng 01/2027');
+  const off = await kd.put(`/tasks/${m.id}`, { recurring_title: false });
+  assert.equal(off.data.title, 'BC tài chính tổng hợp');
+  assert.equal(off.data.recurring_title, 0);
+
+  // Không bật tuỳ chọn: tên giữ nguyên như trước
+  const { data: plain } = await kd.post('/tasks', { title: 'Họp giao ban', start_date: '2026-10-05', recurring: 'weekly' });
+  assert.equal(plain.title, 'Họp giao ban');
+});

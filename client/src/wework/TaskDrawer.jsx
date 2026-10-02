@@ -199,6 +199,12 @@ export function TaskDetail({ id, onClose, onChanged, standalone }) {
               <option value="">Không lặp lại</option>
               {Object.entries(RECURRING).map(([k, l]) => <option key={k} value={k}>{l}</option>)}
             </select>
+            {t.recurring && (
+              <label className="check rec-title-check" title="Tên công việc tự có thêm ngày / tuần / tháng của kỳ, cập nhật khi sang kỳ mới">
+                <input type="checkbox" disabled={locked} checked={!!t.recurring_title} onChange={(e) => update({ recurring_title: e.target.checked })} />
+                Tự thêm {t.recurring === 'monthly' ? 'tháng' : t.recurring === 'weekly' ? 'tuần' : 'ngày'} vào tên
+              </label>
+            )}
           </div>
           <div className="td-field"><span><FolderKanban size={14} /> Dự án</span>
             <select className="input" disabled={locked || !!t.parent_id} title={lockHint} value={t.project_id || ''} onChange={(e) => update({ project_id: e.target.value || null })}>
