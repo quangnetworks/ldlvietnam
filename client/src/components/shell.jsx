@@ -1,12 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { Bell, Grid3x3, FileText, CheckSquare, Settings, LogOut, User, KeyRound, CheckCheck, GitPullRequestArrow, Sun, Moon, Monitor, BellRing, Download } from 'lucide-react';
 import { api } from '../api.js';
 import { useApp } from '../context.jsx';
 import { Avatar, Dropdown, MenuItem } from './ui.jsx';
 import { timeAgo, cx } from '../utils.js';
 import { ProfileModal } from '../admin/Profile.jsx';
-import { ECOSYSTEM, canOpen, AppIcon } from '../apps.jsx';
+import { AppLauncher } from './AppLauncher.jsx';
 import { getThemePref, setThemePref, onThemeChange, resolvedTheme } from '../theme.js';
 import { setBadge, promptInstall } from '../push.js';
 import { useInstallable } from './PushCard.jsx';
@@ -55,30 +55,15 @@ export function ThemeToggle({ dark }) {
   );
 }
 
+/** Nút lưới "Tất cả ứng dụng" trên thanh công cụ của mọi module. */
 export function AppSwitcher({ dark }) {
-  const { apps } = useApp();
-  const list = ECOSYSTEM.filter((a) => canOpen(a, apps));
   return (
-    <Dropdown
-      align="right"
-      width={340}
-      trigger={(open, toggle) => (
-        <button className={cx('icon-btn', dark && 'on-dark')} onClick={toggle} title="Tất cả ứng dụng" aria-label="Tất cả ứng dụng">
-          <Grid3x3 size={18} />
-        </button>
-      )}
-    >
-      <div className="app-grid">
-        {list.map((a) => (
-          <Link key={a.key} to={a.path} className="app-tile" data-close>
-            <AppIcon app={a} size={40} />
-            <b>{a.name}</b>
-            <small>{a.desc}</small>
-          </Link>
-        ))}
-      </div>
-      <Link to="/" className="menu-item center-link" data-close>Xem toàn bộ hệ sinh thái →</Link>
-    </Dropdown>
+    <AppLauncher trigger={(open, toggle, ref) => (
+      <button ref={ref} className={cx('icon-btn', dark && 'on-dark', open && 'active')} onClick={toggle}
+        title="Tất cả ứng dụng" aria-label="Tất cả ứng dụng" aria-expanded={open} aria-haspopup="dialog">
+        <Grid3x3 size={18} />
+      </button>
+    )} />
   );
 }
 

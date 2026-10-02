@@ -3,7 +3,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { Search, StickyNote, Palette, Users, Lock, X, Plus, Trash2, Cake, Megaphone, AlertTriangle, CalendarClock, MessageCircle, CalendarCheck2 } from 'lucide-react';
 import { api } from '../api.js';
 import { useApp, useFetch, useToast } from '../context.jsx';
-import { NotificationBell, UserMenu, ThemeToggle } from '../components/shell.jsx';
+import { NotificationBell, UserMenu, ThemeToggle, AppSwitcher } from '../components/shell.jsx';
 import { ContactsButton } from '../components/Contact.jsx';
 import HomeAgenda from '../home/HomeAgenda.jsx';
 import { BRANDS, applyBrand, getBrandIndex } from '../theme.js';
@@ -120,6 +120,7 @@ export default function Home() {
           <button className="icon-btn on-dark" title="Màu thương hiệu" onClick={() => setBgOpen((o) => !o)}><Palette size={18} /></button>
           <ThemeToggle dark />
           <NotificationBell app="home" dark />
+          <AppSwitcher dark />
           <UserMenu dark />
         </div>
         {bgOpen && (

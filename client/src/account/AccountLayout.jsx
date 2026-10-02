@@ -2,10 +2,11 @@ import { useEffect, useState } from 'react';
 import { NavLink, Outlet, Link, useLocation } from 'react-router-dom';
 import {
   UserCircle2, Bell, Users, Network, LayoutGrid, Power, Settings, Pencil, KeyRound, Palette, History, Building2, AppWindow,
-  ScrollText, FileText, GitPullRequestArrow, Home, LockKeyhole, ShieldCheck, Shield, Webhook, Menu,
+  ScrollText, FileText, GitPullRequestArrow, Home, LockKeyhole, ShieldCheck, Shield, Webhook, Menu, Grid3x3,
 } from 'lucide-react';
 import { useApp } from '../context.jsx';
 import { Avatar } from '../components/ui.jsx';
+import { AppLauncher } from '../components/AppLauncher.jsx';
 import { cx } from '../utils.js';
 
 function RailLink({ to, icon: Icon, label, end }) {
@@ -43,6 +44,11 @@ export default function AccountLayout() {
         <RailLink to="/account/groups" icon={Network} label="Nhóm" />
         <RailLink to="/account/apps" icon={LayoutGrid} label="Ứng dụng" />
         <div className="grow" />
+        <AppLauncher trigger={(open, toggle, ref) => (
+          <button ref={ref} type="button" className={cx('acc-rail-link', open && 'active')} onClick={toggle} aria-expanded={open} aria-haspopup="dialog">
+            <Grid3x3 size={22} /><span>Ứng dụng khác</span>
+          </button>
+        )} />
         <Link to="/" className="acc-rail-link"><Home size={22} /><span>Trang chủ</span></Link>
         <button className="acc-rail-link" onClick={logout}><Power size={22} /><span>Đăng xuất</span></button>
       </nav>
