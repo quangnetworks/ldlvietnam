@@ -6,6 +6,7 @@ import App from './App.jsx';
 import './styles.css';
 import './mobile.css';
 import './theme.js';
+import './viewport.js';
 import { registerServiceWorker } from './push.js';
 
 registerServiceWorker();

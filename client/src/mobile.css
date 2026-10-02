@@ -12,6 +12,8 @@
   --safe-left: env(safe-area-inset-left, 0px);
   --safe-right: env(safe-area-inset-right, 0px);
   --tabbar-h: 58px;
+  --tabbar-pad: var(--safe-bottom);   /* đệm dưới thanh tab (vùng vạch Home) */
+  --app-h: 100dvh;                    /* chiều cao màn hình thật — viewport.js ghi đè bằng innerHeight */
 }
 .tabbar, .ww-mobilebar, .acc-rail-menu, .rq-rail-menu { display: none; }
 .side-backdrop { position: fixed; inset: 0; z-index: 94; background: rgba(12, 14, 18, 0.42); animation: fade-in 0.18s ease-out; }
@@ -20,11 +22,14 @@
 
 /* ---------- Thanh tab dưới đáy ---------- */
 .tabbar {
-  position: fixed; left: 0; right: 0; bottom: 0; z-index: 25; height: calc(var(--tabbar-h) + var(--safe-bottom));
-  padding: 0 var(--safe-right) var(--safe-bottom) var(--safe-left); align-items: stretch;
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 25; height: calc(var(--tabbar-h) + var(--tabbar-pad));
+  padding: 0 var(--safe-right) var(--tabbar-pad) var(--safe-left); align-items: stretch;
   background: color-mix(in srgb, var(--bg) 86%, transparent); border-top: 1px solid var(--line);
   -webkit-backdrop-filter: blur(22px) saturate(180%); backdrop-filter: blur(22px) saturate(180%);
 }
+/* Mở từ màn hình chính (standalone): iOS báo vùng vạch Home 34px — chỉ chừa vừa đủ cho vạch, thanh tab gọn như ứng dụng gốc */
+html.standalone { --tabbar-h: 52px; --tabbar-pad: max(6px, calc(var(--safe-bottom) - 18px)); }
+html.standalone .tb-item { padding: 5px 0 2px; }
 .tb-item { flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; padding: 6px 0 4px;
   color: var(--muted); background: none; border: 0; font: inherit; font-size: 10.5px; font-weight: 500; cursor: pointer; text-decoration: none; }
 .tb-item.active { color: var(--blue-2); }
@@ -36,7 +41,7 @@
 
 /* ---------- Bảng trượt "Thêm" ---------- */
 .sheet-backdrop { position: fixed; inset: 0; z-index: 110; background: rgba(12, 14, 18, 0.42); display: flex; align-items: flex-end; animation: fade-in 0.18s ease-out; }
-.sheet { width: 100%; max-height: calc(100dvh - var(--safe-top) - 20px); overflow-y: auto; background: var(--bg); border-radius: 20px 20px 0 0;
+.sheet { width: 100%; max-height: calc(var(--app-h) - var(--safe-top) - 20px); overflow-y: auto; background: var(--bg); border-radius: 20px 20px 0 0;
   padding: 6px 16px calc(16px + var(--safe-bottom)); animation: sheet-up 0.25s var(--ease, ease-out); box-shadow: 0 -8px 30px rgba(0, 0, 0, 0.18); }
 .sheet-grab { width: 38px; height: 5px; border-radius: 3px; background: var(--line-2); margin: 4px auto 6px; }
 .sheet-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
@@ -61,7 +66,7 @@
 @media (max-width: 800px) {
   html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
   body { -webkit-tap-highlight-color: transparent; overscroll-behavior-y: none; }
-  body.has-tabbar { padding-bottom: calc(var(--tabbar-h) + var(--safe-bottom)); }
+  body.has-tabbar { padding-bottom: calc(var(--tabbar-h) + var(--tabbar-pad)); }
   .tabbar { display: flex; }
 
   /* Ô nhập ≥ 16px: Safari iOS không tự phóng to khi chạm */
@@ -74,10 +79,14 @@
   .btn-sm { min-height: 34px; }
   .menu-item { padding: 12px 14px; font-size: 15px; }
 
-  /* Khung ứng dụng cao đúng màn hình (dvh: không bị thanh địa chỉ Safari che), chừa thanh tab */
-  .office, .wework, .acc, .rq, .chat-app { height: 100dvh; }
+  /* Khung ứng dụng cao đúng màn hình (--app-h đo bằng JS, dự phòng dvh), chừa thanh tab */
+  .office, .wework, .acc, .rq, .chat-app { height: var(--app-h); }
   body.has-tabbar .office, body.has-tabbar .wework, body.has-tabbar .acc, body.has-tabbar .rq, body.has-tabbar .chat-app {
-    height: calc(100dvh - var(--tabbar-h) - var(--safe-bottom)); }
+    height: calc(var(--app-h) - var(--tabbar-h) - var(--tabbar-pad)); }
+  /* Trang cuộn theo tài liệu (Trang chủ, đăng nhập…): cao tối thiểu = màn hình trừ thanh tab, không cuộn thừa khoảng trắng */
+  .home2 { min-height: var(--app-h); }
+  body.has-tabbar .home2 { min-height: calc(var(--app-h) - var(--tabbar-h) - var(--tabbar-pad)); }
+  .login-page, .center-screen { min-height: var(--app-h); height: auto; }
 
   /* Thanh trên cùng: né tai thỏ / Dynamic Island */
   .topbar { height: calc(52px + var(--safe-top)); padding: var(--safe-top) max(8px, var(--safe-right)) 0 max(6px, var(--safe-left)); gap: 2px; }
@@ -89,7 +98,7 @@
   .hide-sm { display: none !important; }
 
   /* Ngăn kéo điều hướng bên trái */
-  .office-side, .ww-side { position: fixed; top: 0; bottom: 0; left: 0; z-index: 95; width: min(84vw, 300px); height: 100dvh;
+  .office-side, .ww-side { position: fixed; top: 0; bottom: 0; left: 0; z-index: 95; width: min(84vw, 300px); height: var(--app-h);
     padding-top: var(--safe-top); padding-bottom: var(--safe-bottom); transform: translateX(-105%); transition: transform 0.22s var(--ease, ease-out); }
   .office-side { padding-top: calc(16px + var(--safe-top)); }
   .office-side.open, .ww-side.open { transform: none; }
@@ -133,7 +142,7 @@
   .modal-foot .btn { min-height: 44px; }
 
   /* Ngăn kéo chi tiết (công việc…) → toàn màn hình */
-  .drawer { width: 100% !important; height: 100dvh; padding-top: var(--safe-top); padding-bottom: var(--safe-bottom); animation: sheet-up 0.24s var(--ease, ease-out); }
+  .drawer { width: 100% !important; height: var(--app-h); padding-top: var(--safe-top); padding-bottom: var(--safe-bottom); animation: sheet-up 0.24s var(--ease, ease-out); }
   .td-scroll { padding: 12px 14px 30px; }
 
   /* Menu thả xuống → action sheet dưới đáy (không bị cắt trong vùng cuộn ngang) */
@@ -149,7 +158,7 @@
 
   /* Thông báo nổi nằm trên thanh tab */
   .toasts { bottom: calc(16px + var(--safe-bottom)); width: calc(100% - 32px); align-items: center; }
-  body.has-tabbar .toasts { bottom: calc(var(--tabbar-h) + 12px + var(--safe-bottom)); }
+  body.has-tabbar .toasts { bottom: calc(var(--tabbar-h) + 12px + var(--tabbar-pad)); }
 
   /* Bảng dữ liệu vuốt ngang */
   .table-wrap, .rpt-table-wrap, .drive-table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
