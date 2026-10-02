@@ -125,35 +125,84 @@ export function Dropdown({ trigger, children, align = 'left', className, width }
   const [open, setOpen] = useState(false);
   const [side, setSide] = useState(align);
   const [up, setUp] = useState(false);
+  const [fixed, setFixed] = useState(null); // {left, top}: khung chứa quá hẹp → menu nổi theo màn hình
+  const [sheet, setSheet] = useState(false); // điện thoại: menu là bảng trượt từ đáy (mobile.css)
   const ref = useRef(null);
   const menuRef = useRef(null);
-  useClickOutside(ref, () => setOpen(false), open);
-  // Đổi hướng mở nếu menu tràn ra ngoài màn hình (vd. avatar nằm sát mép trái ở thanh bên)
+  // Menu nổi (bảng trượt / nổi theo màn hình) được đưa ra <body>: khung cha có backdrop-filter / transform
+  // (vd. thanh lọc "kính mờ") sẽ làm position: fixed bám theo khung đó thay vì màn hình.
+  const portal = sheet || !!fixed;
+  useEffect(() => {
+    if (!open) return undefined;
+    setSheet(window.matchMedia('(max-width: 800px)').matches);
+    const h = (e) => {
+      if (ref.current?.contains(e.target) || menuRef.current?.contains(e.target)) return;
+      setOpen(false);
+    };
+    document.addEventListener('mousedown', h);
+    return () => document.removeEventListener('mousedown', h);
+  }, [open]);
+  // Menu nổi theo màn hình không đi theo nội dung khi cuộn → đóng lại
+  useEffect(() => {
+    if (!open || !fixed) return undefined;
+    const close = (e) => { if (!menuRef.current?.contains(e.target)) setOpen(false); };
+    window.addEventListener('scroll', close, true);
+    return () => window.removeEventListener('scroll', close, true);
+  }, [open, fixed]);
+  // Đổi hướng mở nếu menu tràn ra ngoài vùng nhìn thấy: màn hình VÀ khung cuộn chứa nó
+  // (vd. bộ lọc sát mép trái nội dung — menu canh phải sẽ lấn sang thanh bên và bị khung cuộn cắt mất).
   useLayoutEffect(() => {
-    if (!open) { setSide(align); setUp(false); return; }
+    if (!open) { setSide(align); setUp(false); setFixed(null); setSheet(false); return; }
+    if (sheet || window.matchMedia('(max-width: 800px)').matches) return; // bảng trượt: vị trí do CSS quyết định
     const r = menuRef.current?.getBoundingClientRect();
-    if (!r) return;
-    if (side === 'right' && r.left < 8) setSide('left');
-    else if (side === 'left' && r.right > window.innerWidth - 8) setSide('right');
+    if (!r || !ref.current) return;
+    const clip = { left: 0, right: window.innerWidth, top: 0, bottom: window.innerHeight };
+    for (let el = ref.current.parentElement; el && el !== document.body; el = el.parentElement) {
+      const cs = getComputedStyle(el);
+      const b = el.getBoundingClientRect();
+      if (/(auto|scroll|hidden|clip)/.test(cs.overflowX)) { clip.left = Math.max(clip.left, b.left); clip.right = Math.min(clip.right, b.right); }
+      if (/(auto|scroll|hidden|clip)/.test(cs.overflowY)) { clip.top = Math.max(clip.top, b.top); clip.bottom = Math.min(clip.bottom, b.bottom); }
+    }
+    // Chọn hướng theo vị trí nút + bề rộng menu (không phụ thuộc hướng hiện tại → không lật qua lật lại)
+    const t = ref.current.getBoundingClientRect();
+    const fitsLeft = t.left + r.width <= clip.right - 8;   // canh trái: menu trải sang phải
+    const fitsRight = t.right - r.width >= clip.left + 8;  // canh phải: menu trải sang trái
+    let next = align;
+    if (align === 'left' && !fitsLeft && fitsRight) next = 'right';
+    else if (align === 'right' && !fitsRight && fitsLeft) next = 'left';
+    else if (!fitsLeft && !fitsRight) next = clip.right - t.left >= t.right - clip.left ? 'left' : 'right';
+    if (next !== side) setSide(next);
+    const fitsBelow = t.bottom + 4 + r.height <= clip.bottom;
+    const fitsAbove = t.top - 4 - r.height >= clip.top;
+    // Không hướng nào vừa khung chứa (vd. menu tài khoản trên thanh bên hẹp, menu trong thanh tab cuộn ngang
+    // chỉ cao một dòng) → nổi theo màn hình để không bị cắt
+    if (((!fitsLeft && !fitsRight) || (!fitsBelow && !fitsAbove)) && r.width <= window.innerWidth - 16) {
+      const vw = window.innerWidth; const vh = window.innerHeight;
+      const left = Math.max(8, Math.min(next === 'right' ? t.right - r.width : t.left, vw - r.width - 8));
+      const top = t.bottom + 4 + r.height > vh - 8 && t.top - r.height - 4 > 8 ? t.top - r.height - 4 : Math.min(t.bottom + 4, vh - r.height - 8);
+      if (!fixed || Math.abs(fixed.left - left) > 1 || Math.abs(fixed.top - top) > 1) setFixed({ left, top: Math.max(8, top) });
+      return;
+    }
     if (!up) {
       // tràn đáy màn hình hoặc đáy khung cuộn chứa nó → mở lên trên nếu phía trên đủ chỗ
-      let bottom = window.innerHeight;
-      for (let el = ref.current?.parentElement; el && el !== document.body; el = el.parentElement) {
-        if (/(auto|scroll|hidden)/.test(getComputedStyle(el).overflowY)) bottom = Math.min(bottom, el.getBoundingClientRect().bottom);
-      }
-      const top = ref.current.getBoundingClientRect().top;
-      if (r.bottom > bottom - 4 && top - r.height > 8) setUp(true);
+      if (!fitsBelow && fitsAbove) setUp(true);
     }
-  }, [open, side, align, up]);
+  }, [open, side, align, up, sheet]);
+  const menu = open && (
+    <div ref={menuRef} className={cx('dropdown-menu', side === 'right' && 'right', up && 'up', fixed && 'floating', sheet && 'sheet-menu')}
+      style={{
+        ...(width && { width }),
+        ...(fixed && !sheet && { position: 'fixed', left: fixed.left, top: fixed.top, right: 'auto', bottom: 'auto' }),
+        ...(portal && { zIndex: 1300 }), // trên cả popup / trình xem tệp
+      }}
+      onClick={(e) => { if (e.target.closest('[data-close]')) setOpen(false); }}>
+      {typeof children === 'function' ? children(() => setOpen(false)) : children}
+    </div>
+  );
   return (
     <div className={cx('dropdown', className)} ref={ref}>
-      {trigger(open, () => setOpen((o) => !o))}
-      {open && (
-        <div ref={menuRef} className={cx('dropdown-menu', side === 'right' && 'right', up && 'up')} style={width ? { width } : undefined}
-          onClick={(e) => { if (e.target.closest('[data-close]')) setOpen(false); }}>
-          {typeof children === 'function' ? children(() => setOpen(false)) : children}
-        </div>
-      )}
+      {trigger(open, () => { setSheet(window.matchMedia('(max-width: 800px)').matches); setOpen((o) => !o); })}
+      {portal && menu ? createPortal(menu, document.body) : menu}
     </div>
   );
 }
