@@ -5,6 +5,33 @@ import DOMPurify from 'dompurify';
 import { initials, fileIcon, fileSize, cx } from '../utils.js';
 import { useApp } from '../context.jsx';
 
+/**
+ * Danh sách dài (hàng trăm nhân sự): chỉ vẽ `step` dòng đầu, tự vẽ thêm khi cuộn tới cuối (hoặc bấm "Hiển thị thêm").
+ * Trả về [các dòng đang hiện, phần chân danh sách]. Đổi bộ lọc (resetKey) → quay về trang đầu.
+ */
+export function useShowMore(items, step = 60, resetKey = '') {
+  const [n, setN] = useState(step);
+  const ref = useRef(null);
+  const total = items?.length || 0;
+  useEffect(() => { setN(step); }, [resetKey, step]);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el || n >= total || typeof IntersectionObserver === 'undefined') return undefined;
+    const io = new IntersectionObserver((es) => { if (es.some((e) => e.isIntersecting)) setN((x) => x + step); }, { rootMargin: '400px' });
+    io.observe(el);
+    return () => io.disconnect();
+  }, [n, total, step]);
+  const footer = n < total ? (
+    <div ref={ref} className="show-more">
+      <button type="button" className="btn btn-sm" onClick={() => setN((x) => x + step)}>Hiển thị thêm {Math.min(step, total - n)} · còn {total - n}</button>
+    </div>
+  ) : null;
+  return [items ? items.slice(0, n) : [], footer];
+}
+
+/** So khớp tìm kiếm không phân biệt hoa thường / dấu tiếng Việt ("nguyen van a" khớp "Nguyễn Văn A"). */
+export const foldVi = (s) => String(s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/đ/g, 'd');
+
 export function avatarUrl(id, version) {
   return `/api/account/users/${id}/avatar?v=${version}`;
 }
@@ -97,26 +124,85 @@ export function useClickOutside(ref, onOutside, active = true) {
 export function Dropdown({ trigger, children, align = 'left', className, width }) {
   const [open, setOpen] = useState(false);
   const [side, setSide] = useState(align);
+  const [up, setUp] = useState(false);
+  const [fixed, setFixed] = useState(null); // {left, top}: khung chứa quá hẹp → menu nổi theo màn hình
+  const [sheet, setSheet] = useState(false); // điện thoại: menu là bảng trượt từ đáy (mobile.css)
   const ref = useRef(null);
   const menuRef = useRef(null);
-  useClickOutside(ref, () => setOpen(false), open);
-  // Đổi hướng mở nếu menu tràn ra ngoài màn hình (vd. avatar nằm sát mép trái ở thanh bên)
+  // Menu nổi (bảng trượt / nổi theo màn hình) được đưa ra <body>: khung cha có backdrop-filter / transform
+  // (vd. thanh lọc "kính mờ") sẽ làm position: fixed bám theo khung đó thay vì màn hình.
+  const portal = sheet || !!fixed;
+  useEffect(() => {
+    if (!open) return undefined;
+    setSheet(window.matchMedia('(max-width: 800px)').matches);
+    const h = (e) => {
+      if (ref.current?.contains(e.target) || menuRef.current?.contains(e.target)) return;
+      setOpen(false);
+    };
+    document.addEventListener('mousedown', h);
+    return () => document.removeEventListener('mousedown', h);
+  }, [open]);
+  // Menu nổi theo màn hình không đi theo nội dung khi cuộn → đóng lại
+  useEffect(() => {
+    if (!open || !fixed) return undefined;
+    const close = (e) => { if (!menuRef.current?.contains(e.target)) setOpen(false); };
+    window.addEventListener('scroll', close, true);
+    return () => window.removeEventListener('scroll', close, true);
+  }, [open, fixed]);
+  // Đổi hướng mở nếu menu tràn ra ngoài vùng nhìn thấy: màn hình VÀ khung cuộn chứa nó
+  // (vd. bộ lọc sát mép trái nội dung — menu canh phải sẽ lấn sang thanh bên và bị khung cuộn cắt mất).
   useLayoutEffect(() => {
-    if (!open) { setSide(align); return; }
+    if (!open) { setSide(align); setUp(false); setFixed(null); setSheet(false); return; }
+    if (sheet || window.matchMedia('(max-width: 800px)').matches) return; // bảng trượt: vị trí do CSS quyết định
     const r = menuRef.current?.getBoundingClientRect();
-    if (!r) return;
-    if (side === 'right' && r.left < 8) setSide('left');
-    else if (side === 'left' && r.right > window.innerWidth - 8) setSide('right');
-  }, [open, side, align]);
+    if (!r || !ref.current) return;
+    const clip = { left: 0, right: window.innerWidth, top: 0, bottom: window.innerHeight };
+    for (let el = ref.current.parentElement; el && el !== document.body; el = el.parentElement) {
+      const cs = getComputedStyle(el);
+      const b = el.getBoundingClientRect();
+      if (/(auto|scroll|hidden|clip)/.test(cs.overflowX)) { clip.left = Math.max(clip.left, b.left); clip.right = Math.min(clip.right, b.right); }
+      if (/(auto|scroll|hidden|clip)/.test(cs.overflowY)) { clip.top = Math.max(clip.top, b.top); clip.bottom = Math.min(clip.bottom, b.bottom); }
+    }
+    // Chọn hướng theo vị trí nút + bề rộng menu (không phụ thuộc hướng hiện tại → không lật qua lật lại)
+    const t = ref.current.getBoundingClientRect();
+    const fitsLeft = t.left + r.width <= clip.right - 8;   // canh trái: menu trải sang phải
+    const fitsRight = t.right - r.width >= clip.left + 8;  // canh phải: menu trải sang trái
+    let next = align;
+    if (align === 'left' && !fitsLeft && fitsRight) next = 'right';
+    else if (align === 'right' && !fitsRight && fitsLeft) next = 'left';
+    else if (!fitsLeft && !fitsRight) next = clip.right - t.left >= t.right - clip.left ? 'left' : 'right';
+    if (next !== side) setSide(next);
+    const fitsBelow = t.bottom + 4 + r.height <= clip.bottom;
+    const fitsAbove = t.top - 4 - r.height >= clip.top;
+    // Không hướng nào vừa khung chứa (vd. menu tài khoản trên thanh bên hẹp, menu trong thanh tab cuộn ngang
+    // chỉ cao một dòng) → nổi theo màn hình để không bị cắt
+    if (((!fitsLeft && !fitsRight) || (!fitsBelow && !fitsAbove)) && r.width <= window.innerWidth - 16) {
+      const vw = window.innerWidth; const vh = window.innerHeight;
+      const left = Math.max(8, Math.min(next === 'right' ? t.right - r.width : t.left, vw - r.width - 8));
+      const top = t.bottom + 4 + r.height > vh - 8 && t.top - r.height - 4 > 8 ? t.top - r.height - 4 : Math.min(t.bottom + 4, vh - r.height - 8);
+      if (!fixed || Math.abs(fixed.left - left) > 1 || Math.abs(fixed.top - top) > 1) setFixed({ left, top: Math.max(8, top) });
+      return;
+    }
+    if (!up) {
+      // tràn đáy màn hình hoặc đáy khung cuộn chứa nó → mở lên trên nếu phía trên đủ chỗ
+      if (!fitsBelow && fitsAbove) setUp(true);
+    }
+  }, [open, side, align, up, sheet]);
+  const menu = open && (
+    <div ref={menuRef} className={cx('dropdown-menu', side === 'right' && 'right', up && 'up', fixed && 'floating', sheet && 'sheet-menu')}
+      style={{
+        ...(width && { width }),
+        ...(fixed && !sheet && { position: 'fixed', left: fixed.left, top: fixed.top, right: 'auto', bottom: 'auto' }),
+        ...(portal && { zIndex: 1300 }), // trên cả popup / trình xem tệp
+      }}
+      onClick={(e) => { if (e.target.closest('[data-close]')) setOpen(false); }}>
+      {typeof children === 'function' ? children(() => setOpen(false)) : children}
+    </div>
+  );
   return (
     <div className={cx('dropdown', className)} ref={ref}>
-      {trigger(open, () => setOpen((o) => !o))}
-      {open && (
-        <div ref={menuRef} className={cx('dropdown-menu', side === 'right' && 'right')} style={width ? { width } : undefined}
-          onClick={(e) => { if (e.target.closest('[data-close]')) setOpen(false); }}>
-          {typeof children === 'function' ? children(() => setOpen(false)) : children}
-        </div>
-      )}
+      {trigger(open, () => { setSheet(window.matchMedia('(max-width: 800px)').matches); setOpen((o) => !o); })}
+      {portal && menu ? createPortal(menu, document.body) : menu}
     </div>
   );
 }
@@ -175,9 +261,12 @@ export function UserPicker({ users, value, onChange, multiple = false, placehold
   useClickOutside(ref, () => setOpen(false), open);
   const selected = multiple ? value || [] : value ? [value] : [];
   const byId = new Map(users.map((u) => [u.id, u]));
-  const list = users
+  const fq = foldVi(q.trim());
+  const all = users
     .filter((u) => !exclude.includes(u.id))
-    .filter((u) => !q || u.name.toLowerCase().includes(q.toLowerCase()) || u.username?.toLowerCase().includes(q.toLowerCase()));
+    .filter((u) => !fq || foldVi(`${u.name} ${u.username || ''} ${u.title || ''} ${u.department_name || ''}`).includes(fq));
+  // công ty lớn: chỉ vẽ 80 kết quả đầu, gõ để thu hẹp
+  const list = all.slice(0, 80);
   const toggle = (id) => {
     if (multiple) onChange(selected.includes(id) ? selected.filter((x) => x !== id) : [...selected, id]);
     else {
@@ -190,7 +279,8 @@ export function UserPicker({ users, value, onChange, multiple = false, placehold
       <div className="picker-control" onClick={() => setOpen((o) => !o)} tabIndex={0}
         onKeyDown={(e) => e.key === 'Enter' && setOpen((o) => !o)}>
         {selected.length === 0 && <span className="muted">{placeholder}</span>}
-        {selected.map((id) => {
+        {selected.length > 12 && <span className="chip">{selected.length} người đã chọn</span>}
+        {selected.length <= 12 && selected.map((id) => {
           const u = byId.get(id);
           if (!u) return null;
           return (
@@ -221,6 +311,7 @@ export function UserPicker({ users, value, onChange, multiple = false, placehold
               </button>
             ))}
             {!list.length && <div className="empty-small">Không có kết quả nào</div>}
+            {all.length > list.length && <div className="empty-small">Còn {all.length - list.length} người — gõ tên, chức danh hoặc phòng ban để tìm</div>}
           </div>
         </div>
       )}
@@ -297,7 +388,7 @@ export function Spinner() {
   return <div className="spinner" aria-label="Đang tải" />;
 }
 
-export function FileChip({ file, href, onRemove }) {
+export function FileChip({ file, href, onRemove, onOpen, extra }) {
   const ic = fileIcon(file.original_name || file.name);
   const content = (
     <>
@@ -308,7 +399,9 @@ export function FileChip({ file, href, onRemove }) {
   );
   return (
     <span className="file-chip">
-      {href ? <a href={href} target="_blank" rel="noreferrer">{content}</a> : content}
+      {onOpen ? <button type="button" className="file-open" onClick={onOpen} title="Xem nội dung">{content}</button>
+        : href ? <a href={href} target="_blank" rel="noreferrer">{content}</a> : content}
+      {extra}
       {onRemove && (
         <button type="button" className="chip-x" onClick={onRemove} aria-label="Bỏ tệp"><X size={12} /></button>
       )}

@@ -9,8 +9,8 @@ import { fmtDate, cx } from '../utils.js';
 import { useWework } from './WeworkLayout.jsx';
 
 const TITLES = {
-  project: 'Dự án & phòng ban',
-  department: 'Departments',
+  project: 'Dự án',
+  department: 'Phòng ban',
   template: 'Tạo từ mẫu',
 };
 
@@ -18,7 +18,7 @@ export default function ProjectsPage({ kind }) {
   const { openProjectForm, version } = useWework();
   const [q, setQ] = useState('');
   const [status, setStatus] = useState('active');
-  const [filterKind, setFilterKind] = useState(kind === 'department' ? 'department' : '');
+  const [filterKind, setFilterKind] = useState(kind === 'department' ? 'department' : kind === 'project' ? 'project' : '');
   const [view, setView] = useState('grid');
   const dq = useDebounced(q);
   const isTemplate = kind === 'template';
@@ -51,7 +51,7 @@ export default function ProjectsPage({ kind }) {
           <div className="grow" />
           {kind === 'project' && (
             <FilterSelect value={filterKind} onChange={setFilterKind}
-              options={[{ value: '', label: 'Dự án & phòng ban' }, { value: 'project', label: 'Chỉ dự án' }, { value: 'department', label: 'Chỉ phòng ban' }]} />
+              options={[{ value: 'project', label: 'Dự án' }, { value: '', label: 'Dự án & phòng ban' }]} />
           )}
           {!isTemplate && (
             <FilterSelect value={status} onChange={setStatus}

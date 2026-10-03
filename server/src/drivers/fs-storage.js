@@ -10,10 +10,15 @@ export function createFsStorage(dir) {
     put: async (key, blob) => {
       await fs.promises.writeFile(file(key), Buffer.from(await blob.arrayBuffer()));
     },
-    get: async (key) => {
+    get: async (key, range) => {
       const f = file(key);
       if (!fs.existsSync(f)) return null;
-      return { body: Readable.toWeb(fs.createReadStream(f)), size: fs.statSync(f).size };
+      const opts = range ? { start: range.offset, end: range.offset + range.length - 1 } : undefined;
+      return { body: Readable.toWeb(fs.createReadStream(f, opts)), size: fs.statSync(f).size };
+    },
+    size: async (key) => {
+      const f = file(key);
+      return fs.existsSync(f) ? fs.statSync(f).size : null;
     },
     remove: async (key) => {
       await fs.promises.rm(file(key), { force: true });

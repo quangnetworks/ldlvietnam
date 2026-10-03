@@ -1,4 +1,5 @@
-import { Navigate, Route, Routes, useLocation } from 'react-router-dom';
+import { useEffect } from 'react';
+import { Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
 import { useApp } from './context.jsx';
 import { Spinner } from './components/ui.jsx';
 import Login from './pages/Login.jsx';
@@ -9,6 +10,7 @@ import DocDetail from './office/DocDetail.jsx';
 import OfficeSettings from './office/OfficeSettings.jsx';
 import WeworkLayout from './wework/WeworkLayout.jsx';
 import TasksHome from './wework/TasksHome.jsx';
+import MyTasksPage from './wework/MyTasksPage.jsx';
 import ProjectsPage from './wework/ProjectsPage.jsx';
 import ProjectPage from './wework/ProjectPage.jsx';
 import MembersPage from './wework/MembersPage.jsx';
@@ -16,6 +18,7 @@ import ReportsPage from './wework/ReportsPage.jsx';
 import BulkPage from './wework/BulkPage.jsx';
 import TaskPage from './wework/TaskPage.jsx';
 import GuidePage from './wework/GuidePage.jsx';
+import GoalsPage, { WeworkSettingsPage } from './wework/GoalsPage.jsx';
 import Home from './pages/Home.jsx';
 import AccountLayout from './account/AccountLayout.jsx';
 import { ProfileView, ProfileEdit, PasswordPage, ColorPage, LoginHistory } from './account/ProfilePages.jsx';
@@ -28,15 +31,23 @@ import RequestForm from './request/RequestForm.jsx';
 import RequestDetail from './request/RequestDetail.jsx';
 import { GroupsAdmin, GroupEditor, TemplatesPage, GroupHistory, RequestGuide } from './request/GroupsAdmin.jsx';
 import RequestReports from './request/RequestReports.jsx';
+import RequestPrint from './request/RequestPrint.jsx';
 import { useApp as useAppCtx } from './context.jsx';
 import { TwoFactorPage, SecuritySettingsPage } from './account/SecurityPages.jsx';
 import { WebhooksPage } from './request/Webhooks.jsx';
 import ModuleShell from './components/ModuleShell.jsx';
 import { HrmHome, HrmEmployees, HrmEmployee, HrmSettings } from './hrm/Hrm.jsx';
+import { HrmContracts, HrmCareers, HrmReports } from './hrm/HrmRecords.jsx';
+import { SalesOrg } from './hrm/SalesOrg.jsx';
+import { MyAssets, AssetOverview, AssetList, AssetDetail, AssetPeople, AssetPerson } from './asset/AssetPages.jsx';
+import { HandoverList, HandoverDetail, ProcedureList, ProcedureDetail, AssetSettings } from './asset/AssetFlows.jsx';
 import { CheckinHome, CheckinTeam, CheckinSettings } from './hrm/Checkin.jsx';
 import { TimeoffHome, TimeoffCalendar, TimeoffBalances } from './hrm/Timeoff.jsx';
 import DrivePage from './drive/Drive.jsx';
 import MessagePage from './message/Message.jsx';
+import MobileTabBar from './components/MobileNav.jsx';
+import GlobalSearch from './components/GlobalSearch.jsx';
+import { refreshBadge } from './push.js';
 
 /** Guard a module route by the user's app access (Account → Ứng dụng). */
 function RequireApp({ app, children }) {
@@ -58,12 +69,40 @@ function RequireApp({ app, children }) {
 export default function App() {
   const { user, loading } = useApp();
   const location = useLocation();
+  const navigate = useNavigate();
+  // Bấm vào thông báo đẩy khi ứng dụng đang mở → chuyển tới nội dung
+  useEffect(() => {
+    if (!('serviceWorker' in navigator)) return undefined;
+    const h = (e) => {
+      if (e.data?.type !== 'open' || !e.data.url) return;
+      const u = new URL(e.data.url, window.location.origin);
+      if (u.origin === window.location.origin) navigate(u.pathname + u.search);
+    };
+    navigator.serviceWorker.addEventListener('message', h);
+    return () => navigator.serviceWorker.removeEventListener('message', h);
+  }, [navigate]);
+  // Mở công việc / đề xuất / văn bản / cuộc trò chuyện → máy chủ đánh dấu thông báo liên quan đã đọc → cập nhật số trên biểu tượng
+  useEffect(() => {
+    if (!user) return undefined;
+    const t = setTimeout(() => refreshBadge(true), 1500);
+    return () => clearTimeout(t);
+  }, [user, location.pathname]);
+  // Số trên biểu tượng ứng dụng (iPhone / taskbar Windows): cập nhật khi mở lại ứng dụng
+  useEffect(() => {
+    if (!user) return undefined;
+    refreshBadge(true);
+    const h = () => { if (!document.hidden) refreshBadge(); };
+    document.addEventListener('visibilitychange', h);
+    window.addEventListener('focus', h);
+    return () => { document.removeEventListener('visibilitychange', h); window.removeEventListener('focus', h); };
+  }, [user]);
   if (loading) return <div className="center-screen"><Spinner /></div>;
   if (!user) {
     if (location.pathname !== '/login') return <Navigate to="/login" replace state={{ from: location.pathname + location.search }} />;
     return <Login />;
   }
   return (
+    <>
     <Routes>
       <Route path="/login" element={<Navigate to={location.state?.from || '/'} replace />} />
       <Route path="/" element={<Home />} />
@@ -76,15 +115,17 @@ export default function App() {
       </Route>
       <Route path="/wework" element={<RequireApp app="wework"><WeworkLayout /></RequireApp>}>
         <Route index element={<TasksHome />} />
-        <Route path="my" element={<TasksHome mode="my" />} />
+        <Route path="my" element={<MyTasksPage />} />
         <Route path="task/:id" element={<TaskPage />} />
-        <Route path="projects" element={<ProjectsPage kind="project" />} />
-        <Route path="departments" element={<ProjectsPage kind="department" />} />
-        <Route path="templates" element={<ProjectsPage kind="template" />} />
+        <Route path="projects" element={<ProjectsPage key="project" kind="project" />} />
+        <Route path="departments" element={<ProjectsPage key="department" kind="department" />} />
+        <Route path="templates" element={<ProjectsPage key="template" kind="template" />} />
         <Route path="project/:id" element={<ProjectPage />} />
         <Route path="members" element={<AccountMembers />} />
         <Route path="reports" element={<ReportsPage />} />
         <Route path="bulk" element={<BulkPage />} />
+        <Route path="goals" element={<GoalsPage />} />
+        <Route path="settings" element={<WeworkSettingsPage />} />
         <Route path="guide" element={<GuidePage />} />
       </Route>
       <Route path="/account" element={<AccountLayout />}>
@@ -105,6 +146,7 @@ export default function App() {
         <Route path="2fa" element={<TwoFactorPage />} />
         <Route path="security" element={<SecuritySettingsPage />} />
       </Route>
+      <Route path="/request/:id/print" element={<RequireApp app="request"><RequestPrint /></RequireApp>} />
       <Route path="/request" element={<RequireApp app="request"><RequestLayout /></RequireApp>}>
         <Route index element={<RequestList />} />
         <Route path="new" element={<RequestForm />} />
@@ -125,7 +167,24 @@ export default function App() {
         <Route index element={<HrmHome />} />
         <Route path="employees" element={<HrmEmployees />} />
         <Route path="employees/:id" element={<HrmEmployee />} />
+        <Route path="contracts" element={<HrmContracts />} />
+        <Route path="careers" element={<HrmCareers />} />
+        <Route path="reports" element={<HrmReports />} />
+        <Route path="sales" element={<SalesOrg />} />
         <Route path="settings" element={<HrmSettings />} />
+      </Route>
+      <Route path="/asset/handovers/:id" element={<RequireApp app="asset"><HandoverDetail /></RequireApp>} />
+      <Route path="/asset" element={<RequireApp app="asset"><ModuleShell app="asset" /></RequireApp>}>
+        <Route index element={<MyAssets />} />
+        <Route path="overview" element={<AssetOverview />} />
+        <Route path="list" element={<AssetList />} />
+        <Route path="item/:id" element={<AssetDetail />} />
+        <Route path="people" element={<AssetPeople />} />
+        <Route path="people/:id" element={<AssetPerson />} />
+        <Route path="handovers" element={<HandoverList />} />
+        <Route path="procedures" element={<ProcedureList />} />
+        <Route path="procedures/:id" element={<ProcedureDetail />} />
+        <Route path="settings" element={<AssetSettings />} />
       </Route>
       <Route path="/checkin" element={<RequireApp app="checkin"><ModuleShell app="checkin" /></RequireApp>}>
         <Route index element={<CheckinHome />} />
@@ -146,5 +205,8 @@ export default function App() {
       <Route path="/message/:channelId" element={<RequireApp app="message"><MessagePage /></RequireApp>} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
+    <MobileTabBar />
+    <GlobalSearch />
+    </>
   );
 }

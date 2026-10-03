@@ -43,6 +43,7 @@ export async function buildSeed() {
   };
   addUser('admin', 'admin', 'Quản trị hệ thống', 'Quản trị viên', 'it', 'admin');
   addUser('gd', 'giamdoc', 'Võ Trung Cang', 'Giám đốc', 'bgd', 'admin');
+  add('UPDATE users SET is_owner = 1 WHERE id = ?', users.gd);
   addUser('hr', 'chilan', 'Đinh Phạm Chi Lan', 'Trưởng phòng HCNS', 'hcns', 'member', 'gd');
   addUser('kd', 'truongkd', 'Lê Trường Giang', 'Trưởng phòng Kinh doanh', 'kd', 'member', 'gd');
   addUser('mkt', 'minhtrang', 'Nguyễn Minh Trang', 'Trưởng phòng Marketing', 'mkt', 'member', 'gd');
@@ -245,14 +246,14 @@ export async function buildSeed() {
   add(`INSERT OR IGNORE INTO request_group_approvers(group_id, user_id, step) SELECT ${grp('Đề xuất cấp văn phòng phẩm')}, ?, 1 WHERE ${grp('Đề xuất cấp văn phòng phẩm')} IS NOT NULL`, users.hr);
   add(`INSERT OR IGNORE INTO request_group_approvers(group_id, user_id, step) SELECT ${grp('Đề xuất cấp văn phòng phẩm')}, ?, 1 WHERE ${grp('Đề xuất cấp văn phòng phẩm')} IS NOT NULL`, users.nv4);
   add(`INSERT INTO requests(id, group_id, title, content, data, flow, creator_id, status, deadline_at, created_at, updated_at)
-    SELECT 1, ${grp('Đề nghị tạm ứng')}, 'Tạm ứng chi phí khảo sát NPP miền Trung', 'Chi phí đi lại, lưu trú 3 ngày khảo sát thị trường Đà Nẵng.',
+    SELECT 1, ${grp('Đề nghị tạm ứng')}, 'LDL Demo 12 - Đề nghị tạm ứng chi phí khảo sát NPP miền Trung', 'Chi phí đi lại, lưu trú 3 ngày khảo sát thị trường Đà Nẵng.',
       ?, 'sequential', ?, 'pending', ?, ?, ? WHERE ${grp('Đề nghị tạm ứng')} IS NOT NULL`,
   JSON.stringify({ amount: 8500000, purpose: 'Khảo sát và làm việc với NPP khu vực Đà Nẵng, Quảng Nam', refund_date: dateOffset(14) }),
   users.nv1, datetimeOffset(1), datetimeOffset(-1), datetimeOffset(-1));
   add("INSERT OR IGNORE INTO request_approvers(request_id, user_id, step, status) SELECT 1, ?, 1, 'pending' WHERE EXISTS (SELECT 1 FROM requests WHERE id = 1)", users.kt);
   add("INSERT OR IGNORE INTO request_approvers(request_id, user_id, step, status) SELECT 1, ?, 2, 'pending' WHERE EXISTS (SELECT 1 FROM requests WHERE id = 1)", users.gd);
   add(`INSERT INTO requests(id, group_id, title, data, flow, creator_id, status, completed_at, created_at, updated_at)
-    SELECT 2, ${grp('Đề xuất nghỉ phép')}, 'Nghỉ phép năm 2 ngày', ?, 'sequential', ?, 'approved', ?, ?, ? WHERE ${grp('Đề xuất nghỉ phép')} IS NOT NULL`,
+    SELECT 2, ${grp('Đề xuất nghỉ phép')}, 'Nguyễn Phương Linh - Đề xuất nghỉ phép năm 2 ngày', ?, 'sequential', ?, 'approved', ?, ?, ? WHERE ${grp('Đề xuất nghỉ phép')} IS NOT NULL`,
   JSON.stringify({ from: dateOffset(-8), to: dateOffset(-7), kind: 'Nghỉ phép năm', reason: 'Việc gia đình' }),
   users.nv2, datetimeOffset(-9), datetimeOffset(-10), datetimeOffset(-9));
   add("INSERT OR IGNORE INTO request_approvers(request_id, user_id, step, status, comment, acted_at) SELECT 2, ?, 1, 'approved', 'Đồng ý', ? WHERE EXISTS (SELECT 1 FROM requests WHERE id = 2)", users.kd, datetimeOffset(-9));
@@ -277,6 +278,71 @@ export async function buildSeed() {
       VALUES (?,?,?,?,?,?,?,?)`, users[k], code, gender, hire, ctype, cend, status === 'probation' ? dateOffset(20) : null, status);
   }
   add("INSERT OR REPLACE INTO settings(key, value) VALUES ('hrm_settings', ?)", JSON.stringify({ managers: [users.hr] }));
+  // hồ sơ mở rộng, hợp đồng, phát triển sự nghiệp
+  const extra = {
+    gd: ['Văn phòng Hà Nội', 'Giám đốc', 'Toàn thời gian'], hr: ['Văn phòng Hà Nội', 'Trưởng phòng', 'Toàn thời gian'],
+    kd: ['Văn phòng Hà Nội', 'Trưởng phòng', 'Toàn thời gian'], mkt: ['Văn phòng TP. Hồ Chí Minh', 'Trưởng phòng', 'Toàn thời gian'],
+    kt: ['Văn phòng Hà Nội', 'Trưởng phòng', 'Toàn thời gian'], nv1: ['Văn phòng Hà Nội', 'Nhân viên', 'Toàn thời gian'],
+    nv2: ['Văn phòng Hà Nội', 'Nhân viên', 'Toàn thời gian'], nv3: ['Văn phòng TP. Hồ Chí Minh', 'Nhân viên', 'Toàn thời gian'],
+    nv4: ['Văn phòng TP. Hồ Chí Minh', 'Chuyên viên', 'Bán thời gian'],
+  };
+  for (const [k, code, , hire, ctype, cend, status] of hr) {
+    const [office, position, type] = extra[k];
+    add('UPDATE hr_profiles SET office = ?, job_position = ?, employee_type = ?, official_date = ? WHERE user_id = ?',
+      office, position, type, status === 'probation' ? null : hire, users[k]);
+    add(`INSERT INTO hr_contracts(user_id, code, contract_type, start_date, end_date, status, created_by) VALUES (?,?,?,?,?, 'active', ?)`,
+      users[k], `HĐLĐ-${code}`, ctype, hire, cend, users.hr);
+  }
+  add(`INSERT INTO hr_careers(user_id, type, effective_date, from_value, to_value, decision_no, created_by) VALUES (?, 'promotion', '2023-01-01', 'Chuyên viên kinh doanh', 'Trưởng phòng Kinh doanh', 'QĐ-01/2023', ?)`, users.kd, users.hr);
+  add(`INSERT INTO hr_careers(user_id, type, effective_date, to_value, note, created_by) VALUES (?, 'reward', ?, 'Nhân viên xuất sắc quý', 'Vượt 120% chỉ tiêu doanh số', ?)`, users.nv1, dateOffset(-30), users.hr);
+
+  // ---------- Cơ cấu kinh doanh: khung Toàn quốc / Miền Bắc, Trung, Nam / Khu vực có sẵn từ migration 0022–0023;
+  // seed phân công mẫu theo ngành hàng (HMP = Hóa mỹ phẩm, TP = Thực phẩm; không ghi = phụ trách chung)
+  // 63 tỉnh / thành phố theo khu vực có sẵn từ migration 0025
+  const assign = (uk, role, name, level, industry, concurrent = 0) => add(`INSERT INTO territory_members(territory_id, user_id, role, is_concurrent, since, industry)
+    SELECT id, ?, ?, ?, '2024-01-01', ? FROM territories WHERE name = ? AND level = ? LIMIT 1`, users[uk], role, concurrent, industry, name, level);
+  assign('kd', 'NSM', 'Toàn quốc', 'national', null);          // NSM phụ trách chung cả hai ngành hàng
+  assign('nv1', 'SS', 'Hà Nội', 'province', 'HMP');
+  assign('nv1', 'SS', 'Hà Nam', 'province', 'HMP', 1);         // 1 SS phụ trách 2 tỉnh (kiêm nhiệm)
+  assign('nv2', 'SREP_KA', 'Hà Nội', 'area', 'TP');            // SREP KA Thực phẩm, siêu thị toàn khu vực Hà Nội
+  for (const [uk, role, ind] of [['kd', 'NSM', null], ['nv1', 'SS', 'HMP'], ['nv2', 'SREP_KA', 'TP']]) {
+    add('UPDATE users SET sales_role = ?, sales_industry = ? WHERE id = ?', role, ind, users[uk]);
+  }
+
+  // ---------- LDL Asset: tài sản gắn với nhân viên, biên bản bàn giao, thủ tục nhận việc
+  const assetRows = [
+    // [code, name, type, kind, serial, location, price, purchase, holder]
+    ['LAP-0001', 'Laptop Dell Latitude 5440', 'Máy tính xách tay', 'asset', 'DL5440-8H2K', 'Văn phòng Hà Nội', 22500000, '2024-03-10', 'nv1'],
+    ['MH-0001', 'Màn hình Dell 24" P2423', 'Màn hình', 'asset', 'P2423-11A', 'Văn phòng Hà Nội', 4200000, '2024-03-10', 'nv1'],
+    ['CC-0001', 'Bộ tai nghe Jabra Evolve2', 'Công cụ dụng cụ', 'tool', null, 'Văn phòng Hà Nội', 1900000, '2025-01-05', 'nv1'],
+    ['LAP-0002', 'Laptop Lenovo ThinkPad E14', 'Máy tính xách tay', 'asset', 'TPE14-77Q', 'Văn phòng Hà Nội', 18900000, '2024-06-01', 'nv2'],
+    ['DT-0001', 'iPhone 13 (điện thoại công ty)', 'Điện thoại', 'asset', 'IMEI 35-8812', 'Văn phòng Hà Nội', 15500000, '2023-09-20', 'kd'],
+    ['LAP-0003', 'MacBook Air M2', 'Máy tính xách tay', 'asset', 'C02HM2', 'Văn phòng TP. Hồ Chí Minh', 26900000, '2024-01-15', 'mkt'],
+    ['LAP-0004', 'Laptop Dell Vostro 3520', 'Máy tính xách tay', 'asset', 'V3520-5KD', 'Kho', 14500000, '2025-02-01', null],
+    ['MH-0002', 'Màn hình LG 27" 27MP400', 'Màn hình', 'asset', 'LG27-889', 'Kho', 3600000, '2025-02-01', null],
+    ['TB-0001', 'Máy chiếu Epson EB-X51', 'Máy in / máy chiếu', 'asset', 'EBX51-2210', 'Văn phòng Hà Nội', 11800000, '2023-05-12', null],
+    ['DP-0001', 'Đồng phục + thẻ nhân viên', 'Đồng phục, thẻ nhân viên', 'tool', null, 'Kho', 650000, '2025-06-01', null],
+  ];
+  const deprOf = { 'Máy tính xách tay': 36, 'Màn hình': 36, 'Điện thoại': 24, 'Máy in / máy chiếu': 60, 'Công cụ dụng cụ': 12 };
+  assetRows.forEach(([code, name, type, kind, serial, loc, price, bought, holder], i) => {
+    add(`INSERT INTO assets(id, code, name, type, kind, serial, location, price, purchase_date, depreciation_months, status, holder_id, assigned_at, condition, created_by)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, i + 1, code, name, type, kind, serial, loc, price, bought, deprOf[type] || null,
+    holder ? 'in_use' : 'available', holder ? users[holder] : null, holder ? datetimeOffset(-60) : null, 'good', users.hr);
+    add('INSERT INTO asset_transactions(asset_id, type, detail, user_id, created_at) VALUES (?, ?, ?, ?, ?)', i + 1, 'create', 'Tạo tài sản', users.hr, datetimeOffset(-90));
+  });
+  add(`INSERT INTO asset_handovers(id, code, kind, reason, employee_id, status, created_by, created_at, confirmed_at, confirmed_by)
+    VALUES (1, 'BG-202607-001', 'issue', 'onboard', ?, 'confirmed', ?, ?, ?, ?)`, users.nv1, users.hr, datetimeOffset(-60), datetimeOffset(-60), users.nv1);
+  for (const aid of [1, 2, 3]) {
+    add("INSERT INTO asset_handover_items(handover_id, asset_id, condition) VALUES (1, ?, 'good')", aid);
+    add(`INSERT INTO asset_transactions(asset_id, type, to_user_id, handover_id, detail, user_id, created_at) VALUES (?, 'assign', ?, 1, ?, ?, ?)`,
+      aid, users.nv1, 'Bàn giao cho LDL Demo 12 (Nhận việc) — tình trạng: Tốt', users.hr, datetimeOffset(-60));
+  }
+  add(`INSERT INTO hr_procedures(kind, user_id, effective_date, steps, created_by) VALUES ('onboard', ?, ?, ?, ?)`, users.nv3, dateOffset(-40),
+    JSON.stringify([
+      { key: 's1', label: 'Ký hợp đồng / thư mời nhận việc', done: true }, { key: 's2', label: 'Cập nhật hồ sơ nhân sự', done: true },
+      { key: 's3', label: 'Cấp tài khoản LDL, email', done: true }, { key: 'assets', label: 'Bàn giao tài sản, công cụ làm việc', done: false },
+      { key: 's5', label: 'Hướng dẫn nội quy, quy trình làm việc', done: false }, { key: 's6', label: 'Giới thiệu với phòng ban', done: false },
+    ]), users.hr);
 
   // ---------- Checkin: vài ngày chấm công gần đây (giờ VN = UTC+7)
   const utcAt = (day, vnMinutes) => {
@@ -318,14 +384,18 @@ export async function buildSeed() {
   add("INSERT OR IGNORE INTO app_access(app_key, user_id) VALUES ('request', 11)");
   add("INSERT INTO notifications(user_id, actor_id, app, type, title, link) VALUES (?,?, 'wework', 'assigned', ?, '/wework')",
     users.nv1, users.mkt, 'Nguyễn Minh Trang đã giao cho bạn công việc "Thiết kế bộ nhận diện chiến dịch"');
+  // trưởng phòng (được giao việc cho mọi nhân sự trong phòng ban)
+  for (const [dk, uk] of [['kd', 'kd'], ['mkt', 'mkt'], ['hcns', 'hr'], ['kt', 'kt']]) {
+    if (dep[dk] && users[uk]) add('UPDATE departments SET head_id = ? WHERE id = ?', users[uk], dep[dk]);
+  }
   return S;
 }
 
-const TABLES = ['chat_messages', 'chat_members', 'chat_channels', 'drive_shares', 'drive_items', 'leave_quotas', 'checkins', 'hr_profiles',
+const TABLES = ['territory_members', 'asset_transactions', 'asset_handover_items', 'asset_handovers', 'assets', 'hr_procedures', 'hr_documents', 'hr_careers', 'hr_contracts', 'request_group_members', 'chat_messages', 'chat_members', 'chat_channels', 'drive_shares', 'drive_items', 'leave_quotas', 'checkins', 'hr_profiles',
   'webhook_logs', 'webhooks', 'request_attachments', 'request_comments', 'request_stars', 'request_followers', 'request_approvers', 'requests',
   'request_group_stars', 'request_group_followers', 'request_group_approvers', 'notes', 'user_prefs', 'login_logs', 'app_access',
-  'user_group_members', 'user_groups', 'notifications', 'activity_logs', 'custom_filters', 'goals', 'task_attachments', 'task_comments', 'task_checklist',
-  'task_stars', 'task_followers', 'tasks', 'task_lists', 'project_members', 'projects', 'document_comments', 'document_views',
+  'user_departments', 'user_group_members', 'user_groups', 'notifications', 'activity_logs', 'custom_filters', 'goals', 'task_attachments', 'task_results', 'task_comments', 'request_group_files', 'task_checklist',
+  'task_stars', 'task_followers', 'tasks', 'task_lists', 'project_departments', 'project_members', 'projects', 'document_comments', 'document_views',
   'document_stars', 'document_follows', 'document_recipients', 'document_approvers', 'document_attachments', 'documents',
   'doc_categories', 'doc_folders', 'doc_types', 'users', 'departments'];
 

@@ -1,10 +1,12 @@
-import { NavLink, Outlet, Link } from 'react-router-dom';
+import { useEffect, useState } from 'react';
+import { NavLink, Outlet, Link, useLocation } from 'react-router-dom';
 import {
   UserCircle2, Bell, Users, Network, LayoutGrid, Power, Settings, Pencil, KeyRound, Palette, History, Building2, AppWindow,
-  ScrollText, FileText, GitPullRequestArrow, Home, LockKeyhole, ShieldCheck, Shield, Webhook,
+  ScrollText, FileText, GitPullRequestArrow, Home, LockKeyhole, ShieldCheck, Shield, Webhook, Menu, Grid3x3,
 } from 'lucide-react';
 import { useApp } from '../context.jsx';
 import { Avatar } from '../components/ui.jsx';
+import { AppLauncher } from '../components/AppLauncher.jsx';
 import { cx } from '../utils.js';
 
 function RailLink({ to, icon: Icon, label, end }) {
@@ -27,10 +29,14 @@ function SideLink({ to, icon: Icon, children, end = true }) {
 export default function AccountLayout() {
   const { user, logout } = useApp();
   const admin = user.role === 'admin';
+  const location = useLocation();
+  const [side, setSide] = useState(false);
+  useEffect(() => setSide(false), [location.key]);
   return (
     <div className="acc">
       <nav className="acc-rail">
-        <Link to="/" className="rail-logo" title="Về trang chủ"><img src="/logo-192.png" alt="LDL" /></Link>
+        <button className="acc-rail-link acc-rail-menu" onClick={() => setSide(!side)} aria-label="Menu tài khoản"><Menu size={22} /><span>Menu</span></button>
+        <Link to="/" className="rail-logo" title="Về trang chủ"><img src="/logo-rect.png" alt="LDL" /></Link>
         <Link to="/account" className="acc-rail-avatar" title="Tài khoản của tôi"><Avatar name={user.name} color={user.color} size={36} /></Link>
         <RailLink to="/account" end icon={UserCircle2} label="Cá nhân" />
         <RailLink to="/account/notifications" icon={Bell} label="Thông báo" />
@@ -38,11 +44,17 @@ export default function AccountLayout() {
         <RailLink to="/account/groups" icon={Network} label="Nhóm" />
         <RailLink to="/account/apps" icon={LayoutGrid} label="Ứng dụng" />
         <div className="grow" />
+        <AppLauncher trigger={(open, toggle, ref) => (
+          <button ref={ref} type="button" className={cx('acc-rail-link', open && 'active')} onClick={toggle} aria-expanded={open} aria-haspopup="dialog">
+            <Grid3x3 size={22} /><span>Ứng dụng khác</span>
+          </button>
+        )} />
         <Link to="/" className="acc-rail-link"><Home size={22} /><span>Trang chủ</span></Link>
         <button className="acc-rail-link" onClick={logout}><Power size={22} /><span>Đăng xuất</span></button>
       </nav>
       <main className="acc-main"><Outlet /></main>
-      <aside className="acc-side">
+      {side && <div className="side-backdrop" onClick={() => setSide(false)} />}
+      <aside className={cx('acc-side', side && 'open')}>
         <div className="acc-side-head">
           <h2 className="ellipsis">{user.name}</h2>
           <small className="muted ellipsis block">@{user.username} · {user.email}</small>

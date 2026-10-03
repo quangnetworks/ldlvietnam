@@ -46,7 +46,7 @@ export const ECOSYSTEM = [
   { key: 'onboard', name: 'LDL Onboard', desc: 'Hội nhập', cat: 'hrm', icon: HeartHandshake, color: '#0ca678' },
   { key: 'reward', name: 'LDL Reward', desc: 'Tặng thưởng', cat: 'hrm', icon: Award, color: '#fab005' },
   { key: 'case', name: 'LDL Case', desc: 'Vi phạm và sự vụ', cat: 'hrm', icon: ShieldAlert, color: '#c92a2a' },
-  { key: 'asset', name: 'LDL Asset', desc: 'Quản lý tài sản', cat: 'hrm', icon: Package, color: '#795548' },
+  { key: 'asset', name: 'LDL Asset', desc: 'Quản lý tài sản', cat: 'hrm', icon: Package, color: '#795548', path: '/asset', module: 'asset' },
   { key: 'inside', name: 'LDL Inside', desc: 'Mạng xã hội doanh nghiệp', cat: 'info', icon: Star, color: '#7950f2' },
   { key: 'booking', name: 'LDL Booking', desc: 'Đặt tài nguyên', cat: 'info', icon: CalendarCheck, color: '#1971c2' },
   { key: 'wiki', name: 'LDL Wiki', desc: 'Tri thức', cat: 'info', icon: BookOpen, color: '#2f9e44' },

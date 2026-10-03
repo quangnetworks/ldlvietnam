@@ -77,7 +77,10 @@ export const validIpRule = (rule) => {
 };
 
 export function clientIp(c) {
-  return c.req.header('cf-connecting-ip') || c.req.header('x-forwarded-for')?.split(',')[0]?.trim() || null;
+  const ip = c.req.header('cf-connecting-ip') || c.req.header('x-forwarded-for')?.split(',')[0]?.trim()
+    // máy chủ riêng (Node.js) không có proxy phía trước: lấy địa chỉ kết nối trực tiếp
+    || c.env?.incoming?.socket?.remoteAddress || null;
+  return ip?.replace(/^::ffff:/, '') || null;
 }
 
 export async function securitySettings() {

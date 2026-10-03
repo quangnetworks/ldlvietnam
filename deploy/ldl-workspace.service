@@ -1,0 +1,21 @@
+# systemd — chạy LDL Workspace như dịch vụ, tự khởi động cùng máy chủ.
+#   sudo cp ldl-workspace.service /etc/systemd/system/
+#   (sửa WorkingDirectory / User nếu cài ở chỗ khác)
+#   sudo systemctl daemon-reload && sudo systemctl enable --now ldl-workspace
+#   Xem log: journalctl -u ldl-workspace -f
+[Unit]
+Description=LDL Workspace
+After=network.target
+
+[Service]
+Type=simple
+User=ldl
+WorkingDirectory=/srv/ldl-workspace
+Environment=DATA_DIR=/srv/ldl-workspace/data
+Environment=TZ=Asia/Ho_Chi_Minh
+ExecStart=/usr/bin/env node --no-warnings=ExperimentalWarning server/src/node.js
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

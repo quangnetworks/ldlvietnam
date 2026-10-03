@@ -2,11 +2,11 @@ import { useCallback, useEffect, useState } from 'react';
 import { Link, NavLink, Outlet, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import {
   LayoutGrid, Eye, FileCheck2, Settings2, Star, FilePen, Hash, Server, FileText, Folder, FolderOpen, ChevronDown,
-  Search, Save, CalendarX, XCircle, Archive, Trash2, Plus, Building2, Send, Menu,
-} from 'lucide-react';
+  Search, Save, CalendarX, XCircle, Archive, Trash2, Plus, Building2, Send, Menu, Replace, X } from 'lucide-react';
 import { api } from '../api.js';
 import { useApp } from '../context.jsx';
-import { AppSwitcher, NotificationBell, UserMenu, QuickCreate } from '../components/shell.jsx';
+import { AppSwitcher, NotificationBell, UserMenu, QuickCreate, useDebounced } from '../components/shell.jsx';
+import { ContactsButton } from '../components/Contact.jsx';
 import { buildTree, cx } from '../utils.js';
 
 function Section({ title, children, defaultOpen = true, action }) {
@@ -49,6 +49,15 @@ export default function OfficeLayout() {
   const location = useLocation();
   const navigate = useNavigate();
   const [q, setQ] = useState(params.get('q') || '');
+  // Tìm ngay khi gõ (chờ 300ms), Enter để tìm ngay; xoá ô → về danh sách thường
+  const dq = useDebounced(q, 300);
+  const urlQ = params.get('q') || '';
+  useEffect(() => { setQ(urlQ); }, [urlQ]);
+  useEffect(() => {
+    if (dq.trim() === urlQ.trim()) return;
+    if (!dq.trim() && location.pathname !== '/office') return;
+    navigate(dq.trim() ? `/office?q=${encodeURIComponent(dq.trim())}` : '/office', { replace: location.pathname === '/office' && !!urlQ });
+  }, [dq]); // eslint-disable-line react-hooks/exhaustive-deps
   const [mobileNav, setMobileNav] = useState(false);
 
   const loadMeta = useCallback(async () => setMeta(await api.get('/office/meta')), []);
@@ -75,20 +84,22 @@ export default function OfficeLayout() {
       <header className="topbar">
         <button className="icon-btn on-dark mobile-only" onClick={() => setMobileNav(!mobileNav)} aria-label="Menu"><Menu size={20} /></button>
         <Link to="/" className="brand" title="Về trang chủ">
-          <img className="brand-logo" src="/logo-192.png" alt="LDL" />
+          <img className="brand-logo" src="/logo-rect.png" alt="LDL" />
           <span className="brand-name">{company}</span>
         </Link>
         <div className="grow" />
-        <form className="top-search" onSubmit={(e) => { e.preventDefault(); navigate(`/office?q=${encodeURIComponent(q)}`); }}>
-          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Gõ và enter để tìm kiếm" />
-          <Search size={16} />
+        <form className="top-search" role="search" onSubmit={(e) => { e.preventDefault(); navigate(`/office?q=${encodeURIComponent(q.trim())}`); }}>
+          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Tìm văn bản: tiêu đề, số hiệu, nội dung…" aria-label="Tìm văn bản" enterKeyHint="search" />
+          {q ? <button type="button" className="top-search-clear" onClick={() => setQ('')} aria-label="Xoá tìm kiếm"><X size={14} /></button> : <Search size={16} />}
         </form>
         <QuickCreate />
+        <ContactsButton dark />
         <NotificationBell app="office" dark />
         <AppSwitcher dark />
         <UserMenu dark />
       </header>
       <div className="office-body">
+        {mobileNav && <div className="side-backdrop" onClick={() => setMobileNav(false)} />}
         <aside className={cx('office-side', mobileNav && 'open')}>
           <div className="side-company ellipsis">{company}</div>
           {boxLink('home', 'Trang chủ', LayoutGrid)}
@@ -142,6 +153,7 @@ export default function OfficeLayout() {
           <Section title="TRẠNG THÁI">
             {boxLink('drafts', 'Đã lưu', Save, meta?.counts.drafts)}
             {boxLink('expired', 'Hết hạn', CalendarX)}
+            {boxLink('superseded', 'Đã bị thay thế', Replace)}
             {boxLink('rejected', 'Không thông qua', XCircle)}
             {boxLink('archived', 'Cất giữ', Archive)}
             {boxLink('trash', 'Đã tạm xóa', Trash2)}
