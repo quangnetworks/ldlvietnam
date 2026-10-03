@@ -5,6 +5,7 @@ import {
   COOKIE, TOKEN_TTL, signToken, loadUser, requireAdmin, assertCanManage, PUBLIC_USER_FIELDS, hashPassword, verifyPassword, inDeptSql,
 } from '../auth.js';
 import { badRequest, forbidden, notFound, toInt, idList, jsonBody } from '../util.js';
+import { searchClause } from '../search.js';
 import { userApps, grantApps, audit, recordLogin, MODULES } from '../platform.js';
 import { verifyTotp, ipAllowed } from '../security.js';
 import { isExpired } from '../auth.js';
@@ -110,16 +111,15 @@ r.get('/users', async (c) => {
   if (c.get('user').role === 'guest') {
     return c.json(await all("SELECT u.id, u.name, u.username, u.color, u.title, u.role, u.avatar_version FROM users u WHERE u.active = 1 ORDER BY u.name COLLATE NOCASE"));
   }
-  const q = `%${(qs.q || '').trim()}%`;
+  const us = qs.q ? await searchClause('user', qs.q, 'u.id') : null;
   const includeInactive = qs.all === '1' && c.get('user').role === 'admin';
   return c.json(await all(
     `SELECT ${PUBLIC_USER_FIELDS}, d.name AS department_name, m.name AS manager_name
      FROM users u LEFT JOIN departments d ON d.id = u.department_id
      LEFT JOIN users m ON m.id = u.manager_id
-     WHERE (u.name LIKE ? OR u.username LIKE ? OR IFNULL(u.email,'') LIKE ?)
+     WHERE ${us ? us.sql : '1=1'}
      ${includeInactive ? '' : 'AND u.active = 1'}
-     ORDER BY u.name COLLATE NOCASE`,
-    q, q, q
+     ORDER BY ${us ? `${us.rank}, ` : ''}u.name COLLATE NOCASE`
   ));
 });
 

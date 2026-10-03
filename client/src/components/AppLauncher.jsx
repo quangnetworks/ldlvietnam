@@ -12,6 +12,7 @@ import { useApp } from '../context.jsx';
 import { ECOSYSTEM, CATEGORIES, canOpen, AppIcon } from '../apps.jsx';
 import { foldVi } from './ui.jsx';
 import { cx } from '../utils.js';
+import { openGlobalSearch } from './GlobalSearch.jsx';
 
 const MOBILE = '(max-width: 800px)';
 const GAP = 8;
@@ -103,9 +104,12 @@ function LauncherPanel({ anchor, onClose }) {
           <b>Tất cả ứng dụng</b>
           <button type="button" className="icon-btn sm" onClick={onClose} aria-label="Đóng"><X size={16} /></button>
         </div>
+        <button type="button" className="al-global" onClick={() => { onClose(); openGlobalSearch(); }}>
+          <Search size={15} /> <span className="grow">Tìm văn bản, công việc, tài liệu, mọi người…</span><kbd>Ctrl K</kbd>
+        </button>
         <label className="al-search">
           <Search size={15} />
-          <input ref={inputRef} value={q} onChange={(e) => setQ(e.target.value)} placeholder="Tìm ứng dụng…" aria-label="Tìm ứng dụng"
+          <input ref={inputRef} value={q} onChange={(e) => setQ(e.target.value)} placeholder="Lọc ứng dụng…" aria-label="Lọc ứng dụng"
             onKeyDown={(e) => { if (e.key === 'Enter' && found[0]) { navigate(found[0].path); onClose(); } }} />
           {q && <button type="button" className="al-clear" onClick={() => { setQ(''); inputRef.current?.focus(); }} aria-label="Xoá tìm kiếm"><X size={14} /></button>}
         </label>

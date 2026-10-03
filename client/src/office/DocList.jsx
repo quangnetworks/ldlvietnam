@@ -9,6 +9,7 @@ import { useFetch, useToast } from '../context.jsx';
 import { Dropdown, MenuItem, Pagination, Empty, Spinner, Modal, Field, MultiSelect, UserPicker, FileChip, Tabs } from '../components/ui.jsx';
 import { useApp } from '../context.jsx';
 import { DOC_STATUS, DOC_KINDS, fmtDate, fmtDateTime, cx, buildTree } from '../utils.js';
+import { Hl } from '../components/Highlight.jsx';
 
 const TABS = [{ value: '', label: 'Tất cả văn bản' }, ...Object.entries(DOC_KINDS).map(([value, label]) => ({ value, label }))];
 
@@ -44,7 +45,7 @@ function FilterModal({ meta, params, onApply, onClose }) {
     department_id: ids('department_id'),
     date_from: params.get('date_from') || '',
     date_to: params.get('date_to') || '',
-    sort: params.get('sort') || 'newest',
+    sort: params.get('sort') || '',
   });
   const statusOptions = [...Object.entries(DOC_STATUS).map(([value, s]) => ({ value, label: s.label })), { value: 'expired', label: 'Hết hạn' }];
   return (
@@ -66,6 +67,8 @@ function FilterModal({ meta, params, onApply, onClose }) {
         <Field label="Đến ngày"><input type="date" className="input" value={f.date_to} onChange={(e) => setF({ ...f, date_to: e.target.value })} /></Field>
         <Field label="Sắp xếp theo">
           <select className="input" value={f.sort} onChange={(e) => setF({ ...f, sort: e.target.value })}>
+            <option value="">Mặc định (liên quan nhất khi tìm, mới nhất khi không tìm)</option>
+            <option value="relevance">Liên quan nhất</option>
             <option value="newest">Mới nhất</option>
             <option value="oldest">Cũ nhất</option>
             <option value="updated">Cập nhật gần đây</option>
@@ -127,7 +130,7 @@ function ScanModal({ onClose }) {
   );
 }
 
-function DocRow({ d, selected, onSelect, onToggle, onHistory, view }) {
+function DocRow({ d, selected, onSelect, onToggle, onHistory, view, q }) {
   const toast = useToast();
   const navigate = useNavigate();
   const copyLink = () => {
@@ -136,7 +139,7 @@ function DocRow({ d, selected, onSelect, onToggle, onHistory, view }) {
   };
   const title = (
     <Link to={`/office/doc/${d.id}`} className={cx('doc-title', !d.viewed && d.status === 'issued' && 'unread')}>
-      {d.code && <span className="doc-code">[{d.code}]</span>} {d.title}
+      {d.code && <span className="doc-code">[<Hl text={d.code} q={q} />]</span>} <Hl text={d.title} q={q} />
     </Link>
   );
   const actions = (
@@ -315,7 +318,7 @@ export default function DocList() {
             </thead>
             <tbody>
               {items.map((d) => (
-                <DocRow key={d.id} d={d} view="table" selected={selected.includes(d.id)}
+                <DocRow key={d.id} d={d} q={params.get('q')} view="table" selected={selected.includes(d.id)}
                   onSelect={(id) => setSelected((s) => (s.includes(id) ? s.filter((x) => x !== id) : [...s, id]))}
                   onToggle={toggle} onHistory={setHistory} />
               ))}
@@ -334,7 +337,7 @@ export default function DocList() {
           </div>
           {items.map((d) => (
             <div key={d.id}>
-              <DocRow d={d} selected={selected.includes(d.id)}
+              <DocRow d={d} q={params.get('q')} selected={selected.includes(d.id)}
                 onSelect={(id) => setSelected((s) => (s.includes(id) ? s.filter((x) => x !== id) : [...s, id]))}
                 onToggle={toggle} onHistory={setHistory} />
               {box === 'trash' && (

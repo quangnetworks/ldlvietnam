@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Bell, Grid3x3, FileText, CheckSquare, Settings, LogOut, User, KeyRound, CheckCheck, GitPullRequestArrow, Sun, Moon, Monitor, BellRing, Download } from 'lucide-react';
+import { Bell, Grid3x3, Search, FileText, CheckSquare, Settings, LogOut, User, KeyRound, CheckCheck, GitPullRequestArrow, Sun, Moon, Monitor, BellRing, Download } from 'lucide-react';
 import { api } from '../api.js';
 import { useApp } from '../context.jsx';
 import { Avatar, Dropdown, MenuItem } from './ui.jsx';
 import { timeAgo, cx } from '../utils.js';
 import { ProfileModal } from '../admin/Profile.jsx';
 import { AppLauncher } from './AppLauncher.jsx';
+import { openGlobalSearch } from './GlobalSearch.jsx';
 import { getThemePref, setThemePref, onThemeChange, resolvedTheme } from '../theme.js';
 import { setBadge, promptInstall } from '../push.js';
 import { useInstallable } from './PushCard.jsx';
@@ -55,8 +56,20 @@ export function ThemeToggle({ dark }) {
   );
 }
 
-/** Nút lưới "Tất cả ứng dụng" trên thanh công cụ của mọi module. */
+/** Nút kính lúp (Tìm kiếm toàn hệ thống) + nút lưới "Tất cả ứng dụng" trên thanh công cụ của mọi module. */
 export function AppSwitcher({ dark }) {
+  return (
+    <>
+      <button type="button" className={cx('icon-btn', dark && 'on-dark')} onClick={openGlobalSearch}
+        title="Tìm kiếm toàn hệ thống (Ctrl + K)" aria-label="Tìm kiếm toàn hệ thống">
+        <Search size={18} />
+      </button>
+      <AppGrid dark={dark} />
+    </>
+  );
+}
+
+function AppGrid({ dark }) {
   return (
     <AppLauncher trigger={(open, toggle, ref) => (
       <button ref={ref} className={cx('icon-btn', dark && 'on-dark', open && 'active')} onClick={toggle}

@@ -7,6 +7,7 @@ import {
 import { fireRequestEvent } from './webhooks.js';
 import { parseAutomation, runRequestAutomation, viewAutomation, isHrManager, AUTOMATION_TYPES } from '../automation.js';
 import { publicFileLink } from '../files.js';
+import { searchClause, fold } from '../search.js';
 import { readComment, saveCommentFiles, withCommentFiles, commentFileOr404, commentSnippet, purgeCommentFiles, editComment, deleteComment, notifyReply } from '../comments.js';
 
 const r = new Hono();
@@ -70,7 +71,8 @@ function decorate(q) {
 }
 
 // ================================================================ list & counts
-function buildList(user, p) {
+/** `search`: kết quả searchClause('request', …) khi có từ khoá (tính trước — truy vấn bất đồng bộ). */
+function buildList(user, p, search = null) {
   const v = visibility(user);
   const where = [v.sql];
   const params = [...v.params];
@@ -92,22 +94,25 @@ function buildList(user, p) {
   const gid = toInt(p.group_id);
   if (gid) { where.push('q.group_id = ?'); params.push(gid); }
   if (p.q) {
-    const like = `%${p.q.trim()}%`;
-    where.push("(q.title LIKE ? OR IFNULL(q.content,'') LIKE ? OR CAST(q.id AS TEXT) = ?)");
-    params.push(like, like, p.q.trim().replace(/^#/, ''));
+    // chỉ mục toàn văn (tiêu đề, nội dung, dữ liệu biểu mẫu) + mã đề xuất "#123"
+    const id = /^#?\d+$/.test(p.q.trim()) ? Number(p.q.trim().replace('#', '')) : 0;
+    const parts = [search?.sql, id ? 'q.id = ?' : null].filter(Boolean);
+    where.push(parts.length ? `(${parts.join(' OR ')})` : '0');
+    if (id) params.push(id);
   }
   if (p.creator_id) { where.push('q.creator_id = ?'); params.push(toInt(p.creator_id)); }
   if (p.from) { where.push('date(q.created_at) >= date(?)'); params.push(p.from); }
   if (p.to) { where.push('date(q.created_at) <= date(?)'); params.push(p.to); }
-  const order = p.sort === 'oldest' ? 'q.created_at ASC, q.id ASC' : p.sort === 'deadline'
+  const chosen = p.sort === 'oldest' ? 'q.created_at ASC, q.id ASC' : p.sort === 'deadline'
     ? "CASE WHEN q.deadline_at IS NULL THEN 1 ELSE 0 END, q.deadline_at" : 'q.updated_at DESC, q.id DESC';
+  const order = search && !['oldest', 'deadline'].includes(p.sort) ? `${search.rank}, ${chosen}` : chosen;
   return { where: where.join(' AND '), params, order };
 }
 
 r.get('/requests', async (c) => {
   const user = c.get('user');
   const p = c.req.query();
-  const { where, params, order } = buildList(user, p);
+  const { where, params, order } = buildList(user, p, p.q ? await searchClause('request', p.q, 'q.id') : null);
   const { page, limit, offset } = paginate(p, 20);
   const total = (await get(`SELECT COUNT(*) AS c FROM requests q WHERE ${where}`, ...params)).c;
   const items = (await all(`${LIST_SELECT} WHERE ${where} ORDER BY ${order} LIMIT ? OFFSET ?`,
@@ -641,7 +646,6 @@ async function groupList(user, q) {
   if (!isAdmin(user)) { where.push(`(g.visibility <> 'private' OR ${MEMBER_OF})`); params.push(user.id, user.id, user.id); }
   else if (q.status === 'active') where.push('g.active = 1');
   else if (q.status === 'paused') where.push('g.active = 0');
-  if (q.q) { where.push('(g.name LIKE ? OR g.category LIKE ?)'); params.push(`%${q.q}%`, `%${q.q}%`); }
   const rows = await all(`SELECT g.id, g.name, g.description, g.category, g.flow, g.sla_hours, g.active, g.custom_approvers, g.updated_at, g.visibility,
       g.manager_approval, g.final_approver_id,
       (SELECT COUNT(*) FROM request_group_files gf WHERE gf.group_id = g.id) AS file_count, g.guide IS NOT NULL AND g.guide <> '' AS has_guide,
@@ -650,7 +654,11 @@ async function groupList(user, q) {
       (SELECT COUNT(*) FROM requests q WHERE q.group_id = g.id) AS request_count
     FROM request_groups g ${where.length ? `WHERE ${where.join(' AND ')}` : ''} ORDER BY g.category COLLATE NOCASE, g.name COLLATE NOCASE`,
   user.id, ...params);
-  return rows.map((g) => ({ ...g, starred: !!g.starred, active: !!g.active, custom_approvers: !!g.custom_approvers, has_guide: !!g.has_guide }));
+  // Danh mục nhỏ: lọc bằng cùng cách chuẩn hoá với chỉ mục tìm kiếm (không dấu, mọi thứ tự từ)
+  const words = q.q ? fold(q.q).split(/[^a-z0-9]+/).filter(Boolean) : [];
+  const hit = (g) => { const t = fold(`${g.name} ${g.category || ''} ${g.description || ''}`); return words.every((w) => t.includes(w)); };
+  return rows.filter((g) => !words.length || hit(g))
+    .map((g) => ({ ...g, starred: !!g.starred, active: !!g.active, custom_approvers: !!g.custom_approvers, has_guide: !!g.has_guide }));
 }
 
 r.get('/request-groups', async (c) => c.json(await groupList(c.get('user'), c.req.query())));

@@ -4,6 +4,7 @@ import { all, get, run, batch, getSetting, setSetting } from '../db.js';
 import { requireAdmin, underSql, isSubordinate, hashPassword } from '../auth.js';
 import { badRequest, notFound, forbidden, toInt, idList, jsonBody, formBody, storeFiles, removeFile, sendFile } from '../util.js';
 import { publicFileLink } from '../files.js';
+import { searchClause } from '../search.js';
 import { audit } from '../platform.js';
 import { assignStmt, fillVacancyStmts, industryOf, refreshSalesRoleStmt, salesSettings, vacateStmts, vacateUser } from './territory.js';
 import { clientIp, ipMatches, validIpRule } from '../security.js';
@@ -72,9 +73,8 @@ r.get('/hrm/meta', async (c) => c.json({ is_manager: await isHrManager(c.get('us
 r.get('/hrm/employees', async (c) => {
   await requireHr(c);
   const q = c.req.query();
-  const { where, params } = employeeFilter(c.get('user'), q);
+  const { where, params } = employeeFilter(c.get('user'), q, q.q ? await searchClause('user', q.q, 'u.id') : null);
   if (toInt(q.department_id)) { where.push('u.department_id = ?'); params.push(toInt(q.department_id)); }
-  if (q.q) { const like = `%${q.q}%`; where.push("(u.name LIKE ? OR IFNULL(h.employee_code,'') LIKE ? OR IFNULL(u.phone,'') LIKE ?)"); params.push(like, like, like); }
   if (q.contract === 'expiring') { where.push("h.contract_end IS NOT NULL AND h.contract_end BETWEEN date('now') AND date('now', '+30 day')"); }
   const rows = await all(`${EMP_SELECT} WHERE ${where.join(' AND ')} ORDER BY u.name COLLATE NOCASE`, ...params);
   return c.json(rows.map(empView));
@@ -84,7 +84,8 @@ r.get('/hrm/employees', async (c) => {
  * Bộ lọc danh sách nhân sự theo view (giống Base HRM): đang làm việc (mặc định), tất cả, tôi quản lý, thử việc, tạm nghỉ, nghỉ việc.
  * Tham số cũ status=… vẫn dùng được.
  */
-function employeeFilter(user, q) {
+/** `search`: searchClause('user', …) khi có từ khoá — tên, tài khoản, mã nhân viên, email, điện thoại, văn phòng, vị trí. */
+function employeeFilter(user, q, search = null) {
   const where = ["u.role <> 'guest'"];
   const params = [];
   const view = q.view || q.status || 'working_all';
@@ -106,7 +107,7 @@ function employeeFilter(user, q) {
   }
   // ngành hàng: người phụ trách ngành đó (tính cả người phụ trách chung khi chọn kèm địa bàn / vị trí thì vẫn lọc đúng ngành)
   if (q.industry) { where.push('(u.id IN (SELECT user_id FROM territory_members WHERE industry = ?) OR u.sales_industry = ?)'); params.push(String(q.industry), String(q.industry)); }
-  if (q.q) { const like = `%${q.q}%`; where.push("(u.name LIKE ? OR IFNULL(h.employee_code,'') LIKE ? OR IFNULL(u.phone,'') LIKE ? OR IFNULL(u.email,'') LIKE ?)"); params.push(like, like, like, like); }
+  if (search) where.push(search.sql);
   if (q.contract === 'expiring') { where.push("h.contract_end IS NOT NULL AND h.contract_end BETWEEN date('now') AND date('now', '+30 day')"); }
   return { where, params };
 }
@@ -125,7 +126,8 @@ const STATUS_TEXT = { working: 'Chính thức', probation: 'Thử việc', leave
 /** Trích xuất danh sách nhân sự (CSV mở bằng Excel), theo view & bộ lọc đang chọn. */
 r.get('/hrm/employees/export', async (c) => {
   await requireHr(c);
-  const { where, params } = employeeFilter(c.get('user'), c.req.query());
+  const eq = c.req.query();
+  const { where, params } = employeeFilter(c.get('user'), eq, eq.q ? await searchClause('user', eq.q, 'u.id') : null);
   const rows = (await all(`${EMP_SELECT} WHERE ${where.join(' AND ')} ORDER BY u.name COLLATE NOCASE`, ...params)).map(empView);
   const lines = [EXPORT_COLS.map(([, l]) => l).join(','),
     ...rows.map((e) => EXPORT_COLS.map(([k]) => csvCell(k === 'work_status' ? STATUS_TEXT[e.work_status] : e[k])).join(','))];
@@ -558,7 +560,11 @@ r.get('/hrm/contracts', async (c) => {
   const q = c.req.query();
   const where = ['1=1'];
   const params = [];
-  if (q.q) { const like = `%${q.q}%`; where.push("(u.name LIKE ? OR IFNULL(k.code,'') LIKE ? OR IFNULL(h.employee_code,'') LIKE ?)"); params.push(like, like, like); }
+  if (q.q) {
+    // nhân viên (chỉ mục tìm kiếm) hoặc số hợp đồng
+    const us = await searchClause('user', q.q, 'u.id');
+    where.push(`(${us ? us.sql : '0'} OR IFNULL(k.code, '') LIKE ?)`); params.push(`%${q.q.trim()}%`);
+  }
   if (q.type) { where.push('k.contract_type = ?'); params.push(q.type); }
   if (q.status === 'expiring') where.push("k.status = 'active' AND k.end_date BETWEEN date('now') AND date('now', '+30 day')");
   else if (q.status === 'active') where.push("k.status = 'active' AND (k.end_date IS NULL OR k.end_date >= date('now'))");
@@ -636,7 +642,8 @@ r.get('/hrm/careers', async (c) => {
   const where = ['1=1'];
   const params = [];
   if (CAREER_TYPES[q.type]) { where.push('k.type = ?'); params.push(q.type); }
-  if (q.q) { where.push('u.name LIKE ?'); params.push(`%${q.q}%`); }
+  const us = q.q ? await searchClause('user', q.q, 'u.id') : null;
+  if (us) where.push(us.sql);
   if (q.year) { where.push("substr(k.effective_date, 1, 4) = ?"); params.push(String(q.year)); }
   return c.json(await all(`${CAREER_SELECT} WHERE ${where.join(' AND ')} ORDER BY k.effective_date DESC, k.id DESC LIMIT 1000`, ...params));
 });

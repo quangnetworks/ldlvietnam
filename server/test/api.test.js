@@ -224,7 +224,7 @@ test('tasks: recurring title gets the week / month / day of each period', async 
   assert.equal(w.title, 'Báo cáo doanh số – Tuần 41/2026 (05/10 – 11/10)');
   assert.equal(w.recurring_title, 1);
   await demo.put(`/tasks/${w.id}`, { status: 'done' });
-  const next = (await demo.get('/tasks?scope=recurring&q=Báo cáo doanh số')).data.items.find((t) => t.id !== w.id);
+  const next = (await demo.get('/tasks?scope=recurring&q=Báo cáo doanh số')).data.items.find((t) => t.id !== w.id && t.recurring_title);
   assert.equal(next.title, 'Báo cáo doanh số – Tuần 42/2026 (12/10 – 18/10)');
   assert.equal((await demo.get(`/tasks/${w.id}`)).data.title, 'Báo cáo doanh số – Tuần 41/2026 (05/10 – 11/10)'); // kỳ cũ giữ tên
 

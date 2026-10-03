@@ -6,6 +6,7 @@ import {
   badRequest, notFound, forbidden, toInt, idList, paginate, today, jsonBody, formBody, storeFiles, removeFile, sendFile,
 } from '../util.js';
 import { publicFileLink } from '../files.js';
+import { searchClause } from '../search.js';
 import { readComment, saveCommentFiles, withCommentFiles, commentFileOr404, commentSnippet, purgeCommentFiles, editComment, deleteComment, notifyReply } from '../comments.js';
 
 const r = new Hono();
@@ -48,7 +49,8 @@ const SUPERSEDED_SQL = "(d.superseded_by IS NOT NULL AND IFNULL(d.superseded_at,
 const PENDING_STEP_SQL = `da.step = (SELECT MIN(step) FROM document_approvers x WHERE x.document_id = d.id AND x.status = 'pending')`;
 
 // ---------------------------------------------------------------- list query
-function buildListQuery(user, q) {
+/** `search`: kết quả searchClause() khi người dùng có gõ từ khoá (tính trước vì cần truy vấn bất đồng bộ). */
+function buildListQuery(user, q, search = null) {
   const vis = visibilitySql(user);
   const where = [vis.sql];
   const params = [...vis.params];
@@ -140,11 +142,8 @@ function buildListQuery(user, q) {
   treeFilter('d.folder_id', 'folder_id', 'doc_folders');
   treeFilter('d.category_id', 'category_id', 'doc_categories');
 
-  if (q.q) {
-    const like = `%${String(q.q).trim()}%`;
-    where.push("(d.title LIKE ? OR IFNULL(d.code,'') LIKE ? OR IFNULL(d.description,'') LIKE ? OR IFNULL(d.content,'') LIKE ?)");
-    params.push(like, like, like, like);
-  }
+  // Tìm kiếm: chỉ mục toàn văn (không dấu, không phân biệt hoa thường, mọi thứ tự từ) — xem src/search.js
+  if (search) where.push(search.sql);
   if (q.date_from) { where.push('date(COALESCE(d.issued_at, d.created_at)) >= date(?)'); params.push(q.date_from); }
   if (q.date_to) { where.push('date(COALESCE(d.issued_at, d.created_at)) <= date(?)'); params.push(q.date_to); }
 
@@ -154,7 +153,9 @@ function buildListQuery(user, q) {
     title: 'd.title COLLATE NOCASE ASC',
     updated: 'd.updated_at DESC',
   };
-  return { where: where.join(' AND '), params, order: sorts[q.sort] || sorts.newest };
+  // Đang tìm kiếm: mặc định xếp theo mức liên quan (người dùng vẫn chọn được cách sắp xếp khác)
+  const order = search && (!q.sort || q.sort === 'relevance') ? `${search.rank}, ${sorts.newest}` : sorts[q.sort] || sorts.newest;
+  return { where: where.join(' AND '), params, order };
 }
 
 const DOC_SELECT = `
@@ -290,7 +291,7 @@ r.get('/office/meta', async (c) => {
 r.get('/documents', async (c) => {
   const u = c.get('user');
   const q = c.req.query();
-  const { where, params, order } = buildListQuery(u, q);
+  const { where, params, order } = buildListQuery(u, q, q.q ? await searchClause('document', q.q, 'd.id') : null);
   const { page, limit, offset } = paginate(q, 20);
   const total = (await get(`SELECT COUNT(*) AS c FROM documents d WHERE ${where}`, ...params)).c;
   const items = (await all(`${DOC_SELECT} WHERE ${where} ORDER BY ${order} LIMIT ? OFFSET ?`,
@@ -305,7 +306,8 @@ const KIND_LABEL = { notice: 'Thông báo', incoming: 'Văn bản đến', outgo
 
 r.get('/documents/export', async (c) => {
   const u = c.get('user');
-  const { where, params, order } = buildListQuery(u, c.req.query());
+  const q = c.req.query();
+  const { where, params, order } = buildListQuery(u, q, q.q ? await searchClause('document', q.q, 'd.id') : null);
   const items = (await all(`${DOC_SELECT} WHERE ${where} ORDER BY ${order} LIMIT 5000`, u.id, u.id, u.id, ...params)).map(decorate);
   const esc = (v) => `"${String(v ?? '').replace(/^[=+\-@\t\r]/, "'$&").replace(/"/g, '""')}"`;
   const header = ['Số hiệu', 'Tiêu đề', 'Trích yếu', 'Nhóm', 'Loại văn bản', 'Trạng thái', 'Người ban hành',

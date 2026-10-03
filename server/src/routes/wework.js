@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import { all, get, run, batch, logActivity, notify, getSetting, setSetting, markSeen, findMentions } from '../db.js';
 import { requireAdmin, userDeptIds, inDeptSql, underSql } from '../auth.js';
 import { publicFileLink } from '../files.js';
+import { searchClause } from '../search.js';
 import { readComment, saveCommentFiles, withCommentFiles, commentFileOr404, commentSnippet, purgeCommentFiles, editComment, deleteComment, notifyReply } from '../comments.js';
 import { audit } from '../platform.js';
 import {
@@ -246,7 +247,8 @@ const selectTasks = async (user, tail, ...params) => {
   return ids.map((id) => byId.get(id)).filter(Boolean).map(decorateTask);
 };
 
-function buildTaskQuery(u, q) {
+/** `search`: kết quả searchClause('task', …) khi có từ khoá (tính trước — truy vấn bất đồng bộ). */
+function buildTaskQuery(u, q, search = null) {
   const vis = taskVisibilitySql(u);
   const where = [vis.sql];
   const params = [...vis.params];
@@ -294,10 +296,10 @@ function buildTaskQuery(u, q) {
   ids('t.list_id', 'list_id');
   if (q.priority && PRIORITIES.includes(q.priority)) { where.push('t.priority = ?'); params.push(q.priority); }
 
-  if (q.q) {
-    const like = `%${String(q.q).trim()}%`;
-    where.push("(t.title LIKE ? OR IFNULL(t.description,'') LIKE ?)");
-    params.push(like, like);
+  if (search) {
+    // "#123" / "123": khớp cả mã công việc
+    const id = /^#?\d+$/.test(String(q.q).trim()) ? Number(String(q.q).trim().replace('#', '')) : 0;
+    if (id) { where.push(`(${search.sql} OR t.id = ?)`); params.push(id); } else where.push(search.sql);
   }
   if (q.due_from) { where.push('date(t.due_date) >= date(?)'); params.push(q.due_from); }
   if (q.due_to) { where.push('date(t.due_date) <= date(?)'); params.push(q.due_to); }
@@ -313,13 +315,16 @@ function buildTaskQuery(u, q) {
     position: 't.position ASC, t.id ASC',
     title: 't.title COLLATE NOCASE',
   };
-  return { where: where.join(' AND '), params, order: sorts[q.sort] || sorts.updated };
+  // Đang tìm: liên quan nhất lên trước (trừ khi chọn sắp xếp theo tên / hạn / ngày tạo / thứ tự)
+  const chosen = sorts[q.sort] || sorts.updated;
+  const order = search && !['title', 'due', 'created', 'position'].includes(q.sort) ? `${search.rank}, ${chosen}` : chosen;
+  return { where: where.join(' AND '), params, order };
 }
 
 r.get('/tasks', async (c) => {
   const u = c.get('user');
   const q = c.req.query();
-  const { where, params, order } = buildTaskQuery(u, q);
+  const { where, params, order } = buildTaskQuery(u, q, q.q ? await searchClause('task', q.q, 't.id') : null);
   const { page, limit, offset } = paginate(q, 50);
   const total = (await get(`SELECT COUNT(*) AS c FROM tasks t WHERE ${where}`, ...params)).c;
   const items = await selectTasks(u, `WHERE ${where} ORDER BY ${order} LIMIT ? OFFSET ?`, ...params, limit, offset);
@@ -639,7 +644,8 @@ r.get('/wework/reports/tasks', async (c) => {
   if (q.with_comments === '1') where.push('EXISTS (SELECT 1 FROM task_comments cm2 WHERE cm2.task_id = t.id)');
   if (!goal && iso(q.day_from)) { where.push(`date(${scope.col}) >= date(?)`); params.push(q.day_from); }
   if (!goal && iso(q.day_to)) { where.push(`date(${scope.col}) <= date(?)`); params.push(q.day_to); }
-  if (q.q) { where.push('t.title LIKE ?'); params.push(`%${String(q.q).trim()}%`); }
+  const sc = q.q ? await searchClause('task', q.q, 't.id') : null;
+  if (sc) where.push(sc.sql);
   const w = where.join(' AND ');
   const { page, limit, offset } = paginate(q, 50);
   const total = (await get(`SELECT COUNT(*) AS c FROM tasks t WHERE ${w}`, ...params)).c;
@@ -1311,8 +1317,9 @@ r.get('/projects', async (c) => {
   where.push(q.template === '1' ? 'p.is_template = 1' : 'p.is_template = 0');
   if (q.status) { where.push('p.status = ?'); params.push(q.status); }
   else if (q.template !== '1') where.push("p.status = 'active'");
-  if (q.q) { where.push('p.name LIKE ?'); params.push(`%${q.q}%`); }
-  const order = q.sort === 'name' ? 'p.name COLLATE NOCASE' : 'p.created_at DESC';
+  const sc = q.q ? await searchClause('project', q.q, 'p.id') : null;
+  if (sc) where.push(sc.sql);
+  const order = q.sort === 'name' ? 'p.name COLLATE NOCASE' : sc ? `${sc.rank}, p.created_at DESC` : 'p.created_at DESC';
   return c.json(await all(`${PROJECT_SELECT} WHERE ${where.join(' AND ')} ORDER BY ${order}`, ...params));
 });
 
@@ -1607,8 +1614,9 @@ r.get('/goals', async (c) => {
   } else { where.push('x.user_id = ?'); params.push(user.id); }
   if (q.status === 'active') where.push('x.progress < 100');
   else if (q.status === 'done') where.push('x.progress >= 100');
-  if (q.q) { where.push('x.title LIKE ?'); params.push(`%${q.q}%`); }
-  return c.json(await all(`${GOAL_LIST} ${where.length ? `WHERE ${where.join(' AND ')}` : ''} ORDER BY x.progress >= 100, x.due_date IS NULL, x.due_date, x.id DESC`, ...params));
+  const sc = q.q ? await searchClause('goal', q.q, 'x.id') : null;
+  if (sc) where.push(sc.sql);
+  return c.json(await all(`${GOAL_LIST} ${where.length ? `WHERE ${where.join(' AND ')}` : ''} ORDER BY ${sc ? `${sc.rank}, ` : ''}x.progress >= 100, x.due_date IS NULL, x.due_date, x.id DESC`, ...params));
 });
 r.post('/goals', async (c) => {
   const b = await jsonBody(c);
@@ -1694,14 +1702,15 @@ r.get('/search', async (c) => {
   const user = c.get('user');
   const q = String(c.req.query('q') || '').trim();
   if (!q) return c.json({ tasks: [], projects: [], users: [] });
-  const like = `%${q}%`;
   const vis = taskVisibilitySql(user);
   const pv = projectVisibility(user);
+  const [ts, ps, us] = await Promise.all([searchClause('task', q, 't.id'), searchClause('project', q, 'p.id'), searchClause('user', q, 'u.id')]);
+  if (!ts) return c.json({ tasks: [], projects: [], users: [] });
   return c.json({
     tasks: await all(`SELECT t.id, t.title, t.status, p.name AS project_name FROM tasks t LEFT JOIN projects p ON p.id = t.project_id
-      WHERE ${vis.sql} AND t.title LIKE ? ORDER BY t.updated_at DESC LIMIT 8`, ...vis.params, like),
-    projects: await all(`SELECT p.id, p.name, p.kind, p.color FROM projects p WHERE ${pv.sql} AND p.is_template = 0 AND p.name LIKE ? LIMIT 5`, ...pv.params, like),
-    users: await all('SELECT id, name, color, title FROM users WHERE active = 1 AND name LIKE ? LIMIT 5', like),
+      WHERE ${vis.sql} AND ${ts.sql} ORDER BY ${ts.rank}, t.updated_at DESC LIMIT 8`, ...vis.params),
+    projects: await all(`SELECT p.id, p.name, p.kind, p.color FROM projects p WHERE ${pv.sql} AND p.is_template = 0 AND ${ps.sql} ORDER BY ${ps.rank} LIMIT 5`, ...pv.params),
+    users: await all(`SELECT u.id, u.name, u.color, u.title FROM users u WHERE u.active = 1 AND ${us.sql} ORDER BY ${us.rank} LIMIT 5`),
   });
 });
 

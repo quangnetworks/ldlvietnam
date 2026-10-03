@@ -46,6 +46,7 @@ import { TimeoffHome, TimeoffCalendar, TimeoffBalances } from './hrm/Timeoff.jsx
 import DrivePage from './drive/Drive.jsx';
 import MessagePage from './message/Message.jsx';
 import MobileTabBar from './components/MobileNav.jsx';
+import GlobalSearch from './components/GlobalSearch.jsx';
 import { refreshBadge } from './push.js';
 
 /** Guard a module route by the user's app access (Account → Ứng dụng). */
@@ -205,6 +206,7 @@ export default function App() {
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
     <MobileTabBar />
+    <GlobalSearch />
     </>
   );
 }

@@ -3,6 +3,7 @@ import { all, get, run, batch, getSetting, setSetting } from '../db.js';
 import { requireAdmin, assertCanManage, hashPassword, verifyPassword, loadUser, PUBLIC_USER_FIELDS, deptIn, userDeptIds, inDeptSql } from '../auth.js';
 import { randomBase32, otpauthUrl, verifyTotp, securitySettings, validIpRule, clientIp, ipMatches } from '../security.js';
 import { badRequest, notFound, forbidden, toInt, idList, jsonBody, paginate, formBody, storeFiles, removeFile, sendFile } from '../util.js';
+import { searchClause } from '../search.js';
 import { MODULES, userApps, audit } from '../platform.js';
 import { departmentChannel } from './chat.js';
 
@@ -37,11 +38,8 @@ r.get('/account/members', async (c) => {
   else if (q.tab === 'guests') where.push("u.role = 'guest' AND u.active = 1");
   else if (q.tab === 'disabled') where.push('u.active = 0');
   else where.push('u.active = 1');
-  if (q.q) {
-    const like = `%${q.q.trim()}%`;
-    where.push("(u.name LIKE ? OR u.username LIKE ? OR IFNULL(u.email,'') LIKE ? OR IFNULL(u.phone,'') LIKE ?)");
-    params.push(like, like, like, like);
-  }
+  const us = q.q ? await searchClause('user', q.q, 'u.id') : null;
+  if (us) where.push(us.sql);
   const dep = toInt(q.department_id);
   if (dep) { where.push(inDeptSql('u', '?')); params.push(dep, dep); }
   const grp = toInt(q.group_id);

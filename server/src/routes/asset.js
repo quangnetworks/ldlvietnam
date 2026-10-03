@@ -9,6 +9,7 @@
 import { Hono } from 'hono';
 import { all, get, run, batch, notify, getSetting, setSetting } from '../db.js';
 import { badRequest, notFound, forbidden, toInt, idList, jsonBody } from '../util.js';
+import { searchClause } from '../search.js';
 import { audit } from '../platform.js';
 import { isSubordinate } from '../auth.js';
 import { vacateUser } from './territory.js';
@@ -163,7 +164,11 @@ r.get('/assets', async (c) => {
   const where = [];
   const params = [];
   if (!manager) { where.push('a.holder_id = ?'); params.push(user.id); }
-  if (q.q) { const like = `%${q.q.trim()}%`; where.push('(a.name LIKE ? OR a.code LIKE ? OR IFNULL(a.serial, \'\') LIKE ? OR IFNULL(u.name, \'\') LIKE ?)'); params.push(like, like, like, like); }
+  if (q.q) {
+    // tài sản (mã, tên, serial, vị trí, nhà cung cấp) hoặc người đang giữ
+    const [as, us] = await Promise.all([searchClause('asset', q.q, 'a.id'), searchClause('user', q.q, 'a.holder_id')]);
+    where.push(`(${as ? as.sql : '0'} OR ${us ? us.sql : '0'})`);
+  }
   for (const k of ['type', 'location', 'kind']) if (q[k]) { where.push(`a.${k} = ?`); params.push(q[k]); }
   if (q.status === 'active') where.push("a.status NOT IN ('disposed', 'lost')");
   else if (ASSET_STATUS[q.status]) { where.push('a.status = ?'); params.push(q.status); }
@@ -406,7 +411,10 @@ r.get('/asset/handovers', async (c) => {
   if (['issue', 'return'].includes(q.kind)) { where.push('h.kind = ?'); params.push(q.kind); }
   if (['pending', 'confirmed', 'cancelled'].includes(q.status)) { where.push('h.status = ?'); params.push(q.status); }
   if (toInt(q.employee_id)) { where.push('h.employee_id = ?'); params.push(toInt(q.employee_id)); }
-  if (q.q) { const like = `%${q.q}%`; where.push('(h.code LIKE ? OR e.name LIKE ?)'); params.push(like, like); }
+  if (q.q) {
+    const us = await searchClause('user', q.q, 'h.employee_id');
+    where.push(`(h.code LIKE ? OR ${us ? us.sql : '0'})`); params.push(`%${q.q.trim()}%`);
+  }
   return c.json(await all(`${HANDOVER_SELECT} ${where.length ? `WHERE ${where.join(' AND ')}` : ''} ORDER BY h.id DESC LIMIT 500`, ...params));
 });
 r.post('/asset/handovers', async (c) => {
@@ -462,7 +470,8 @@ r.get('/asset/people', async (c) => {
   const q = c.req.query();
   const where = ["u.role <> 'guest'"];
   const params = [];
-  if (q.q) { where.push('u.name LIKE ?'); params.push(`%${q.q}%`); }
+  const us = q.q ? await searchClause('user', q.q, 'u.id') : null;
+  if (us) where.push(us.sql);
   if (toInt(q.department_id)) { where.push('u.department_id = ?'); params.push(toInt(q.department_id)); }
   if (q.holding === '1') where.push('EXISTS (SELECT 1 FROM assets a WHERE a.holder_id = u.id)');
   if (q.inactive !== '1') where.push("(u.active = 1 OR EXISTS (SELECT 1 FROM assets a WHERE a.holder_id = u.id))");
@@ -523,7 +532,8 @@ r.get('/asset/procedures', async (c) => {
   const params = [];
   if (['onboard', 'offboard'].includes(q.kind)) { where.push('p.kind = ?'); params.push(q.kind); }
   if (['open', 'done', 'cancelled'].includes(q.status)) { where.push('p.status = ?'); params.push(q.status); }
-  if (q.q) { where.push('u.name LIKE ?'); params.push(`%${q.q}%`); }
+  const us = q.q ? await searchClause('user', q.q, 'u.id') : null;
+  if (us) where.push(us.sql);
   const rows = await all(`SELECT p.*, u.name, u.color, u.title, d.name AS department_name,
       (SELECT COUNT(*) FROM assets a WHERE a.holder_id = p.user_id) AS holding
     FROM hr_procedures p JOIN users u ON u.id = p.user_id LEFT JOIN departments d ON d.id = u.department_id

@@ -4,6 +4,7 @@ import { all, get, run, batch, notify, markSeen, findMentions } from '../db.js';
 import { audit } from '../platform.js';
 import { badRequest, notFound, forbidden, toInt, idList, jsonBody, formBody, storeFiles, sendFile, removeFile } from '../util.js';
 import { publicFileLink } from '../files.js';
+import { searchClause } from '../search.js';
 import { userDeptIds, deptIn, inDeptSql } from '../auth.js';
 
 import { pushToUsers } from '../push.js';
@@ -259,12 +260,13 @@ r.post('/chat/messages/:id/file/link', async (c) => c.json(await publicFileLink(
 r.get('/chat/search', async (c) => {
   const user = c.get('user');
   const q = String(c.req.query('q') || '').trim();
-  if (!q) return c.json([]);
+  const sc = q ? await searchClause('chat', q, 'x.id') : null;
+  if (!sc) return c.json([]);
   const v = visibleWhere(user);
   return c.json(await all(`${MSG_SELECT} JOIN chat_channels c ON c.id = x.channel_id
     LEFT JOIN chat_members hm ON hm.channel_id = c.id AND hm.user_id = ?
-    WHERE ${v.sql} AND x.deleted_at IS NULL AND x.content LIKE ? AND (c.kind <> 'private' OR x.id > IFNULL(hm.history_from_id, 0))
-    ORDER BY x.id DESC LIMIT 30`, user.id, ...v.params, `%${q}%`));
+    WHERE ${v.sql} AND x.deleted_at IS NULL AND ${sc.sql} AND (c.kind <> 'private' OR x.id > IFNULL(hm.history_from_id, 0))
+    ORDER BY x.id DESC LIMIT 30`, user.id, ...v.params));
 });
 
 export default r;

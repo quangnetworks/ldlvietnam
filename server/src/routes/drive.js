@@ -3,6 +3,7 @@ import { Hono } from 'hono';
 import { deptIn } from '../auth.js';
 import { all, get, run, batch } from '../db.js';
 import { badRequest, notFound, forbidden, toInt, jsonBody, formBody, storeFiles, removeFile, sendFile } from '../util.js';
+import { searchClause, searchIds } from '../search.js';
 
 const r = new Hono();
 const SPACES = ['personal', 'company'];
@@ -47,14 +48,36 @@ const ITEM_SELECT = `SELECT i.id, i.parent_id, i.space, i.kind, i.name, i.owner_
   FROM drive_items i LEFT JOIN users u ON u.id = i.owner_id`;
 const ORDER = "ORDER BY CASE i.kind WHEN 'folder' THEN 0 ELSE 1 END, i.name COLLATE NOCASE";
 
+/**
+ * Tìm trên toàn bộ tài liệu người dùng được xem (của tôi, công ty, được chia sẻ — kể cả nằm trong thư mục con).
+ * Lấy 15 ứng viên liên quan nhất rồi kiểm quyền từng mục (giới hạn số truy vấn / request).
+ */
+r.get('/drive/search', async (c) => {
+  const user = c.get('user');
+  const ids = await searchIds('drive', c.req.query('q') || '', 15);
+  if (!ids?.length) return c.json([]);
+  const ok = [];
+  for (const id of ids) {
+    if (ok.length >= 8) break;
+    const a = await accessOf(user, id);
+    if (a.perm) ok.push({ id, path: a.items.slice(1).reverse().map((x) => x.name).join(' / ') });
+  }
+  if (!ok.length) return c.json([]);
+  const rows = await all(`${ITEM_SELECT} WHERE i.id IN (${ok.map((x) => x.id).join(',')}) AND i.deleted_at IS NULL`);
+  const byId = Object.fromEntries(rows.map((x) => [x.id, x]));
+  return c.json(ok.filter((x) => byId[x.id]).map((x) => ({ ...byId[x.id], path: x.path })));
+});
+
 r.get('/drive/items', async (c) => {
   const user = c.get('user');
   const q = c.req.query();
   const parent = toInt(q.parent_id);
-  const like = q.q ? `%${q.q.trim()}%` : null;
+  // tìm theo tên (chỉ mục toàn văn: không dấu, mọi thứ tự từ); không có từ khoá hợp lệ → bỏ qua
+  const sc = q.q ? await searchClause('drive', q.q, 'i.id') : null;
+  const like = sc ? sc.sql : null;
   if (parent) {
     const { perm, items } = await need(user, parent, 'view');
-    const rows = await all(`${ITEM_SELECT} WHERE i.parent_id = ? AND i.deleted_at IS NULL ${like ? 'AND i.name LIKE ?' : ''} ${ORDER}`, parent, ...(like ? [like] : []));
+    const rows = await all(`${ITEM_SELECT} WHERE i.parent_id = ? AND i.deleted_at IS NULL ${like ? `AND ${like}` : ''} ${ORDER}`, parent);
     return c.json({ items: rows, perm, folder: items[0], breadcrumb: items.slice().reverse().map((x) => ({ id: x.id, name: x.name, space: x.space })) });
   }
   const space = q.space || 'personal';
@@ -62,11 +85,11 @@ r.get('/drive/items', async (c) => {
   let perm = 'view';
   if (space === 'personal') {
     rows = await all(`${ITEM_SELECT} WHERE i.space = 'personal' AND i.owner_id = ? AND i.parent_id IS NULL AND i.deleted_at IS NULL
-      ${like ? 'AND i.name LIKE ?' : ''} ${ORDER}`, user.id, ...(like ? [like] : []));
+      ${like ? `AND ${like}` : ''} ${ORDER}`, user.id);
     perm = 'edit';
   } else if (space === 'company') {
     if (user.role === 'guest') throw forbidden('Tài khoản khách không xem được tài liệu công ty');
-    rows = await all(`${ITEM_SELECT} WHERE i.space = 'company' AND i.parent_id IS NULL AND i.deleted_at IS NULL ${like ? 'AND i.name LIKE ?' : ''} ${ORDER}`, ...(like ? [like] : []));
+    rows = await all(`${ITEM_SELECT} WHERE i.space = 'company' AND i.parent_id IS NULL AND i.deleted_at IS NULL ${like ? `AND ${like}` : ''} ${ORDER}`);
     perm = 'edit'; // mọi nhân viên được tạo / tải lên tài liệu công ty; sửa / xoá theo quyền từng mục
   } else if (space === 'shared') {
     rows = await all(`${ITEM_SELECT} WHERE i.deleted_at IS NULL AND IFNULL(i.owner_id, 0) <> ? AND i.id IN (
