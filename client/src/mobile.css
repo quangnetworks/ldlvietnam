@@ -90,7 +90,7 @@ html.standalone .tb-item { padding: 5px 0 2px; }
 
   /* Thanh trên cùng: né tai thỏ / Dynamic Island */
   .topbar { height: calc(52px + var(--safe-top)); padding: var(--safe-top) max(8px, var(--safe-right)) 0 max(6px, var(--safe-left)); gap: 2px; }
-  .topbar .brand-logo { width: 30px; height: 30px; }
+  .topbar .brand-logo { height: 26px; width: auto; }
   .topbar .brand { margin-right: 4px; }
   .topbar-title { color: #fff; font-weight: 600; font-size: 16px; white-space: nowrap; }
   .topbar .plus-btn { width: 34px; height: 34px; }
@@ -172,7 +172,7 @@ html.standalone .tb-item { padding: 5px 0 2px; }
     overflow-x: auto; overflow-y: hidden; scrollbar-width: none; flex: none; gap: 2px; }
   .acc-rail::-webkit-scrollbar { display: none; }
   .acc-rail .rail-logo { flex: none; margin: 0 6px 0 2px; }
-  .acc-rail .rail-logo img { width: 30px; height: 30px; }
+  .acc-rail .rail-logo img { width: auto; max-width: none; height: 26px; }
   .acc-rail-avatar { display: none; }
   .acc-rail-link { flex-direction: row; width: auto; flex: none; padding: 9px 10px; border-radius: 10px; }
   .acc-rail-link span { display: none; }
@@ -216,7 +216,7 @@ html.standalone .tb-item { padding: 5px 0 2px; }
   .rq-rail { width: 100%; height: calc(54px + var(--safe-top)); flex-direction: row; padding: var(--safe-top) 6px 0; gap: 2px; overflow-x: auto; scrollbar-width: none; flex: none; }
   .rq-rail::-webkit-scrollbar { display: none; }
   .rq-rail-menu { display: grid; }
-  .rq-rail-logo { margin: 0 6px; width: 30px; height: 30px; }
+  .rq-rail-logo { margin: 0 6px; width: auto; height: 26px; }
   .rq-rail-sep { width: 1px; height: 22px; margin: 0 4px; background: rgba(255, 255, 255, 0.2); }
   .rq-rail .grow { flex: 1 0 4px; }
   .rq-side, .rq.collapsed .rq-side { display: block; position: fixed; top: 0; left: 0; bottom: 0; z-index: 95; width: min(84vw, 300px); padding-top: var(--safe-top);

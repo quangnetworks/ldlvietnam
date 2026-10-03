@@ -543,7 +543,7 @@ export function CompanyPage() {
   return (
     <div className="acc-page narrow">
       <h1 className="acc-title">Chỉnh sửa công ty</h1>
-      <div className="row gap"><img className="login-logo-img" src="/logo-192.png" alt="LDL" /><div className="muted small">Logo đang dùng cho toàn hệ thống (favicon LDL).</div></div>
+      <div className="row gap"><img className="login-logo-img" src="/logo-rect.png" alt="LDL" /><div className="muted small">Logo đang dùng cho toàn hệ thống (favicon LDL).</div></div>
       <Field label="Tên công ty (hiển thị trên thanh tiêu đề)"><input className="input" value={name} onChange={(e) => setName(e.target.value)} /></Field>
       <button className="btn btn-primary mt" onClick={async () => {
         const r = await api.put('/settings', { company_name: name });

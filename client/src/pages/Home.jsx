@@ -112,7 +112,7 @@ export default function Home() {
     <div className="home2">
       <header className="home2-hero">
         <div className="home2-top">
-          <Link to="/" className="brand"><img className="brand-logo" src="/logo-192.png" alt="LDL" /><span className="brand-name">{company}</span></Link>
+          <Link to="/" className="brand"><img className="brand-logo" src="/logo-rect.png" alt="LDL" /><span className="brand-name">{company}</span></Link>
           <div className="grow" />
           <Link to="/account/members" className="icon-btn on-dark hide-sm" title="Thành viên"><Users size={18} /></Link>
           <ContactsButton dark />

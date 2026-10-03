@@ -36,7 +36,7 @@ export default function AccountLayout() {
     <div className="acc">
       <nav className="acc-rail">
         <button className="acc-rail-link acc-rail-menu" onClick={() => setSide(!side)} aria-label="Menu tài khoản"><Menu size={22} /><span>Menu</span></button>
-        <Link to="/" className="rail-logo" title="Về trang chủ"><img src="/logo-192.png" alt="LDL" /></Link>
+        <Link to="/" className="rail-logo" title="Về trang chủ"><img src="/logo-rect.png" alt="LDL" /></Link>
         <Link to="/account" className="acc-rail-avatar" title="Tài khoản của tôi"><Avatar name={user.name} color={user.color} size={36} /></Link>
         <RailLink to="/account" end icon={UserCircle2} label="Cá nhân" />
         <RailLink to="/account/notifications" icon={Bell} label="Thông báo" />

@@ -63,7 +63,7 @@ export default function ModuleShell({ app }) {
     <div className="office">
       <header className="topbar">
         <button className="icon-btn on-dark mobile-only" onClick={() => setOpen(!open)} aria-label="Menu"><Menu size={20} /></button>
-        <Link to="/" className="brand"><img className="brand-logo" src="/logo-192.png" alt="LDL" /><span className="brand-name">{company}</span></Link>
+        <Link to="/" className="brand"><img className="brand-logo" src="/logo-rect.png" alt="LDL" /><span className="brand-name">{company}</span></Link>
         <div className="grow" />
         <ContactsButton dark />
         <NotificationBell app={app} dark />

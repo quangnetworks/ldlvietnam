@@ -388,7 +388,7 @@ export default function MessagePage() {
   return (
     <div className="office chat-app">
       <header className="topbar">
-        <Link to="/" className="brand"><img className="brand-logo" src="/logo-192.png" alt="LDL" /><span className="brand-name">{company}</span></Link>
+        <Link to="/" className="brand"><img className="brand-logo" src="/logo-rect.png" alt="LDL" /><span className="brand-name">{company}</span></Link>
         <span className="topbar-app">LDL Message</span>
         <div className="grow" />
         <ContactsButton dark />

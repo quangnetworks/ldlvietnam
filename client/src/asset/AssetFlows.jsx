@@ -92,7 +92,7 @@ export function HandoverDetail() {
       <article className="print-sheet">
         {h.status !== 'confirmed' && <div className="print-watermark">{h.status === 'pending' ? 'CHỜ XÁC NHẬN' : 'ĐÃ HUỶ'}</div>}
         <header className="print-head">
-          <div className="print-brand"><img src="/logo-192.png" alt="" /><div><b>{company}</b><small>LDL Asset · Quản lý tài sản</small></div></div>
+          <div className="print-brand"><img src="/logo-rect.png" alt="" /><div><b>{company}</b><small>LDL Asset · Quản lý tài sản</small></div></div>
           <div className="print-meta">
             <div>Số: <b>{h.code}</b></div>
             <div>Ngày lập: <b>{fmtDate(h.created_at)}</b></div>

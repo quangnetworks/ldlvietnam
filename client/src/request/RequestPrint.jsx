@@ -61,7 +61,7 @@ export default function RequestPrint() {
         {stamp && <div className="print-watermark">{stamp}</div>}
         <header className="print-head">
           <div className="print-brand">
-            <img src="/logo-192.png" alt="" />
+            <img src="/logo-rect.png" alt="" />
             <div><b>{company}</b><small>LDL Request · Hệ thống đề xuất nội bộ</small></div>
           </div>
           <div className="print-meta">

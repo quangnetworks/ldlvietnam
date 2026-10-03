@@ -118,7 +118,7 @@ export default function WeworkLayout() {
         <aside className={cx('ww-side', mobileNav && 'open')}>
           <div className="ww-brandrow">
             <Link to="/" className="brand side-brand" title="Về trang chủ">
-              <img className="brand-logo" src="/logo-192.png" alt="LDL" />
+              <img className="brand-logo" src="/logo-rect.png" alt="LDL" />
               <span className="brand-name">{company}</span>
             </Link>
             <AppSwitcher dark />
@@ -175,7 +175,7 @@ export default function WeworkLayout() {
         <div className="ww-content">
           <header className="topbar ww-mobilebar">
             <button className="icon-btn on-dark" onClick={() => setMobileNav(!mobileNav)} aria-label="Menu Wework"><Menu size={20} /></button>
-            <Link to="/" className="brand"><img className="brand-logo" src="/logo-192.png" alt="LDL" /></Link>
+            <Link to="/" className="brand"><img className="brand-logo" src="/logo-rect.png" alt="LDL" /></Link>
             <span className="topbar-title">Wework</span>
             <div className="grow" />
             <button className="icon-btn on-dark" onClick={() => ctx.openCreate({})} aria-label="Tạo công việc"><PlusSquare size={19} /></button>
