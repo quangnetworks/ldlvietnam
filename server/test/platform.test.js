@@ -37,7 +37,7 @@ async function login(username, password = '123456') {
 test('me returns accessible apps; login is logged', async () => {
   const demo = await login('demo');
   const me = await demo.get('/auth/me');
-  assert.deepEqual(me.data.apps.sort(), ['checkin', 'drive', 'hrm', 'message', 'office', 'request', 'timeoff', 'wework']);
+  assert.deepEqual(me.data.apps.sort(), ['asset', 'checkin', 'drive', 'hrm', 'message', 'office', 'request', 'timeoff', 'wework']);
   const logs = await demo.get('/account/login-logs');
   assert.ok(logs.data.items.length >= 1);
   assert.ok(logs.data.items.every((l) => l.user_id === demo.user.id));

@@ -1,10 +1,14 @@
 import { Hono } from 'hono';
-import { all, get, run, batch, logActivity, notify } from '../db.js';
-import { requireAdmin } from '../auth.js';
+import { all, get, run, batch, logActivity, notify, markSeen, findMentions } from '../db.js';
+import { requireAdmin, hashPassword } from '../auth.js';
 import {
   badRequest, notFound, forbidden, toInt, idList, paginate, jsonBody, formBody, storeFiles, removeFile, sendFile,
 } from '../util.js';
 import { fireRequestEvent } from './webhooks.js';
+import { parseAutomation, runRequestAutomation, viewAutomation, isHrManager, AUTOMATION_TYPES } from '../automation.js';
+import { publicFileLink } from '../files.js';
+import { searchClause, fold } from '../search.js';
+import { readComment, saveCommentFiles, withCommentFiles, commentFileOr404, commentSnippet, purgeCommentFiles, editComment, deleteComment, notifyReply } from '../comments.js';
 
 const r = new Hono();
 const APP = 'request';
@@ -41,7 +45,9 @@ async function viewable(c) {
   const id = toInt(c.req.param('id'));
   const q = await loadRequest(id);
   const v = visibility(c.get('user'));
-  if (!(await get(`SELECT 1 FROM requests q WHERE q.id = ? AND ${v.sql}`, id, ...v.params))) throw forbidden('Bạn không có quyền xem đề xuất này');
+  if (!(await get(`SELECT 1 FROM requests q WHERE q.id = ? AND ${v.sql}`, id, ...v.params))
+    // quản lý nhân sự xem được đề xuất đã chạy tự động hoá tạo nhân sự (để kiểm tra / chạy lại)
+    && !(q.automation_result && (await isHrManager(c.get('user'))))) throw forbidden('Bạn không có quyền xem đề xuất này');
   return q;
 }
 
@@ -65,7 +71,8 @@ function decorate(q) {
 }
 
 // ================================================================ list & counts
-function buildList(user, p) {
+/** `search`: kết quả searchClause('request', …) khi có từ khoá (tính trước — truy vấn bất đồng bộ). */
+function buildList(user, p, search = null) {
   const v = visibility(user);
   const where = [v.sql];
   const params = [...v.params];
@@ -87,22 +94,25 @@ function buildList(user, p) {
   const gid = toInt(p.group_id);
   if (gid) { where.push('q.group_id = ?'); params.push(gid); }
   if (p.q) {
-    const like = `%${p.q.trim()}%`;
-    where.push("(q.title LIKE ? OR IFNULL(q.content,'') LIKE ? OR CAST(q.id AS TEXT) = ?)");
-    params.push(like, like, p.q.trim().replace(/^#/, ''));
+    // chỉ mục toàn văn (tiêu đề, nội dung, dữ liệu biểu mẫu) + mã đề xuất "#123"
+    const id = /^#?\d+$/.test(p.q.trim()) ? Number(p.q.trim().replace('#', '')) : 0;
+    const parts = [search?.sql, id ? 'q.id = ?' : null].filter(Boolean);
+    where.push(parts.length ? `(${parts.join(' OR ')})` : '0');
+    if (id) params.push(id);
   }
   if (p.creator_id) { where.push('q.creator_id = ?'); params.push(toInt(p.creator_id)); }
   if (p.from) { where.push('date(q.created_at) >= date(?)'); params.push(p.from); }
   if (p.to) { where.push('date(q.created_at) <= date(?)'); params.push(p.to); }
-  const order = p.sort === 'oldest' ? 'q.created_at ASC, q.id ASC' : p.sort === 'deadline'
+  const chosen = p.sort === 'oldest' ? 'q.created_at ASC, q.id ASC' : p.sort === 'deadline'
     ? "CASE WHEN q.deadline_at IS NULL THEN 1 ELSE 0 END, q.deadline_at" : 'q.updated_at DESC, q.id DESC';
+  const order = search && !['oldest', 'deadline'].includes(p.sort) ? `${search.rank}, ${chosen}` : chosen;
   return { where: where.join(' AND '), params, order };
 }
 
 r.get('/requests', async (c) => {
   const user = c.get('user');
   const p = c.req.query();
-  const { where, params, order } = buildList(user, p);
+  const { where, params, order } = buildList(user, p, p.q ? await searchClause('request', p.q, 'q.id') : null);
   const { page, limit, offset } = paginate(p, 20);
   const total = (await get(`SELECT COUNT(*) AS c FROM requests q WHERE ${where}`, ...params)).c;
   const items = (await all(`${LIST_SELECT} WHERE ${where} ORDER BY ${order} LIMIT ? OFFSET ?`,
@@ -179,8 +189,19 @@ async function fullRequest(id, user) {
   const raw = await get('SELECT content, data FROM requests WHERE id = ?', id);
   q.content = raw.content;
   q.data = parseJson(raw.data, {});
-  const group = q.group_id ? await get('SELECT id, name, fields, custom_approvers, sla_hours FROM request_groups WHERE id = ?', q.group_id) : null;
+  const group = q.group_id ? await get(`SELECT id, name, fields, flow, custom_approvers, sla_hours, guide, manager_approval, final_approver_id,
+    print_title, print_code, print_note FROM request_groups WHERE id = ?`, q.group_id) : null;
+  const extra = await get('SELECT submitted_at, automation_result FROM requests WHERE id = ?', id);
+  q.submitted_at = extra?.submitted_at || null;
+  const auto = group ? await get('SELECT automation FROM request_groups WHERE id = ?', group.id) : null;
+  q.automation = await viewAutomation(extra?.automation_result, auto?.automation, user);
+  q.print = group ? { title: group.print_title || null, code: group.print_code || null, note: group.print_note || null } : {};
+  q.staged_flow = group ? staged(group) : false;
+  q.group_flow = group?.flow || null;
   q.fields = group ? parseJson(group.fields, []) : [];
+  // biểu mẫu / quy trình của nhóm đề xuất để người làm & người duyệt đối chiếu
+  q.group_guide = group?.guide || null;
+  q.group_files = group ? await groupFiles(group.id) : [];
   q.approvers = await all(`SELECT a.*, u.name, u.color, u.title FROM request_approvers a JOIN users u ON u.id = a.user_id
     WHERE a.request_id = ? ORDER BY a.step, u.name`, id);
   q.followers = await all('SELECT u.id, u.name, u.color FROM request_followers f JOIN users u ON u.id = f.user_id WHERE f.request_id = ? ORDER BY u.name', id);
@@ -188,7 +209,7 @@ async function fullRequest(id, user) {
     LEFT JOIN users u ON u.id = a.user_id WHERE a.request_id = ? ORDER BY a.id`, id);
   // user-type fields: resolve names for display
   const userIds = q.fields.filter((f) => f.type === 'user').map((f) => toInt(q.data[f.key])).filter(Boolean);
-  q.users = userIds.length ? await all(`SELECT id, name FROM users WHERE id IN (${userIds.map(() => '?').join(',')})`, ...userIds) : [];
+  q.users = userIds.length ? await all('SELECT id, name FROM users WHERE id IN (SELECT value FROM json_each(?))', JSON.stringify(userIds)) : [];
   q.following = q.followers.some((f) => f.id === user.id);
   q.can_edit = (q.creator_id === user.id || isAdmin(user)) && ['draft', 'returned'].includes(q.status);
   q.can_cancel = q.creator_id === user.id && q.status === 'pending';
@@ -197,6 +218,7 @@ async function fullRequest(id, user) {
 
 r.get('/requests/:id', async (c) => {
   const q = await viewable(c);
+  await markSeen(c.get('user').id, `/request/${q.id}`);
   return c.json(await fullRequest(q.id, c.get('user')));
 });
 
@@ -233,22 +255,100 @@ function deadlineFrom(slaHours) {
   return new Date(Date.now() + slaHours * 3600 * 1000).toISOString().replace('T', ' ').slice(0, 19);
 }
 
-async function approverPlan(group, extra) {
-  const fixed = await all('SELECT user_id, step FROM request_group_approvers WHERE group_id = ? ORDER BY step', group.id);
-  const plan = fixed.map((a) => ({ user_id: a.user_id, step: a.step }));
-  if (group.custom_approvers) {
-    let step = plan.reduce((m, a) => Math.max(m, a.step), 0);
-    for (const uid of extra) if (!plan.some((a) => a.user_id === uid)) plan.push({ user_id: uid, step: ++step });
+/** Quản lý trực tiếp của người tạo; không có thì trưởng phòng ban chính (khác chính họ). */
+async function directManagerOf(userId) {
+  const u = await get('SELECT id, manager_id, department_id FROM users WHERE id = ?', userId);
+  if (!u) return null;
+  // quản lý đã nghỉ việc / bị khoá (vị trí đang trống): chuyển lên cấp trên kế tiếp của người đó
+  let m = u.manager_id && u.manager_id !== u.id ? u.manager_id : null;
+  for (let i = 0; m && i < 10; i++) {
+    const x = await get(`SELECT u.id, u.manager_id, u.active, IFNULL(h.work_status, 'working') AS ws FROM users u
+      LEFT JOIN hr_profiles h ON h.user_id = u.id WHERE u.id = ?`, m);
+    if (!x) break;
+    if (x.active && x.ws !== 'resigned') return x.id;
+    m = x.manager_id && x.manager_id !== x.id && x.manager_id !== userId ? x.manager_id : null;
   }
+  const d = u.department_id ? await get(`SELECT d.head_id FROM departments d JOIN users h ON h.id = d.head_id AND h.active = 1
+    WHERE d.id = ?`, u.department_id) : null;
+  return d?.head_id && d.head_id !== u.id ? d.head_id : null;
+}
+
+/** Nhóm có luồng duyệt theo chặng (quản lý trực tiếp / người duyệt cuối) → các chặng nối tiếp nhau. */
+const staged = (group) => !!(group.manager_approval || group.final_approver_id);
+
+export const FLOWS = ['sequential', 'parallel', 'any', 'blocks'];
+export const FLOW_LABEL = {
+  sequential: 'Duyệt lần lượt', parallel: 'Duyệt đồng thời', any: 'Chỉ cần một người duyệt', blocks: 'Luồng duyệt trong khối người duyệt',
+};
+const blockModes = (group) => parseJson(group.block_modes || '{}', {});
+
+/**
+ * Kế hoạch duyệt: danh sách { user_id, step, stage, mode } — người cùng step duyệt cùng lúc;
+ * mode 'all' = mọi người trong chặng phải đồng ý, 'any' = một người đồng ý là qua chặng.
+ *  1. Quản lý trực tiếp của người tạo (nếu nhóm bật "Quản lý trực tiếp duyệt trước"; người không có cấp trên thì bỏ qua)
+ *  2. Người duyệt của nhóm theo quy trình xử lý:
+ *     - Duyệt lần lượt: mỗi người một chặng theo thứ tự
+ *     - Duyệt đồng thời: tất cả nhận cùng lúc, tất cả phải đồng ý
+ *     - Chỉ cần một người duyệt: tất cả nhận cùng lúc, một người đồng ý là xong
+ *     - Khối người duyệt: các khối nối tiếp nhau, mỗi khối "tất cả đồng ý" hoặc "một người đồng ý"
+ *     + người tạo tự thêm (nếu nhóm cho phép)
+ *  3. Người duyệt cuối cùng (nếu nhóm có cấu hình)
+ * Mỗi người chỉ xuất hiện một lần; người tạo không tự duyệt ở chặng 1 và 3.
+ */
+async function approverPlan(group, extra, creatorId) {
+  const plan = [];
+  const used = new Set();
+  let step = 0;
+  const add = (uid, stage, s, mode = 'all') => {
+    if (!uid || used.has(uid)) return false;
+    used.add(uid);
+    plan.push({ user_id: uid, step: s, stage, mode });
+    return true;
+  };
+  /** Thêm cả nhóm người vào một chặng mới (bỏ chặng nếu không còn ai). */
+  const addStep = (uids, stage, mode) => {
+    const s = step + 1;
+    if (uids.map((u) => add(u, stage, s, mode)).some(Boolean)) step = s;
+  };
+  const final = group.final_approver_id && group.final_approver_id !== creatorId ? group.final_approver_id : null;
+  if (final) used.add(final); // giữ chỗ cho chặng cuối
+  if (group.manager_approval) {
+    // duyệt qua N cấp quản lý (VD SS → ASM → RSM); dừng khi hết cấp trên
+    let cur = creatorId;
+    for (let i = 0; i < Math.min(5, Math.max(1, group.manager_levels || 1)); i++) {
+      const m = await directManagerOf(cur);
+      if (!m || m === creatorId) break;
+      addStep([m], 'manager', 'all');
+      cur = m;
+    }
+  }
+  const fixed = await all('SELECT user_id, step FROM request_group_approvers WHERE group_id = ? ORDER BY step', group.id);
+  const extras = group.custom_approvers ? extra : [];
+  const flow = FLOWS.includes(group.flow) ? group.flow : 'sequential';
+  if (flow === 'sequential') {
+    for (const uid of [...fixed.map((a) => a.user_id), ...extras]) addStep([uid], 'dept', 'all');
+  } else if (flow === 'blocks') {
+    const modes = blockModes(group);
+    const blocks = [...new Set(fixed.map((a) => a.step))];
+    for (const b of blocks) addStep(fixed.filter((a) => a.step === b).map((a) => a.user_id), 'dept', modes[b] === 'any' ? 'any' : 'all');
+    addStep(extras, 'dept', 'all');
+  } else {
+    addStep([...fixed.map((a) => a.user_id), ...extras], 'dept', flow === 'any' ? 'any' : 'all');
+  }
+  if (final) { used.delete(final); addStep([final], 'final', 'all'); }
   return plan;
 }
+const planRows = (id, plan) => plan.map((a) => ['INSERT INTO request_approvers(request_id, user_id, step, stage, step_mode) VALUES (?,?,?,?,?)',
+  [id, a.user_id, a.step, a.stage, a.mode || 'all']]);
+/** Luồng lưu trên đề xuất: 'any' giữ cách cũ (một người bất kỳ); các luồng khác đi theo chặng (step / step_mode). */
+const requestFlow = (group) => (group.flow === 'any' && staged(group) ? 'sequential' : FLOWS.includes(group.flow) ? group.flow : 'sequential');
 
 /** Start (or restart) the approval flow and notify whoever acts first. */
 async function startFlow(id, user) {
   const q = await get('SELECT * FROM requests WHERE id = ?', id);
   const group = q.group_id ? await get('SELECT sla_hours FROM request_groups WHERE id = ?', q.group_id) : null;
   await run("UPDATE request_approvers SET status = 'pending', comment = NULL, acted_at = NULL WHERE request_id = ?", id);
-  await run("UPDATE requests SET status = 'pending', deadline_at = ?, completed_at = NULL, updated_at = datetime('now') WHERE id = ?",
+  await run("UPDATE requests SET status = 'pending', deadline_at = ?, completed_at = NULL, submitted_at = datetime('now'), updated_at = datetime('now') WHERE id = ?",
     deadlineFrom(group?.sla_hours), id);
   await notifyCurrent(id, user, `${user.name} gửi đề xuất "${q.title}" cần bạn duyệt`);
 }
@@ -269,23 +369,35 @@ async function saveFiles(id, files, userId) {
 
 const truthy = (v) => ['1', 'true', true, 1].includes(v);
 
+/** Tên đề xuất theo định dạng "Tên nhân viên - Đề xuất …" (phần sau do người tạo nhập, mặc định là tên nhóm đề xuất). */
+export function requestTitle(creatorName, raw, fallback) {
+  const prefix = `${String(creatorName || '').trim()} - `;
+  let rest = String(raw || '').trim();
+  while (prefix.trim() && rest.toLowerCase().startsWith(prefix.toLowerCase())) rest = rest.slice(prefix.length).trim();
+  return `${prefix}${rest || fallback || 'Đề xuất'}`.slice(0, 300);
+}
+
 r.post('/requests', async (c) => {
   const user = c.get('user');
   const { fields: b, files } = await formBody(c);
   const group = await get('SELECT * FROM request_groups WHERE id = ?', toInt(b.group_id));
   if (!group) throw badRequest('Vui lòng chọn nhóm đề xuất');
   if (!group.active) throw badRequest('Nhóm đề xuất đang tạm đóng');
+  if (!(await canUseGroup(user, group))) throw forbidden('Nhóm đề xuất này chỉ dành cho phòng ban / thành viên được chỉ định');
   const draft = truthy(b.draft);
-  const title = String(b.title || '').trim() || group.name;
+  const title = requestTitle(user.name, b.title, group.name);
   const data = validateData(parseJson(group.fields, []), parseJson(b.data || '{}', {}), !draft);
-  const plan = await approverPlan(group, idList(b.approvers).filter((x) => x !== user.id || isAdmin(user)));
+  const plan = await approverPlan(group, idList(b.approvers).filter((x) => x !== user.id || isAdmin(user)), user.id);
   if (!draft && !plan.length) throw badRequest('Đề xuất cần ít nhất một người duyệt');
   const { lastId: id } = await run(`INSERT INTO requests(group_id, title, content, data, flow, creator_id, status) VALUES (?,?,?,?,?,?, 'draft')`,
-    group.id, title.slice(0, 300), b.content || null, JSON.stringify(data), group.flow, user.id);
+    group.id, title, b.content || null, JSON.stringify(data), requestFlow(group), user.id);
   const groupFollowers = (await all('SELECT user_id FROM request_group_followers WHERE group_id = ?', group.id)).map((x) => x.user_id);
-  const followers = [...new Set([...groupFollowers, ...idList(b.followers)])];
+  // "Yêu cầu thông báo tới người quản lý trực tiếp": quản lý của người tạo theo dõi đề xuất
+  const manager = group.notify_manager ? await directManagerOf(user.id) : null;
+  const followers = [...new Set([...groupFollowers, ...idList(b.followers),
+    ...(manager && !plan.some((a) => a.user_id === manager) ? [manager] : [])])];
   await batch([
-    ...plan.map((a) => ['INSERT INTO request_approvers(request_id, user_id, step) VALUES (?,?,?)', [id, a.user_id, a.step]]),
+    ...planRows(id, plan),
     ...followers.map((f) => ['INSERT OR IGNORE INTO request_followers(request_id, user_id) VALUES (?,?)', [id, f]]),
   ]);
   await saveFiles(id, files, user.id);
@@ -308,13 +420,14 @@ r.put('/requests/:id', async (c) => {
   const group = q.group_id ? await get('SELECT * FROM request_groups WHERE id = ?', q.group_id) : null;
   const submit = truthy(b.submit);
   const data = validateData(group ? parseJson(group.fields, []) : [], parseJson(b.data || '{}', {}), submit);
+  const creator = await get('SELECT name FROM users WHERE id = ?', q.creator_id);
   await run("UPDATE requests SET title = ?, content = ?, data = ?, updated_at = datetime('now') WHERE id = ?",
-    String(b.title || '').trim().slice(0, 300) || q.title, b.content || null, JSON.stringify(data), q.id);
+    String(b.title || '').trim() ? requestTitle(creator?.name, b.title, group?.name) : q.title, b.content || null, JSON.stringify(data), q.id);
   if (group && b.approvers !== undefined) {
-    const plan = await approverPlan(group, idList(b.approvers));
+    const plan = await approverPlan(group, idList(b.approvers), q.creator_id);
     await batch([
       ['DELETE FROM request_approvers WHERE request_id = ?', [q.id]],
-      ...plan.map((a) => ['INSERT INTO request_approvers(request_id, user_id, step) VALUES (?,?,?)', [q.id, a.user_id, a.step]]),
+      ...planRows(q.id, plan),
     ]);
   }
   if (b.followers !== undefined) {
@@ -346,10 +459,18 @@ r.post('/requests/:id/decide', async (c) => {
   if (action !== 'approve' && !comment) throw badRequest('Vui lòng nhập lý do');
   const turn = await get(`SELECT 1 FROM requests q WHERE q.id = ? AND q.status = 'pending' AND ${MY_TURN}`, q.id, user.id);
   if (!turn) throw forbidden('Chưa đến lượt bạn duyệt đề xuất này');
+  const stepBefore = (await get("SELECT MIN(step) AS s FROM request_approvers WHERE request_id = ? AND status = 'pending'", q.id)).s;
   const status = { approve: 'approved', reject: 'rejected', return: 'returned' }[action];
   const { changes } = await run("UPDATE request_approvers SET status = ?, comment = ?, acted_at = datetime('now') WHERE request_id = ? AND user_id = ? AND status = 'pending'",
     status, comment, q.id, user.id);
   if (!changes) throw badRequest('Đề xuất đã được xử lý');
+  if (action === 'approve' && q.flow !== 'any') {
+    // chặng "chỉ cần một người đồng ý": người đầu tiên duyệt → những người còn lại trong chặng được bỏ qua
+    const mine = await get('SELECT step, step_mode FROM request_approvers WHERE request_id = ? AND user_id = ?', q.id, user.id);
+    if (mine?.step_mode === 'any') {
+      await run("UPDATE request_approvers SET status = 'skipped' WHERE request_id = ? AND step = ? AND status = 'pending'", q.id, mine.step);
+    }
+  }
   await logActivity('request', q.id, user.id, status, `${ACTION_LABEL[action]}${comment ? `: ${comment}` : ''}`);
   const watchers = (await all('SELECT user_id FROM request_followers WHERE request_id = ?', q.id)).map((x) => x.user_id);
 
@@ -363,13 +484,29 @@ r.post('/requests/:id/decide', async (c) => {
     await run("UPDATE request_approvers SET status = 'skipped' WHERE request_id = ? AND status = 'pending'", q.id);
     await notify([q.creator_id, ...watchers], { actorId: user.id, app: APP, type: finalStatus,
       title: `${user.name}: ${ACTION_LABEL[action].toLowerCase()} đề xuất "${q.title}"`, link: `/request/${q.id}` });
+    // tự động hoá của nhóm (VD đề xuất tuyển dụng → tạo tài khoản + hồ sơ HRM); lỗi không chặn việc duyệt
+    if (finalStatus === 'approved') await runRequestAutomation(q.id, user.id);
     await fireRequestEvent(c, `request.${finalStatus}`, q.id, { comment });
   } else {
     await run("UPDATE requests SET updated_at = datetime('now') WHERE id = ?", q.id);
     await notify(q.creator_id, { actorId: user.id, app: APP, type: 'approved', title: `${user.name} đã duyệt đề xuất "${q.title}"`, link: `/request/${q.id}` });
-    await notifyCurrent(q.id, user, `Đề xuất "${q.title}" đến lượt bạn duyệt`);
+    // duyệt đồng thời: những người cùng chặng đã được báo từ trước — chỉ báo khi sang chặng mới
+    const stepNow = (await get("SELECT MIN(step) AS s FROM request_approvers WHERE request_id = ? AND status = 'pending'", q.id)).s;
+    if (stepNow !== stepBefore) await notifyCurrent(q.id, user, `Đề xuất "${q.title}" đến lượt bạn duyệt`);
     await fireRequestEvent(c, 'request.step_approved', q.id, { comment });
   }
+  return c.json(await fullRequest(q.id, user));
+});
+
+/** Chạy lại tự động hoá (VD lần trước lỗi do trùng email) — quản trị viên / quản lý nhân sự. */
+r.post('/requests/:id/automation/run', async (c) => {
+  const user = c.get('user');
+  const q = await viewable(c);
+  if (!(await isHrManager(user))) throw forbidden('Chỉ quản trị viên hoặc quản lý nhân sự được chạy lại');
+  if (q.status !== 'approved') throw badRequest('Đề xuất chưa được duyệt');
+  const res = await runRequestAutomation(q.id, user.id);
+  if (!res) throw badRequest('Nhóm đề xuất này không có tự động hoá');
+  await logActivity('request', q.id, user.id, 'automation', res.status === 'done' ? `Tự động tạo nhân sự @${res.username}` : `Tự động hoá lỗi: ${res.error}`);
   return c.json(await fullRequest(q.id, user));
 });
 
@@ -404,6 +541,7 @@ r.delete('/requests/:id', async (c) => {
     throw forbidden('Chỉ xoá được đề xuất nháp hoặc đã huỷ');
   }
   const files = await all('SELECT filename FROM request_attachments WHERE request_id = ?', q.id);
+  await purgeCommentFiles('request', { entityIds: [q.id] });
   await run('DELETE FROM requests WHERE id = ?', q.id);
   for (const f of files) await removeFile(f.filename);
   return c.json({ ok: true });
@@ -424,20 +562,46 @@ r.post('/requests/:id/follow', toggle('request_followers'));
 const COMMENT_SELECT = `SELECT c.*, u.name AS user_name, u.color AS user_color FROM request_comments c LEFT JOIN users u ON u.id = c.user_id`;
 r.get('/requests/:id/comments', async (c) => {
   const q = await viewable(c);
-  return c.json(await all(`${COMMENT_SELECT} WHERE c.request_id = ? ORDER BY c.id`, q.id));
+  return c.json(await withCommentFiles('request', q.id, await all(`${COMMENT_SELECT} WHERE c.request_id = ? ORDER BY c.id`, q.id)));
 });
 r.post('/requests/:id/comments', async (c) => {
   const user = c.get('user');
   const q = await viewable(c);
-  const content = String((await jsonBody(c)).content || '').trim();
-  if (!content) throw badRequest('Nội dung bình luận trống');
-  const { lastId } = await run('INSERT INTO request_comments(request_id, user_id, content) VALUES (?,?,?)', q.id, user.id, content.slice(0, 5000));
+  const { content, files, parent, parentId } = await readComment(c, 'request', q.id);
+  const { lastId } = await run('INSERT INTO request_comments(request_id, user_id, content, parent_id) VALUES (?,?,?,?)', q.id, user.id, content, parentId);
+  await saveCommentFiles('request', q.id, lastId, user.id, files);
   const approvers = (await all('SELECT user_id FROM request_approvers WHERE request_id = ?', q.id)).map((x) => x.user_id);
   const watchers = (await all('SELECT user_id FROM request_followers WHERE request_id = ?', q.id)).map((x) => x.user_id);
-  await notify([q.creator_id, ...approvers, ...watchers], { actorId: user.id, app: APP, type: 'comment',
+  // @nhắc tên: người được nhắc thành người theo dõi (xem được đề xuất, nhận cập nhật sau) và nhận thông báo riêng
+  const mentioned = await findMentions(content, user.id);
+  await batch(mentioned.map((uid) => ['INSERT OR IGNORE INTO request_followers(request_id, user_id) VALUES (?,?)', [q.id, uid]]));
+  const snippet = commentSnippet(content, files);
+  // người được trả lời nhận thông báo "đã trả lời bình luận của bạn" (thay cho thông báo nhắc tên)
+  const replied = await notifyReply('request', q.id, user, parent, snippet);
+  await notify(mentioned.filter((x) => !replied.includes(x)), { actorId: user.id, app: APP, type: 'mention',
+    title: `${user.name} đã nhắc đến bạn trong đề xuất "${q.title}": ${snippet}`, link: `/request/${q.id}` });
+  await notify([q.creator_id, ...approvers, ...watchers].filter((x) => !mentioned.includes(x) && !replied.includes(x)), { actorId: user.id, app: APP, type: 'comment',
     title: `${user.name} bình luận trong đề xuất "${q.title}"`, link: `/request/${q.id}` });
-  await fireRequestEvent(c, 'request.commented', q.id, { comment: content.slice(0, 1000) });
-  return c.json(await get(`${COMMENT_SELECT} WHERE c.id = ?`, lastId), 201);
+  await fireRequestEvent(c, 'request.commented', q.id, { comment: (content || snippet).slice(0, 1000) });
+  return c.json(await withCommentFiles('request', q.id, await get(`${COMMENT_SELECT} WHERE c.id = ?`, lastId)), 201);
+});
+r.put('/requests/:id/comments/:cid', async (c) => {
+  const q = await viewable(c);
+  const cid = await editComment(c, 'request', q.id, c.req.param('cid'), c.get('user'));
+  return c.json(await withCommentFiles('request', q.id, await get(`${COMMENT_SELECT} WHERE c.id = ?`, cid)));
+});
+r.delete('/requests/:id/comments/:cid', async (c) => {
+  const q = await viewable(c);
+  await deleteComment('request', q.id, c.req.param('cid'), c.get('user'));
+  return c.json({ ok: true });
+});
+r.get('/requests/:id/comment-files/:fid', async (c) => {
+  const q = await viewable(c);
+  return sendFile(c, await commentFileOr404('request', q.id, c.req.param('fid')), c.req.query('inline') === '1');
+});
+r.post('/requests/:id/comment-files/:fid/link', async (c) => {
+  const q = await viewable(c);
+  return c.json(await publicFileLink(c, 'cf', await commentFileOr404('request', q.id, c.req.param('fid'))));
 });
 r.get('/requests/:id/activity', async (c) => {
   const q = await viewable(c);
@@ -452,6 +616,12 @@ r.post('/requests/:id/attachments', async (c) => {
   if (files.length) await logActivity('request', q.id, user.id, 'attached', `Đính kèm ${files.length} tệp`);
   return c.json((await fullRequest(q.id, user)).attachments, 201);
 });
+r.post('/requests/:id/attachments/:aid/link', async (c) => {
+  const q = await viewable(c);
+  const a = await get('SELECT id, original_name FROM request_attachments WHERE id = ? AND request_id = ?', toInt(c.req.param('aid')), q.id);
+  if (!a) throw notFound('Tệp không tồn tại');
+  return c.json(await publicFileLink(c, 'ra', a));
+});
 r.get('/requests/:id/attachments/:aid', async (c) => {
   const q = await viewable(c);
   const a = await get('SELECT * FROM request_attachments WHERE id = ? AND request_id = ?', toInt(c.req.param('aid')), q.id);
@@ -460,21 +630,35 @@ r.get('/requests/:id/attachments/:aid', async (c) => {
 });
 
 // ================================================================ request groups (nhóm đề xuất)
+/** SQL: người dùng (3 tham số user.id) thuộc phạm vi sử dụng của nhóm riêng tư g — trực tiếp hoặc qua phòng ban chính / kiêm nhiệm. */
+const MEMBER_OF = `EXISTS (SELECT 1 FROM request_group_members m WHERE m.group_id = g.id AND (m.user_id = ?
+  OR m.department_id IN (SELECT department_id FROM users WHERE id = ? UNION SELECT department_id FROM user_departments WHERE user_id = ?)))`;
+async function canUseGroup(user, group) {
+  if (group.visibility !== 'private' || isAdmin(user)) return true;
+  return !!(await get(`SELECT 1 FROM request_groups g WHERE g.id = ? AND ${MEMBER_OF}`, group.id, user.id, user.id, user.id));
+}
+
 async function groupList(user, q) {
   const where = [];
   const params = [];
   const manage = q.manage === '1' && isAdmin(user);
   if (!manage) where.push('g.active = 1');
+  if (!isAdmin(user)) { where.push(`(g.visibility <> 'private' OR ${MEMBER_OF})`); params.push(user.id, user.id, user.id); }
   else if (q.status === 'active') where.push('g.active = 1');
   else if (q.status === 'paused') where.push('g.active = 0');
-  if (q.q) { where.push('(g.name LIKE ? OR g.category LIKE ?)'); params.push(`%${q.q}%`, `%${q.q}%`); }
-  const rows = await all(`SELECT g.id, g.name, g.description, g.category, g.flow, g.sla_hours, g.active, g.custom_approvers, g.updated_at,
+  const rows = await all(`SELECT g.id, g.name, g.description, g.category, g.flow, g.sla_hours, g.active, g.custom_approvers, g.updated_at, g.visibility,
+      g.manager_approval, g.final_approver_id,
+      (SELECT COUNT(*) FROM request_group_files gf WHERE gf.group_id = g.id) AS file_count, g.guide IS NOT NULL AND g.guide <> '' AS has_guide,
       EXISTS (SELECT 1 FROM request_group_stars s WHERE s.group_id = g.id AND s.user_id = ?) AS starred,
       (SELECT COUNT(*) FROM request_group_approvers a WHERE a.group_id = g.id) AS approver_count,
       (SELECT COUNT(*) FROM requests q WHERE q.group_id = g.id) AS request_count
     FROM request_groups g ${where.length ? `WHERE ${where.join(' AND ')}` : ''} ORDER BY g.category COLLATE NOCASE, g.name COLLATE NOCASE`,
   user.id, ...params);
-  return rows.map((g) => ({ ...g, starred: !!g.starred, active: !!g.active, custom_approvers: !!g.custom_approvers }));
+  // Danh mục nhỏ: lọc bằng cùng cách chuẩn hoá với chỉ mục tìm kiếm (không dấu, mọi thứ tự từ)
+  const words = q.q ? fold(q.q).split(/[^a-z0-9]+/).filter(Boolean) : [];
+  const hit = (g) => { const t = fold(`${g.name} ${g.category || ''} ${g.description || ''}`); return words.every((w) => t.includes(w)); };
+  return rows.filter((g) => !words.length || hit(g))
+    .map((g) => ({ ...g, starred: !!g.starred, active: !!g.active, custom_approvers: !!g.custom_approvers, has_guide: !!g.has_guide }));
 }
 
 r.get('/request-groups', async (c) => c.json(await groupList(c.get('user'), c.req.query())));
@@ -483,17 +667,212 @@ r.get('/request-groups/history', requireAdmin, async (c) => c.json(await all(`SE
   FROM activity_logs l LEFT JOIN users u ON u.id = l.user_id LEFT JOIN request_groups g ON g.id = l.entity_id
   WHERE l.entity_type = 'request_group' ORDER BY l.id DESC LIMIT 200`)));
 
+// ---------------- công cụ quản trị: xuất / nhập thiết lập, thay thế người duyệt, nhân bản
+/** Thiết lập nhóm dạng JSON di chuyển được (người dùng theo tên đăng nhập, phòng ban theo tên). */
+async function exportGroup(id) {
+  const g = await get('SELECT * FROM request_groups WHERE id = ?', id);
+  if (!g) return null;
+  const approvers = await all(`SELECT u.username, a.step FROM request_group_approvers a JOIN users u ON u.id = a.user_id WHERE a.group_id = ? ORDER BY a.step`, id);
+  const followers = await all('SELECT u.username FROM request_group_followers f JOIN users u ON u.id = f.user_id WHERE f.group_id = ?', id);
+  const members = await all(`SELECT d.name AS department, u.username FROM request_group_members m LEFT JOIN departments d ON d.id = m.department_id
+    LEFT JOIN users u ON u.id = m.user_id WHERE m.group_id = ?`, id);
+  const final = g.final_approver_id ? await get('SELECT username FROM users WHERE id = ?', g.final_approver_id) : null;
+  return {
+    name: g.name, description: g.description, category: g.category, fields: parseJson(g.fields, []), flow: g.flow,
+    block_modes: parseJson(g.block_modes || 'null', null), sla_hours: g.sla_hours, active: !!g.active, custom_approvers: !!g.custom_approvers,
+    manager_approval: !!g.manager_approval, manager_levels: g.manager_levels || 1, notify_manager: !!g.notify_manager, visibility: g.visibility || 'public', guide: g.guide,
+    print_title: g.print_title, print_code: g.print_code, print_note: g.print_note, final_approver: final?.username || null,
+    automation: (({ password_hash, ...a }) => (a.type ? a : null))(parseAutomation(g.automation) || {}),
+    approvers, followers: followers.map((f) => f.username),
+    member_departments: members.filter((m) => m.department).map((m) => m.department), member_users: members.filter((m) => m.username).map((m) => m.username),
+  };
+}
+
+r.get('/request-groups/export', requireAdmin, async (c) => {
+  const ids = idList(c.req.query('ids'));
+  const rows = ids.length ? ids.map((id) => ({ id })) : await all('SELECT id FROM request_groups ORDER BY category COLLATE NOCASE, name COLLATE NOCASE');
+  const groups = (await Promise.all(rows.map((x) => exportGroup(x.id)))).filter(Boolean);
+  return c.json({ app: 'ldl-request', version: 1, exported_at: new Date().toISOString(), groups });
+});
+
+const FLOW_ALIASES = {
+  'duyệt lần lượt': 'sequential', 'lần lượt': 'sequential', 'duyệt đồng thời': 'parallel', 'đồng thời': 'parallel',
+  'chỉ cần một người duyệt': 'any', 'một người': 'any', 'khối người duyệt': 'blocks', 'luồng duyệt trong khối người duyệt': 'blocks',
+};
+const splitList = (v) => (Array.isArray(v) ? v : String(v ?? '').split(/[,;\n]/)).map((x) => (typeof x === 'string' ? x.trim().replace(/^@/, '') : x)).filter(Boolean);
+
+/**
+ * Nhập nhóm đề xuất từ tệp thiết lập JSON (xuất từ LDL) hoặc từ các dòng Excel theo mẫu
+ * (Tên nhóm, Danh mục, Mô tả, Quy trình, SLA, Người duyệt, Người theo dõi — người dùng ghi theo tên đăng nhập, cách nhau bởi dấu phẩy).
+ */
+r.post('/request-groups/import', requireAdmin, async (c) => {
+  const b = await jsonBody(c);
+  const list = (Array.isArray(b.groups) ? b.groups : []).slice(0, 300);
+  if (!list.length) throw badRequest('Tệp không có nhóm đề xuất nào');
+  const users = await all('SELECT id, username FROM users');
+  const byUser = Object.fromEntries(users.map((u) => [u.username.toLowerCase(), u.id]));
+  const deps = await all('SELECT id, name FROM departments');
+  const byDep = Object.fromEntries(deps.map((d) => [d.name.toLowerCase(), d.id]));
+  const uid = (x) => (typeof x === 'object' && x ? byUser[String(x.username || '').toLowerCase()] : byUser[String(x).toLowerCase()]) || null;
+  const created = [];
+  const errors = [];
+  for (const [i, raw] of list.entries()) {
+    try {
+      const flowRaw = String(raw.flow || '').trim();
+      const flow = FLOWS.includes(flowRaw) ? flowRaw : FLOW_ALIASES[flowRaw.toLowerCase()] || 'sequential';
+      const approverRows = splitList(raw.approvers).map((a) => ({ id: uid(a), step: toInt(a?.step) || null })).filter((a) => a.id);
+      const modes = raw.block_modes && typeof raw.block_modes === 'object' ? raw.block_modes : {};
+      const blocks = flow === 'blocks' ? [...new Set(approverRows.map((a) => a.step || 1))].map((s) => ({
+        mode: modes[s] === 'any' ? 'any' : 'all', users: approverRows.filter((a) => (a.step || 1) === s).map((a) => a.id) })) : undefined;
+      const fields = Array.isArray(raw.fields) && raw.fields.length ? raw.fields : [{ label: 'Nội dung', type: 'textarea', required: true }];
+      const g = parseGroup({
+        ...raw, flow, fields, blocks, sla_hours: raw.sla_hours ?? raw.sla,
+        approvers: approverRows.map((a) => a.id), followers: splitList(raw.followers).map(uid).filter(Boolean),
+        final_approver_id: raw.final_approver ? uid(raw.final_approver) : null,
+        member_departments: splitList(raw.member_departments).map((d) => byDep[String(d).toLowerCase()]).filter(Boolean),
+        member_users: splitList(raw.member_users).map(uid).filter(Boolean),
+        custom_approvers: raw.custom_approvers !== false, active: raw.active !== false,
+      });
+      const { lastId } = await run(`INSERT INTO request_groups(name, description, category, fields, flow, custom_approvers, sla_hours, active, created_by, guide)
+        VALUES (?,?,?,?,?,?,?,?,?,?)`, g.name, g.description, g.category, g.fields, g.flow, g.custom_approvers, g.sla_hours, g.active, c.get('user').id, g.guide);
+      await saveGroupExtras(lastId, g);
+      await saveGroupRelations(lastId, g);
+      created.push({ id: lastId, name: g.name });
+    } catch (e) {
+      errors.push(`Dòng ${i + 1}${raw?.name ? ` (${raw.name})` : ''}: ${e.message}`);
+    }
+  }
+  if (created.length) await logActivity('request_group', created[0].id, c.get('user').id, 'imported', `Nhập ${created.length} nhóm đề xuất từ tệp`);
+  return c.json({ created, errors });
+});
+
+/** Thay thế người duyệt: chuyển vai trò duyệt / theo dõi của một người sang người khác trong mọi nhóm (và các đề xuất đang chờ). */
+r.post('/request-groups/replace-approver', requireAdmin, async (c) => {
+  const b = await jsonBody(c);
+  const from = toInt(b.from_id);
+  const to = toInt(b.to_id);
+  if (!from || !to || from === to) throw badRequest('Chọn người cần thay và người thay thế khác nhau');
+  const [fu, tu] = await Promise.all([get('SELECT id, name FROM users WHERE id = ?', from), get('SELECT id, name FROM users WHERE id = ?', to)]);
+  if (!fu || !tu) throw notFound('Người dùng không tồn tại');
+  const groups = await all(`SELECT DISTINCT g.id, g.name FROM request_groups g WHERE g.final_approver_id = ?
+    OR EXISTS (SELECT 1 FROM request_group_approvers a WHERE a.group_id = g.id AND a.user_id = ?)
+    OR EXISTS (SELECT 1 FROM request_group_followers f WHERE f.group_id = g.id AND f.user_id = ?)`, from, from, from);
+  await batch([
+    // người thay thế đã có trong nhóm → chỉ bỏ người cũ
+    ['DELETE FROM request_group_approvers WHERE user_id = ? AND group_id IN (SELECT group_id FROM request_group_approvers WHERE user_id = ?)', [from, to]],
+    ['UPDATE request_group_approvers SET user_id = ? WHERE user_id = ?', [to, from]],
+    ['UPDATE request_groups SET final_approver_id = ? WHERE final_approver_id = ?', [to, from]],
+    ['INSERT OR IGNORE INTO request_group_followers(group_id, user_id) SELECT group_id, ? FROM request_group_followers WHERE user_id = ?', [to, from]],
+    ['DELETE FROM request_group_followers WHERE user_id = ?', [from]],
+  ]);
+  let moved = 0;
+  if (b.pending) {
+    const rows = await all(`SELECT a.request_id FROM request_approvers a JOIN requests q ON q.id = a.request_id
+      WHERE a.user_id = ? AND a.status = 'pending' AND q.status IN ('pending', 'draft', 'returned')
+      AND NOT EXISTS (SELECT 1 FROM request_approvers x WHERE x.request_id = a.request_id AND x.user_id = ?)`, from, to);
+    await batch(rows.map((x) => ["UPDATE request_approvers SET user_id = ? WHERE request_id = ? AND user_id = ? AND status = 'pending'", [to, x.request_id, from]]));
+    moved = rows.length;
+    const mine = rows.length ? await all(`SELECT q.id, q.title FROM requests q WHERE q.status = 'pending' AND q.id IN (SELECT value FROM json_each(?)) AND ${MY_TURN}`,
+      JSON.stringify(rows.map((x) => x.request_id)), to) : [];
+    for (const q of mine) {
+      await notify(to, { actorId: c.get('user').id, app: APP, type: 'approval', title: `Bạn thay ${fu.name} duyệt đề xuất "${q.title}"`, link: `/request/${q.id}` });
+    }
+  }
+  await batch(groups.map((g) => ['INSERT INTO activity_logs(entity_type, entity_id, user_id, action, detail) VALUES (?,?,?,?,?)',
+    ['request_group', g.id, c.get('user').id, 'replace', `Thay người duyệt ${fu.name} → ${tu.name} trong "${g.name}"`]]));
+  return c.json({ groups: groups.length, requests: moved });
+});
+
+r.post('/request-groups/:id/duplicate', requireAdmin, async (c) => {
+  const data = await exportGroup(toInt(c.req.param('id')));
+  if (!data) throw notFound('Nhóm đề xuất không tồn tại');
+  const src = await get('SELECT * FROM request_groups WHERE id = ?', toInt(c.req.param('id')));
+  const { lastId } = await run(`INSERT INTO request_groups(name, description, category, fields, flow, custom_approvers, sla_hours, active, created_by, guide,
+      manager_approval, final_approver_id, print_title, print_code, print_note, block_modes, visibility, notify_manager, manager_levels, automation)
+    SELECT ?, description, category, fields, flow, custom_approvers, sla_hours, 0, ?, guide,
+      manager_approval, final_approver_id, print_title, print_code, print_note, block_modes, visibility, notify_manager, manager_levels, automation FROM request_groups WHERE id = ?`,
+  `${src.name} (Bản sao)`.slice(0, 200), c.get('user').id, src.id);
+  await batch([
+    ['INSERT INTO request_group_approvers(group_id, user_id, step) SELECT ?, user_id, step FROM request_group_approvers WHERE group_id = ?', [lastId, src.id]],
+    ['INSERT INTO request_group_followers(group_id, user_id) SELECT ?, user_id FROM request_group_followers WHERE group_id = ?', [lastId, src.id]],
+    ['INSERT INTO request_group_members(group_id, department_id, user_id) SELECT ?, department_id, user_id FROM request_group_members WHERE group_id = ?', [lastId, src.id]],
+  ]);
+  await logActivity('request_group', lastId, c.get('user').id, 'created', `Nhân bản nhóm đề xuất "${src.name}" (đang tạm đóng)`);
+  return c.json({ id: lastId }, 201);
+});
+
 r.get('/request-groups/:id', async (c) => {
   const g = await get('SELECT * FROM request_groups WHERE id = ?', toInt(c.req.param('id')));
   if (!g) throw notFound('Nhóm đề xuất không tồn tại');
   g.fields = parseJson(g.fields, []);
   g.active = !!g.active;
   g.custom_approvers = !!g.custom_approvers;
+  g.manager_approval = !!g.manager_approval;
+  g.final_approver = g.final_approver_id ? await get('SELECT id, name, title FROM users WHERE id = ?', g.final_approver_id) : null;
   g.approvers = await all(`SELECT a.user_id, a.step, u.name, u.color, u.title FROM request_group_approvers a JOIN users u ON u.id = a.user_id
     WHERE a.group_id = ? ORDER BY a.step`, g.id);
+  g.notify_manager = !!g.notify_manager;
+  const modes = blockModes(g);
+  g.blocks = g.flow === 'blocks' ? [...new Set(g.approvers.map((a) => a.step))]
+    .map((s) => ({ mode: modes[s] === 'any' ? 'any' : 'all', users: g.approvers.filter((a) => a.step === s).map((a) => a.user_id) })) : [];
+  const members = await all('SELECT department_id, user_id FROM request_group_members WHERE group_id = ?', g.id);
+  g.member_departments = members.filter((m) => m.department_id).map((m) => m.department_id);
+  g.member_users = members.filter((m) => m.user_id).map((m) => m.user_id);
   g.followers = await all(`SELECT f.user_id, u.name, u.color FROM request_group_followers f JOIN users u ON u.id = f.user_id WHERE f.group_id = ?`, g.id);
+  g.files = await groupFiles(g.id);
+  const auto = parseAutomation(g.automation);
+  g.automation = auto ? { type: auto.type, map: auto.map, onboarding: auto.onboarding, has_password: !!auto.password_hash } : null;
   return c.json(g);
 });
+
+/** Xem trước luồng duyệt 3 chặng của nhóm cho người đang tạo đề xuất (quản lý trực tiếp của họ, phòng ban, người duyệt cuối). */
+r.get('/request-groups/:id/plan', async (c) => {
+  const g = await get('SELECT * FROM request_groups WHERE id = ?', toInt(c.req.param('id')));
+  if (!g) throw notFound('Nhóm đề xuất không tồn tại');
+  const user = c.get('user');
+  const plan = await approverPlan(g, idList(c.req.query('extra')), user.id);
+  const ids = plan.map((p) => p.user_id);
+  const users = ids.length ? await all('SELECT id, name, color, title FROM users WHERE id IN (SELECT value FROM json_each(?))', JSON.stringify(ids)) : [];
+  const byId = Object.fromEntries(users.map((u) => [u.id, u]));
+  return c.json({ staged: staged(g), flow: staged(g) ? 'sequential' : g.flow, manager_approval: !!g.manager_approval,
+    no_manager: !!g.manager_approval && !plan.some((p) => p.stage === 'manager'),
+    steps: plan.map((p) => ({ ...p, ...byId[p.user_id] })) });
+});
+
+// ---------------- biểu mẫu & quy trình của nhóm đề xuất (quản trị viên tải lên, mọi người xem / tải về)
+const GROUP_FILE_KINDS = ['form', 'process'];
+function groupFiles(groupId) {
+  return all(`SELECT f.id, f.kind, f.original_name, f.mime, f.size, f.created_at, u.name AS user_name FROM request_group_files f
+    LEFT JOIN users u ON u.id = f.user_id WHERE f.group_id = ? ORDER BY f.kind, f.id`, groupId);
+}
+async function groupFile(c) {
+  const f = await get('SELECT * FROM request_group_files WHERE id = ? AND group_id = ?', toInt(c.req.param('fid')), toInt(c.req.param('id')));
+  if (!f) throw notFound('Tệp không tồn tại');
+  return f;
+}
+r.post('/request-groups/:id/files', requireAdmin, async (c) => {
+  const id = toInt(c.req.param('id'));
+  const g = await get('SELECT id, name FROM request_groups WHERE id = ?', id);
+  if (!g) throw notFound('Nhóm đề xuất không tồn tại');
+  const { fields, files } = await formBody(c);
+  const kind = GROUP_FILE_KINDS.includes(fields.kind) ? fields.kind : 'form';
+  const stored = await storeFiles(files);
+  await batch(stored.map((f) => ['INSERT INTO request_group_files(group_id, kind, filename, original_name, mime, size, user_id) VALUES (?,?,?,?,?,?,?)',
+    [id, kind, f.filename, f.original_name, f.mime, f.size, c.get('user').id]]));
+  if (stored.length) {
+    await logActivity('request_group', id, c.get('user').id, 'files',
+      `Đính kèm ${stored.length} ${kind === 'form' ? 'biểu mẫu' : 'tài liệu quy trình'} cho "${g.name}"`);
+  }
+  return c.json(await groupFiles(id), 201);
+});
+r.delete('/request-groups/:id/files/:fid', requireAdmin, async (c) => {
+  const f = await groupFile(c);
+  await run('DELETE FROM request_group_files WHERE id = ?', f.id);
+  await removeFile(f.filename);
+  return c.json(await groupFiles(f.group_id));
+});
+r.get('/request-groups/:id/files/:fid', async (c) => sendFile(c, await groupFile(c), c.req.query('inline') === '1'));
+r.post('/request-groups/:id/files/:fid/link', async (c) => c.json(await publicFileLink(c, 'gf', await groupFile(c))));
 
 function parseGroup(b) {
   const name = String(b.name || '').trim();
@@ -511,26 +890,78 @@ function parseGroup(b) {
   for (const f of fields) { while (keys.has(f.key)) f.key += '_'; keys.add(f.key); }
   const sla = toInt(b.sla_hours);
   return {
-    name: name.slice(0, 200), description: b.description || null, category: String(b.category || '').trim() || 'Chung',
-    fields: JSON.stringify(fields), flow: b.flow === 'any' ? 'any' : 'sequential',
+    name: name.slice(0, 200), description: b.description || null, guide: b.guide && String(b.guide).replace(/<[^>]*>|&nbsp;/g, '').trim() ? String(b.guide) : null, category: String(b.category || '').trim() || 'Chung',
+    fields: JSON.stringify(fields), flow: FLOWS.includes(b.flow) ? b.flow : 'sequential',
     custom_approvers: b.custom_approvers === false ? 0 : 1, sla_hours: sla && sla > 0 ? sla : null,
     active: b.active === false ? 0 : 1, approvers: idList(b.approvers), followers: idList(b.followers),
+    manager_approval: b.manager_approval ? 1 : 0, final_approver_id: toInt(b.final_approver_id) || null,
+    print_title: String(b.print_title || '').trim().slice(0, 200) || null, print_code: String(b.print_code || '').trim().slice(0, 50) || null,
+    print_note: String(b.print_note || '').trim().slice(0, 2000) || null,
+    notify_manager: b.notify_manager ? 1 : 0, visibility: b.visibility === 'private' ? 'private' : 'public',
+    manager_levels: Math.min(5, Math.max(1, toInt(b.manager_levels, 1))),
+    member_departments: idList(b.member_departments), member_users: idList(b.member_users),
+    automation: b.automation === undefined ? undefined : b.automation && AUTOMATION_TYPES[b.automation.type] ? b.automation : null,
+    ...parseBlocks(b),
   };
+}
+
+/** Cấu hình tự động hoá để lưu: giữ mật khẩu mặc định cũ nếu không nhập mới. */
+async function automationJson(id, a) {
+  if (!a) return null;
+  const cfg = parseAutomation({ ...a, password_hash: null });
+  if (a.password) {
+    if (String(a.password).length < 6) throw badRequest('Mật khẩu mặc định cho tài khoản mới phải có ít nhất 6 ký tự');
+    cfg.password_hash = await hashPassword(String(a.password));
+  } else if (!a.clear_password && id) {
+    cfg.password_hash = parseAutomation((await get('SELECT automation FROM request_groups WHERE id = ?', id))?.automation)?.password_hash || null;
+  }
+  if (cfg.type === 'hire' && !cfg.map.name) throw badRequest('Tự động hoá: chọn trường chứa "Họ tên" nhân sự mới');
+  return JSON.stringify(cfg);
+}
+
+/** Khối người duyệt: [{ mode: 'all' | 'any', users: [id] }] → người duyệt theo khối + chế độ từng khối. */
+function parseBlocks(b) {
+  if (b.flow !== 'blocks') return { block_modes: null };
+  const blocks = (Array.isArray(b.blocks) ? b.blocks : []).map((k) => ({ mode: k?.mode === 'any' ? 'any' : 'all', users: idList(k?.users) }))
+    .filter((k) => k.users.length).slice(0, 20);
+  const seen = new Set();
+  const approvers = [];
+  const modes = {};
+  blocks.forEach((k, i) => {
+    modes[i + 1] = k.mode;
+    for (const uid of k.users) if (!seen.has(uid)) { seen.add(uid); approvers.push({ user_id: uid, step: i + 1 }); }
+  });
+  return { block_modes: JSON.stringify(modes), block_approvers: approvers };
+}
+
+/** Luồng duyệt theo chặng + mẫu in + tự động hoá. */
+async function saveGroupExtras(id, g) {
+  await run(`UPDATE request_groups SET manager_approval = ?, final_approver_id = ?, print_title = ?, print_code = ?, print_note = ?,
+    block_modes = ?, visibility = ?, notify_manager = ?, manager_levels = ? WHERE id = ?`,
+  g.manager_approval, g.final_approver_id, g.print_title, g.print_code, g.print_note, g.block_modes, g.visibility, g.notify_manager, g.manager_levels, id);
+  if (g.automation !== undefined) await run('UPDATE request_groups SET automation = ? WHERE id = ?', await automationJson(id, g.automation), id);
 }
 
 async function saveGroupRelations(id, g) {
   await batch([
     ['DELETE FROM request_group_approvers WHERE group_id = ?', [id]],
-    ...g.approvers.map((uid, i) => ['INSERT INTO request_group_approvers(group_id, user_id, step) VALUES (?,?,?)', [id, uid, i + 1]]),
+    ...(g.block_approvers || g.approvers.map((uid, i) => ({ user_id: uid, step: i + 1 })))
+      .map((a) => ['INSERT INTO request_group_approvers(group_id, user_id, step) VALUES (?,?,?)', [id, a.user_id, a.step]]),
     ['DELETE FROM request_group_followers WHERE group_id = ?', [id]],
     ...g.followers.map((uid) => ['INSERT OR IGNORE INTO request_group_followers(group_id, user_id) VALUES (?,?)', [id, uid]]),
+    ['DELETE FROM request_group_members WHERE group_id = ?', [id]],
+    ...(g.visibility === 'private' ? [
+      ...g.member_departments.map((d) => ['INSERT INTO request_group_members(group_id, department_id) VALUES (?,?)', [id, d]]),
+      ...g.member_users.map((u) => ['INSERT INTO request_group_members(group_id, user_id) VALUES (?,?)', [id, u]]),
+    ] : []),
   ]);
 }
 
 r.post('/request-groups', requireAdmin, async (c) => {
   const g = parseGroup(await jsonBody(c));
-  const { lastId } = await run(`INSERT INTO request_groups(name, description, category, fields, flow, custom_approvers, sla_hours, active, created_by)
-    VALUES (?,?,?,?,?,?,?,?,?)`, g.name, g.description, g.category, g.fields, g.flow, g.custom_approvers, g.sla_hours, g.active, c.get('user').id);
+  const { lastId } = await run(`INSERT INTO request_groups(name, description, category, fields, flow, custom_approvers, sla_hours, active, created_by, guide)
+    VALUES (?,?,?,?,?,?,?,?,?,?)`, g.name, g.description, g.category, g.fields, g.flow, g.custom_approvers, g.sla_hours, g.active, c.get('user').id, g.guide);
+  await saveGroupExtras(lastId, g);
   await saveGroupRelations(lastId, g);
   await logActivity('request_group', lastId, c.get('user').id, 'created', `Tạo nhóm đề xuất "${g.name}"`);
   return c.json({ id: lastId }, 201);
@@ -541,7 +972,8 @@ r.put('/request-groups/:id', requireAdmin, async (c) => {
   if (!(await get('SELECT 1 FROM request_groups WHERE id = ?', id))) throw notFound();
   const g = parseGroup(await jsonBody(c));
   await run(`UPDATE request_groups SET name = ?, description = ?, category = ?, fields = ?, flow = ?, custom_approvers = ?, sla_hours = ?,
-    active = ?, updated_at = datetime('now') WHERE id = ?`, g.name, g.description, g.category, g.fields, g.flow, g.custom_approvers, g.sla_hours, g.active, id);
+    active = ?, guide = ?, updated_at = datetime('now') WHERE id = ?`, g.name, g.description, g.category, g.fields, g.flow, g.custom_approvers, g.sla_hours, g.active, g.guide, id);
+  await saveGroupExtras(id, g);
   await saveGroupRelations(id, g);
   await logActivity('request_group', id, c.get('user').id, 'updated', `Cập nhật nhóm đề xuất "${g.name}"`);
   return c.json({ id });
@@ -551,18 +983,33 @@ r.post('/request-groups/bulk', requireAdmin, async (c) => {
   const b = await jsonBody(c);
   const ids = idList(b.ids);
   if (!ids.length) throw badRequest('Chưa chọn nhóm đề xuất');
-  const ph = ids.map(() => '?').join(',');
-  const names = await all(`SELECT id, name FROM request_groups WHERE id IN (${ph})`, ...ids);
+  const ph = 'SELECT value FROM json_each(?)';
+  const J = JSON.stringify(ids);
+  const names = await all(`SELECT id, name FROM request_groups WHERE id IN (${ph})`, J);
   if (b.action === 'enable' || b.action === 'disable') {
-    await run(`UPDATE request_groups SET active = ?, updated_at = datetime('now') WHERE id IN (${ph})`, b.action === 'enable' ? 1 : 0, ...ids);
+    await run(`UPDATE request_groups SET active = ?, updated_at = datetime('now') WHERE id IN (${ph})`, b.action === 'enable' ? 1 : 0, J);
   } else if (b.action === 'delete') {
-    await run(`DELETE FROM request_groups WHERE id IN (${ph})`, ...ids);
+    const files = await all(`SELECT filename FROM request_group_files WHERE group_id IN (${ph})`, J);
+    await run(`DELETE FROM request_groups WHERE id IN (${ph})`, J);
+    for (const f of files) await removeFile(f.filename);
+  } else if (b.action === 'sla') {
+    const sla = toInt(b.sla_hours);
+    await run(`UPDATE request_groups SET sla_hours = ?, updated_at = datetime('now') WHERE id IN (${ph})`, sla && sla > 0 ? sla : null, J);
+  } else if (b.action === 'flow') {
+    if (!['sequential', 'parallel', 'any'].includes(b.flow)) throw badRequest('Quy trình không hợp lệ');
+    await run(`UPDATE request_groups SET flow = ?, block_modes = NULL, updated_at = datetime('now') WHERE id IN (${ph})`, b.flow, J);
+    // bỏ đánh số khối cũ: người duyệt xếp lại theo thứ tự
+    for (const gid of ids) {
+      const list = await all('SELECT user_id FROM request_group_approvers WHERE group_id = ? ORDER BY step, rowid', gid);
+      await batch(list.map((a, i) => ['UPDATE request_group_approvers SET step = ? WHERE group_id = ? AND user_id = ?', [i + 1, gid, a.user_id]]));
+    }
   } else if (b.action === 'category') {
     const cat = String(b.category || '').trim();
     if (!cat) throw badRequest('Tên danh mục trống');
-    await run(`UPDATE request_groups SET category = ? WHERE id IN (${ph})`, cat, ...ids);
+    await run(`UPDATE request_groups SET category = ? WHERE id IN (${ph})`, cat, J);
   } else throw badRequest('Thao tác không hợp lệ');
-  const label = { enable: 'Mở', disable: 'Tạm đóng', delete: 'Xoá', category: 'Chuyển danh mục' }[b.action];
+  const label = { enable: 'Mở', disable: 'Tạm đóng', delete: 'Xoá', category: 'Chuyển danh mục', sla: `Đặt SLA ${toInt(b.sla_hours) || 'không giới hạn'} giờ cho`,
+    flow: `Đổi quy trình "${FLOW_LABEL[b.flow]}" cho` }[b.action];
   await batch(names.map((g) => ['INSERT INTO activity_logs(entity_type, entity_id, user_id, action, detail) VALUES (?,?,?,?,?)',
     ['request_group', g.id, c.get('user').id, b.action, `${label} nhóm đề xuất "${g.name}"`]]));
   return c.json({ affected: names.length });

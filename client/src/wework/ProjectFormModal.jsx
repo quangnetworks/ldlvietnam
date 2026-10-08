@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { api } from '../api.js';
 import { useApp, useFetch, useToast } from '../context.jsx';
-import { Modal, Field, UserPicker } from '../components/ui.jsx';
+import { Modal, Field, UserPicker, MultiSelect } from '../components/ui.jsx';
 
 const COLORS = ['#2d7ff9', '#20c997', '#f59f00', '#e8590c', '#7048e8', '#d6336c', '#0ca678', '#1098ad', '#ae3ec9', '#5c940d'];
 
@@ -11,10 +11,10 @@ export default function ProjectFormModal({ kind = 'project', project, templateId
   const [templates] = useFetch(() => (project ? Promise.resolve([]) : api.get('/projects', { template: 1 })), []);
   const [form, setForm] = useState(() => project ? {
     name: project.name, description: project.description || '', color: project.color || COLORS[0], kind: project.kind,
-    department_id: project.department_id || '', start_date: project.start_date || '', end_date: project.end_date || '',
-    status: project.status,
+    department_ids: (project.departments || []).map((d) => d.id).concat(project.departments?.length || !project.department_id ? [] : [project.department_id]),
+    start_date: project.start_date || '', end_date: project.end_date || '', status: project.status, add_department_members: false,
   } : {
-    name: '', description: '', color: COLORS[Math.floor(Math.random() * COLORS.length)], kind, department_id: '',
+    name: '', description: '', color: COLORS[Math.floor(Math.random() * COLORS.length)], kind, department_ids: [], add_department_members: false,
     start_date: '', end_date: '', members: [], managers: [], template_id: templateId || '', lists: 'Cần làm, Đang làm, Hoàn thành',
   });
   const [error, setError] = useState('');
@@ -60,12 +60,14 @@ export default function ProjectFormModal({ kind = 'project', project, templateId
             <option value="department">Phòng ban</option>
           </select>
         </Field>
-        <Field label="Thuộc phòng ban">
-          <select className="input" value={form.department_id} onChange={set('department_id')}>
-            <option value="">— Không chọn —</option>
-            {departments.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
-          </select>
+        <Field label={isDep ? 'Phòng ban' : 'Phòng ban phối hợp'} hint={isDep ? undefined : 'Một dự án có thể phối hợp nhiều phòng ban'}>
+          <MultiSelect options={departments.map((d) => ({ value: d.id, label: d.name }))} value={form.department_ids} onChange={set('department_ids')}
+            placeholder={isDep ? 'Chọn phòng ban' : 'Chọn các phòng ban tham gia'} />
         </Field>
+        {form.department_ids.length > 0 && (
+          <label className="check span-2"><input type="checkbox" checked={!!form.add_department_members} onChange={(e) => setForm({ ...form, add_department_members: e.target.checked })} />
+            Thêm toàn bộ nhân sự của {form.department_ids.length > 1 ? 'các phòng ban' : 'phòng ban'} đã chọn làm thành viên</label>
+        )}
         <Field label="Ngày bắt đầu"><input type="date" className="input" value={form.start_date} onChange={set('start_date')} /></Field>
         <Field label="Ngày kết thúc"><input type="date" className="input" value={form.end_date} onChange={set('end_date')} /></Field>
         <div className="span-2">

@@ -23,5 +23,9 @@ migrations_dir = "migrations"
 binding = "FILES"
 bucket_name = "ldlvietnam-workspace-files"
 
+# Dọn dẹp dữ liệu cũ (thông báo, lịch sử đăng nhập…) lúc 02:10 giờ Việt Nam mỗi ngày
+[triggers]
+crons = ["10 19 * * *"]
+
 [observability]
 enabled = true

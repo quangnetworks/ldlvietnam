@@ -136,6 +136,51 @@ test('Checkin: in/out once per day; manager sees team; timesheet', async () => {
   assert.ok(team.data.items.some((u) => u.id === demo.user.id && u.record));
 });
 
+test('Checkin: photo + GPS required on mobile per office; sales may punch outside the office network', async () => {
+  const admin = await login('admin');
+  const MOBILE = { 'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) Mobile/15E148' };
+  const shot = (geo = { lat: 21.0285, lng: 105.8542, accuracy: 12 }) => {
+    const fd = new FormData();
+    for (const [k, v] of Object.entries(geo)) fd.append(k, String(v));
+    fd.append('files', new File([new Uint8Array([0xff, 0xd8, 0xff, 0xd9])], 'checkin-in.jpg', { type: 'image/jpeg' }));
+    return fd;
+  };
+  const base = { start: '08:30', end: '17:30', grace: 10, work_saturday: true };
+  const set = await admin.put('/checkin/settings', { ...base, ip_only: false, ip_rules: [], photo_rules: [
+    { office: 'Văn phòng Hà Nội', staff: true, sales: true }, { office: 'Văn phòng Hà Nội', staff: true, sales: true },
+    { office: 'Văn phòng TP. Hồ Chí Minh', staff: false, sales: false }, { office: '', staff: false, sales: true }] });
+  assert.equal(set.status, 200);
+  assert.deepEqual(set.data.photo_rules.map((x) => x.office), ['Văn phòng Hà Nội', '']); // dedupe, bỏ dòng tắt hết
+
+  // Nhân viên văn phòng Hà Nội trên điện thoại: bắt buộc ảnh + GPS
+  const kt = await login('thuhuyen', {}, MOBILE);
+  assert.deepEqual((await kt.get('/checkin/today')).data.photo, { required: true, sales: false, office: 'Văn phòng Hà Nội' });
+  assert.equal((await kt.post('/checkin/in', { mobile: 1 })).status, 400);
+  assert.equal((await kt.post('/checkin/in', shot({}))).status, 400); // có ảnh, thiếu vị trí
+  const ok = await kt.post('/checkin/in', shot());
+  assert.equal(ok.status, 200);
+  assert.ok(ok.data.in_photo && ok.data.in_lat === 21.0285 && ok.data.in_mobile === 1);
+  const photo = await kt.get(`/checkin/${ok.data.id}/photo/in`);
+  assert.equal(photo.status, 200);
+  assert.equal(photo.headers.get('content-type'), 'image/jpeg');
+  assert.equal((await (await login('phuonglinh')).get(`/checkin/${ok.data.id}/photo/in`)).status, 403);
+  assert.equal((await admin.get(`/checkin/${ok.data.id}/photo/in`)).status, 200);
+  assert.equal((await admin.get(`/checkin/${ok.data.id}/photo/out`)).status, 404);
+
+  // Văn phòng TP.HCM không bật: chấm công điện thoại như cũ; trên máy tính không bao giờ yêu cầu ảnh
+  assert.equal((await (await login('duylinh', {}, MOBILE)).post('/checkin/in', { mobile: 1 })).status, 200);
+
+  // Chỉ cho phép mạng công ty: đội sales có ảnh + GPS được chấm ngoài văn phòng, nhân viên văn phòng thì không
+  await admin.put('/checkin/settings', { ...base, ip_only: true, ip_rules: ['10.255.255.1'], photo_rules: set.data.photo_rules });
+  const sales = await login('phuonglinh', {}, MOBILE);
+  assert.equal((await sales.get('/checkin/today')).data.photo.sales, true);
+  assert.equal((await sales.post('/checkin/in', shot())).status, 200);
+  assert.equal((await kt.post('/checkin/out', shot())).status, 403);
+  assert.equal((await (await login('minhtrang', {}, MOBILE)).post('/checkin/in', { mobile: 1 })).status, 403);
+
+  await admin.put('/checkin/settings', { ...base, ip_only: false, ip_rules: [], photo_rules: [] });
+});
+
 test('Timeoff: leave request via Request is counted after approval', async () => {
   const demo = await login('phuonglinh');
   const s0 = (await demo.get('/timeoff/summary')).data;
@@ -280,7 +325,1134 @@ test('wework report overview: buckets add up and filters apply', async () => {
   assert.equal(e.important + e.both + e.none + e.urgent, s.total);
   const done = await admin.get('/wework/reports/overview?from=2020-01-01&status=done');
   assert.equal(done.data.summary.doing + done.data.summary.overdue + done.data.summary.review, 0);
+  // popup chi tiết: số công việc trong từng nhóm khớp với biểu đồ
+  for (const b of ['on_time', 'late', 'doing', 'review', 'overdue', 'failed']) {
+    const d = await admin.get(`/wework/reports/tasks?from=2020-01-01&bucket=${b}&limit=200`);
+    assert.equal(d.data.total, s[b], b);
+    assert.ok(d.data.items.every((t) => t.bucket === b));
+  }
+  const m = r.data.assigned[0];
+  assert.equal((await admin.get(`/wework/reports/tasks?from=2020-01-01&assignee_id=${m.id}`)).data.total, m.total);
+  assert.equal((await admin.get('/wework/reports/tasks?from=2020-01-01&priority=urgent')).data.total, e.urgent);
+  assert.equal((await admin.get('/wework/reports/tasks?from=2020-01-01&no_due=1')).data.total, r.data.not_on_time.no_due);
+  assert.equal((await admin.get('/wework/reports/tasks?from=2020-01-01&bucket=overdue,late')).data.total, s.overdue + s.late);
+});
+
+test('wework reports: only admins and granted people can view', async () => {
+  const admin = await login('admin');
   const demo = await login('demo');
+  assert.equal((await demo.get('/wework/meta')).data.can_view_reports, false);
+  assert.equal((await demo.get('/wework/reports/overview?from=2020-01-01')).status, 403);
+  assert.equal((await demo.get('/wework/reports/tasks?from=2020-01-01')).status, 403);
+  assert.equal((await demo.put('/wework/settings', { report_users: [demo.user.id] })).status, 403);
+  // cấp quyền theo cá nhân
+  await admin.put('/wework/settings', { report_users: [demo.user.id] });
+  assert.equal((await demo.get('/wework/meta')).data.can_view_reports, true);
+  const all = await admin.get('/wework/reports/overview?from=2020-01-01');
   const mine = await demo.get('/wework/reports/overview?from=2020-01-01');
-  assert.ok(mine.data.summary.total <= s.total);
+  assert.equal(mine.data.summary.total, all.data.summary.total);
+  // người xem báo cáo mở được công việc từ popup
+  const any = (await admin.get('/wework/reports/tasks?from=2020-01-01&limit=200')).data.items.at(-1);
+  assert.equal((await demo.get(`/tasks/${any.id}`)).status, 200);
+  // cấp theo phòng ban
+  await admin.put('/wework/settings', { report_departments: [demo.user.department_id] });
+  assert.equal((await demo.get('/wework/meta')).data.can_view_reports, true);
+  await admin.put('/wework/settings', {});
+  assert.equal((await demo.get('/wework/reports/overview')).status, 403);
+});
+
+test('wework task results: text, links and files; viewer link and byte ranges', async () => {
+  const demo = await login('demo');
+  const admin = await login('admin');
+  const { data: t } = await demo.post('/tasks', { title: 'Báo cáo thị trường Q3' });
+  assert.equal((await demo.post(`/tasks/${t.id}/results`, { content: '<p> </p>' })).status, 400);
+  assert.equal((await demo.post(`/tasks/${t.id}/results`, { links: 'javascript:alert(1)' })).status, 400);
+  const fd = new FormData();
+  fd.append('content', '<p>Đã hoàn thành khảo sát 120 điểm bán</p>');
+  fd.append('links', 'https://example.com/bao-cao\nhttps://youtu.be/abc');
+  fd.append('files', new Blob(['0123456789'], { type: 'video/mp4' }), 'clip.mp4');
+  fd.append('files', new Blob(['PK'], { type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' }), 'Báo cáo.docx');
+  const res = await demo.post(`/tasks/${t.id}/results`, fd);
+  assert.equal(res.status, 201);
+  const [first] = res.data;
+  assert.equal(first.links.length, 2);
+  assert.equal(first.files.length, 2);
+  // tệp kết quả không lẫn vào tệp đính kèm, có đếm số kết quả
+  const full = (await demo.get(`/tasks/${t.id}`)).data;
+  assert.equal(full.attachments.length, 0);
+  assert.equal(full.result_count, 1);
+  // người khác (không liên quan) không cập nhật được
+  const mkt = await login('minhtrang');
+  assert.equal((await mkt.post(`/tasks/${t.id}/results`, { content: 'x' })).status, 403);
+
+  // tua video: phản hồi 206 theo Range
+  const token = (await raw('/auth/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username: 'demo', password: '123456' }) })).data.token;
+  const clip = first.files.find((f) => f.original_name === 'clip.mp4');
+  const part = await app.fetch(new Request(`${base}/tasks/${t.id}/attachments/${clip.id}?inline=1`, { headers: { Authorization: `Bearer ${token}`, Range: 'bytes=2-5' } }));
+  assert.equal(part.status, 206);
+  assert.equal(await part.text(), '2345');
+  assert.equal(part.headers.get('content-range'), 'bytes 2-5/10');
+  assert.match(part.headers.get('content-disposition'), /^inline/);
+
+  // liên kết tạm cho trình xem Office trực tuyến: không cần đăng nhập, sai chữ ký bị chặn
+  const doc = first.files.find((f) => f.original_name.endsWith('.docx'));
+  const { data: link } = await demo.post(`/tasks/${t.id}/attachments/${doc.id}/link`);
+  const pub = await app.fetch(new Request(link.url.replace(/^https?:\/\/[^/]+/, 'http://test.local')));
+  assert.equal(pub.status, 200);
+  assert.equal(await pub.text(), 'PK');
+  const bad = await app.fetch(new Request(`http://test.local/api/public/files/${token}/x.docx`));
+  assert.equal(bad.status, 403);
+
+  // sửa / xoá: chỉ người cập nhật hoặc quản trị
+  assert.equal((await demo.put(`/tasks/${t.id}/results/${first.id}`, { content: '<p>Bổ sung</p>' })).data[0].content, '<p>Bổ sung</p>');
+  assert.equal((await admin.del(`/tasks/${t.id}/results/${first.id}`)).data.length, 0);
+});
+
+test('office: a new policy supersedes the old one, reverting when it is withdrawn', async () => {
+  const admin = await login('admin');
+  const demo = await login('demo');
+  const fd = (o) => { const f = new FormData(); for (const [k, v] of Object.entries(o)) f.append(k, v); return f; };
+  const { data: oldDoc } = await admin.post('/documents', fd({ title: 'Chính sách công tác phí 2025', kind: 'notice' }));
+  assert.equal(oldDoc.status, 'issued');
+  // không thay thế được văn bản nháp
+  const { data: draft } = await admin.post('/documents', fd({ title: 'Nháp', draft: '1' }));
+  assert.equal((await admin.post('/documents', fd({ title: 'X', replaces_id: draft.id }))).status, 400);
+  const today = new Date().toISOString().slice(0, 10);
+  const { data: newDoc } = await admin.post('/documents', fd({ title: 'Chính sách công tác phí 2026', replaces_id: oldDoc.id, effective_date: today }));
+  assert.equal(newDoc.replaces.id, oldDoc.id);
+  const old = (await demo.get(`/documents/${oldDoc.id}`)).data;
+  assert.equal(old.is_superseded, true);
+  assert.equal(old.superseded_doc.id, newDoc.id);
+  assert.deepEqual(old.versions.map((v) => v.id), [oldDoc.id, newDoc.id]);
+  // rời khỏi danh sách đang áp dụng, sang mục "Đã bị thay thế"
+  assert.ok(!(await demo.get('/documents?box=home&limit=200')).data.items.some((d) => d.id === oldDoc.id));
+  assert.ok((await demo.get('/documents?box=superseded')).data.items.some((d) => d.id === oldDoc.id));
+  // một văn bản chỉ bị thay thế một lần
+  assert.equal((await admin.post('/documents', fd({ title: 'Y', replaces_id: oldDoc.id }))).status, 400);
+  // người đã xem văn bản cũ nhận thông báo
+  const notes = (await demo.get('/notifications')).data;
+  assert.ok((notes.items || notes).some((n) => n.type === 'superseded'));
+  // huỷ văn bản mới → văn bản cũ trở lại hiệu lực
+  await admin.del(`/documents/${newDoc.id}`);
+  assert.equal((await demo.get(`/documents/${oldDoc.id}`)).data.is_superseded, false);
+  // hiệu lực trong tương lai: đã lên lịch thay thế, văn bản cũ vẫn áp dụng
+  const { data: later } = await admin.post('/documents', fd({ title: 'Công tác phí 2027', replaces_id: oldDoc.id, effective_date: '2099-01-01' }));
+  const o2 = (await demo.get(`/documents/${oldDoc.id}`)).data;
+  assert.equal(o2.is_superseded, false);
+  assert.equal(o2.supersede_scheduled, true);
+  assert.equal(o2.superseded_doc.id, later.id);
+});
+
+test('chat: history visibility for added members, admin deletes channels', async () => {
+  const demo = await login('demo');
+  const mkt = await login('minhtrang');
+  const hr = await login('chilan');
+  const admin = await login('admin');
+  const { data: ch } = await demo.post('/chat/channels', { name: 'bi-mat', kind: 'private' });
+  await demo.post(`/chat/channels/${ch.id}/messages`, { content: 'tin cũ 1' });
+  await demo.post(`/chat/channels/${ch.id}/messages`, { content: 'tin cũ 2' });
+  await demo.put(`/chat/channels/${ch.id}`, { members: [demo.user.id, mkt.user.id], history: 'none' });
+  assert.equal((await mkt.get(`/chat/channels/${ch.id}/messages`)).data.length, 0);
+  assert.equal((await mkt.get('/chat/search?q=tin%20c%C5%A9')).data.length, 0);
+  assert.equal((await mkt.get('/chat/channels')).data.find((x) => x.id === ch.id).unread, 0);
+  await demo.post(`/chat/channels/${ch.id}/messages`, { content: 'tin mới' });
+  assert.deepEqual((await mkt.get(`/chat/channels/${ch.id}/messages`)).data.map((m) => m.content), ['tin mới']);
+  await demo.put(`/chat/channels/${ch.id}`, { members: [demo.user.id, mkt.user.id, hr.user.id], history: 'all' });
+  assert.equal((await hr.get(`/chat/channels/${ch.id}/messages`)).data.length, 3);
+  // người đã có không bị đổi quyền
+  assert.equal((await mkt.get(`/chat/channels/${ch.id}/messages`)).data.length, 1);
+  // xoá kênh: thành viên thường không được, quản trị viên được
+  assert.equal((await mkt.del(`/chat/channels/${ch.id}`)).status, 403);
+  assert.equal((await admin.del(`/chat/channels/${ch.id}`)).status, 200);
+  assert.equal((await demo.get(`/chat/channels/${ch.id}`)).status, 404);
+});
+
+test('request groups: forms and process guides for requesters', async () => {
+  const admin = await login('admin');
+  const demo = await login('demo');
+  const g = (await demo.get('/request-groups')).data[0];
+  const fd = new FormData();
+  fd.append('kind', 'form');
+  fd.append('files', new Blob(['mau'], { type: 'application/pdf' }), 'Mẫu đề xuất.pdf');
+  assert.equal((await demo.post(`/request-groups/${g.id}/files`, fd)).status, 403);
+  const up = await admin.post(`/request-groups/${g.id}/files`, fd);
+  assert.equal(up.status, 201);
+  const full = (await admin.get(`/request-groups/${g.id}`)).data;
+  await admin.put(`/request-groups/${g.id}`, { ...full, approvers: full.approvers.map((a) => a.user_id), followers: full.followers.map((f) => f.user_id), guide: '<p>Bước 1: tải mẫu</p>' });
+  const seen = (await demo.get(`/request-groups/${g.id}`)).data;
+  assert.equal(seen.files[0].original_name, 'Mẫu đề xuất.pdf');
+  assert.equal(seen.guide, '<p>Bước 1: tải mẫu</p>');
+  assert.equal((await demo.get(`/request-groups/${g.id}/files/${seen.files[0].id}`)).data, 'mau');
+  assert.ok((await demo.get('/request-groups')).data.find((x) => x.id === g.id).file_count >= 1);
+});
+
+test('home agenda lists important tasks to keep an eye on', async () => {
+  const demo = await login('demo');
+  await demo.post('/tasks', { title: 'Việc khẩn cần lưu ý', priority: 'urgent' });
+  const a = (await demo.get('/home/agenda')).data;
+  const item = a.important.find((i) => i.title === 'Việc khẩn cần lưu ý');
+  assert.equal(item.role, 'assignee');
+  assert.ok(a.important.every((i) => ['urgent', 'important'].includes(i.priority)));
+});
+
+test('wework permissions: who may assign to whom, what an assignee may change', async () => {
+  const admin = await login('admin');
+  const kd = await login('truongkd');     // trưởng phòng Kinh doanh, quản lý trực tiếp của demo
+  const demo = await login('demo');
+  const mkt = await login('duylinh');     // phòng Marketing, không do truongkd quản lý
+  // nhân viên không giao được cho người ngoài phạm vi quản lý
+  assert.equal((await demo.post('/tasks', { title: 'Giao ngang', assignee_id: mkt.user.id })).status, 403);
+  assert.equal((await demo.post('/tasks', { title: 'Tự giao' })).status, 201);
+  // trưởng phòng / quản lý trực tiếp giao cho nhân viên của mình, không giao sang phòng khác
+  const scope = (await kd.get('/wework/assignable')).data;
+  assert.ok(scope.ids.includes(demo.user.id) && !scope.ids.includes(mkt.user.id));
+  assert.equal((await kd.post('/tasks', { title: 'Sang phòng khác', assignee_id: mkt.user.id })).status, 403);
+  const { data: t } = await kd.post('/tasks', { title: 'Khảo sát đại lý', assignee_id: demo.user.id, due_date: '2026-10-10' });
+  // quản trị viên giao cho mọi người
+  assert.equal((await admin.get('/wework/assignable')).data.all, true);
+  assert.equal((await admin.post('/tasks', { title: 'Việc của Marketing', assignee_id: mkt.user.id })).status, 201);
+  // người được giao: cập nhật trạng thái được, không đổi thời gian / mô tả / dự án / lặp lại, không xoá
+  const seen = (await demo.get(`/tasks/${t.id}`)).data;
+  assert.equal(seen.can_edit, true);
+  assert.equal(seen.can_manage, false);
+  assert.equal(seen.can_delete, false);
+  assert.equal((await demo.put(`/tasks/${t.id}`, { status: 'doing' })).status, 200);
+  for (const patch of [{ due_date: '2026-12-31' }, { start_date: '2026-10-01' }, { description: 'x' }, { recurring: 'weekly' }]) {
+    assert.equal((await demo.put(`/tasks/${t.id}`, patch)).status, 403, JSON.stringify(patch));
+  }
+  assert.equal((await demo.del(`/tasks/${t.id}`)).status, 403);
+  assert.equal((await kd.put(`/tasks/${t.id}`, { due_date: '2026-12-31' })).status, 200);
+});
+
+test('a member can belong to several departments', async () => {
+  const admin = await login('admin');
+  const demo = await login('demo');
+  const deps = (await admin.get('/departments')).data;
+  const mktDep = deps.find((d) => d.name === 'Phòng Marketing');
+  const before = mktDep.member_count;
+  await admin.put(`/users/${demo.user.id}`, { ...(await admin.get(`/users/${demo.user.id}`)).data, extra_department_ids: [mktDep.id] });
+  const me = (await demo.get(`/users/${demo.user.id}`)).data;
+  assert.deepEqual(me.extra_department_ids, [mktDep.id]);
+  assert.equal((await admin.get('/departments')).data.find((d) => d.id === mktDep.id).member_count, before + 1);
+  // thấy kênh chat của phòng ban kiêm nhiệm
+  const chans = (await demo.get('/home/chat')).data.channels;
+  assert.ok(chans.some((c) => c.name === 'Phòng Marketing'));
+  // nhận văn bản gửi cho phòng ban kiêm nhiệm
+  const fd = new FormData();
+  fd.append('title', 'Thông báo riêng phòng Marketing');
+  fd.append('recipient_departments', String(mktDep.id));
+  const { data: doc } = await admin.post('/documents', fd);
+  assert.equal((await demo.get(`/documents/${doc.id}`)).status, 200);
+  // trưởng phòng Marketing giao việc được cho người kiêm nhiệm
+  const mkt = await login('minhtrang');
+  assert.ok((await mkt.get('/wework/assignable')).data.ids.includes(demo.user.id));
+  await admin.put(`/users/${demo.user.id}`, { ...me, extra_department_ids: [] });
+});
+
+test('goals: link related tasks, progress follows completed tasks; critical priority fills the Eisenhower matrix', async () => {
+  const demo = await login('demo');
+  const admin = await login('admin');
+  const { data: g } = await demo.post('/goals', { title: 'Mở 20 điểm bán mới Q4', progress: 0 });
+  const { data: a } = await demo.post('/tasks', { title: 'Khảo sát khu vực A' });
+  const { data: b } = await demo.post('/tasks', { title: 'Ký hợp đồng điểm bán B', goal_id: g.id, priority: 'critical' });
+  const linked = await demo.post(`/goals/${g.id}/tasks`, { task_ids: [a.id] });
+  assert.equal(linked.data.linked, 1);
+  assert.equal(linked.data.goal.task_count, 2);
+  assert.equal((await demo.get(`/goals/${g.id}/tasks`)).data.length, 2);
+  await demo.put(`/tasks/${a.id}`, { status: 'done' });
+  assert.equal((await demo.get('/goals')).data.find((x) => x.id === g.id).progress, 50);
+  assert.equal((await demo.get(`/tasks/${b.id}`)).data.goal.title, 'Mở 20 điểm bán mới Q4');
+  // bỏ gắn → tiến độ tính lại
+  const after = (await demo.del(`/goals/${g.id}/tasks/${a.id}`)).data;
+  assert.equal(after.task_count, 1);
+  assert.equal(after.progress, 0);
+  // người khác không xem được mục tiêu của tôi
+  assert.equal((await (await login('minhtrang')).get(`/goals/${g.id}/tasks`)).status, 404);
+  // quản trị tối cao trong Wework quản lý được mục tiêu của mọi người
+  assert.equal((await admin.get(`/goals/${g.id}/tasks`)).status, 200);
+  // mức ưu tiên "Quan trọng & khẩn cấp" được tính vào ô "both" và lọc khẩn cấp
+  const r = (await admin.get('/wework/reports/overview?from=2020-01-01')).data;
+  assert.ok(r.eisenhower.both >= 1);
+  assert.equal((await admin.get('/wework/reports/tasks?from=2020-01-01&priority=critical')).data.total, r.eisenhower.both);
+  assert.ok((await demo.get('/tasks?status=urgent&scope=mine')).data.items.some((t) => t.id === b.id));
+  assert.ok((await demo.get('/home/agenda')).data.important.some((t) => t.id === b.id));
+});
+
+test('project members: add people or whole departments, change role, remove; multi-department projects', async () => {
+  const admin = await login('admin');
+  const mkt = await login('minhtrang');
+  const demo = await login('demo');
+  const deps = (await admin.get('/departments')).data;
+  const kd = deps.find((d) => d.name === 'Phòng Kinh doanh');
+  const mk = deps.find((d) => d.name === 'Phòng Marketing');
+  // dự án phối hợp 2 phòng ban, thêm luôn nhân sự các phòng ban
+  const { data: p } = await mkt.post('/projects', { name: 'Ra mắt dòng sản phẩm mới', department_ids: [mk.id, kd.id], add_department_members: true });
+  assert.deepEqual(p.departments.map((d) => d.id).sort(), [kd.id, mk.id].sort());
+  assert.ok(p.members.some((m) => m.id === demo.user.id));
+  // thành viên thường không quản lý được thành viên
+  assert.equal((await demo.post(`/projects/${p.id}/members`, { user_ids: [admin.user.id] })).status, 403);
+  // xoá, thêm lại, đổi vai trò
+  assert.ok(!(await mkt.del(`/projects/${p.id}/members/${demo.user.id}`)).data.members.some((m) => m.id === demo.user.id));
+  const add = await mkt.post(`/projects/${p.id}/members`, { user_ids: [demo.user.id], role: 'member' });
+  assert.equal(add.data.added, 1);
+  const promoted = await mkt.put(`/projects/${p.id}/members/${demo.user.id}`, { role: 'manager' });
+  assert.equal(promoted.data.members.find((m) => m.id === demo.user.id).role, 'manager');
+  assert.equal((await mkt.del(`/projects/${p.id}/members/${mkt.user.id}`)).status, 400); // chủ sở hữu
+  // quản trị viên là thành viên thường vẫn quản lý được
+  await mkt.post(`/projects/${p.id}/members`, { user_ids: [admin.user.id], role: 'member' });
+  assert.equal((await admin.get(`/projects/${p.id}`)).data.my_role, 'manager');
+  assert.equal((await admin.put(`/projects/${p.id}/members/${demo.user.id}`, { role: 'member' })).status, 200);
+  // đổi phòng ban phối hợp
+  const upd = await mkt.put(`/projects/${p.id}`, { department_ids: [kd.id] });
+  assert.deepEqual(upd.data.departments.map((d) => d.id), [kd.id]);
+});
+
+test('task comments: @mention notifies the person and lets them open the task', async () => {
+  const kd = await login('truongkd');
+  const demo = await login('demo');
+  const hr = await login('chilan');
+  const { data: t } = await kd.post('/tasks', { title: 'Chuẩn bị hồ sơ thầu', assignee_id: demo.user.id });
+  assert.equal((await hr.get(`/tasks/${t.id}`)).status, 403);
+  await kd.post(`/tasks/${t.id}/comments`, { content: 'Nhờ @chilan kiểm tra giúp hồ sơ nhân sự.' });
+  const notes = (await hr.get('/notifications')).data;
+  const n = (notes.items || notes).find((x) => x.type === 'mention');
+  assert.ok(n && n.link === `/wework/task/${t.id}` && /nhắc đến bạn/.test(n.title));
+  assert.equal((await hr.get(`/tasks/${t.id}`)).status, 200);
+  // người thực hiện vẫn nhận thông báo bình luận thường
+  assert.ok(((await demo.get('/notifications')).data.items || []).some((x) => x.type === 'comment' && x.link === `/wework/task/${t.id}`));
+});
+
+test('chat: opening a direct conversation repeatedly never duplicates it', async () => {
+  const demo = await login('demo');
+  const mkt = await login('minhtrang');
+  const ids = await Promise.all([1, 2, 3, 4].map(() => demo.post('/chat/direct', { user_id: mkt.user.id })));
+  assert.equal(new Set(ids.map((r) => r.data.id)).size, 1);
+  assert.equal((await mkt.post('/chat/direct', { user_id: demo.user.id })).data.id, ids[0].data.id);
+  assert.equal((await demo.get('/chat/channels')).data.filter((c) => c.kind === 'direct' && c.peer?.id === mkt.user.id).length, 1);
+});
+
+test('department / project tasks: outside people join a single task without joining the project', async () => {
+  const mkt = await login('minhtrang');   // chủ Project MKT
+  const hr = await login('chilan');       // phòng HCNS, không thuộc Project MKT
+  const projects = (await mkt.get('/projects')).data;
+  const p = projects.find((x) => x.name === 'Project MKT');
+  assert.equal((await hr.get(`/projects/${p.id}`)).status, 403);
+  // mời theo dõi / phối hợp một công việc của dự án
+  const { data: t } = await mkt.post('/tasks', { title: 'Tuyển CTV cho sự kiện', project_id: p.id, followers: [hr.user.id] });
+  const seen = await hr.get(`/tasks/${t.id}`);
+  assert.equal(seen.status, 200);
+  assert.equal(seen.data.can_contribute, true);
+  assert.equal(seen.data.outside_project, true);
+  assert.equal((await hr.post(`/tasks/${t.id}/comments`, { content: 'Đã có danh sách ứng viên' })).status, 201);
+  assert.equal((await hr.post(`/tasks/${t.id}/results`, { content: '<p>12 CTV đã xác nhận</p>' })).status, 201);
+  // vẫn không xem được các công việc khác / toàn bộ dự án
+  assert.equal((await hr.get(`/projects/${p.id}`)).status, 403);
+  assert.ok(!(await hr.get(`/tasks?project_id=${p.id}&scope=all`)).data.items.some((x) => x.id !== t.id));
+});
+
+test('business owner: top admin tier, protected from other admins; only an owner grants the role', async () => {
+  const gd = await login('giamdoc');
+  const admin = await login('admin');
+  assert.equal(gd.user.is_owner, 1);
+  assert.equal(gd.user.role, 'admin');
+  const chilan = admin.user && (await admin.get('/users')).data.find((u) => u.username === 'chilan');
+  // quản trị viên thường không sửa / khoá / đổi mật khẩu được Chủ doanh nghiệp
+  assert.equal((await admin.put(`/users/${gd.user.id}`, { name: 'X', role: 'member' })).status, 403);
+  assert.equal((await admin.del(`/users/${gd.user.id}`)).status, 403);
+  assert.equal((await admin.post('/account/members/reset-passwords', { ids: [gd.user.id], password: 'abcdef' })).status, 403);
+  // quản trị viên thường không trao được vai trò Chủ doanh nghiệp khi đã có Chủ doanh nghiệp
+  assert.equal((await admin.put(`/users/${chilan.id}`, { ...chilan, role: 'owner' })).status, 403);
+  // Chủ doanh nghiệp trao vai trò cho người khác → người đó có toàn quyền quản trị
+  const up = await gd.put(`/users/${chilan.id}`, { ...chilan, role: 'owner' });
+  assert.equal(up.status, 200);
+  assert.equal(up.data.is_owner, 1);
+  assert.equal(up.data.role, 'admin');
+  const lan = await login('chilan');
+  assert.equal((await lan.get('/account/security')).status, 200);
+  const members = await admin.get('/account/members?tab=admins');
+  assert.equal(members.data.counts.owners, 2);
+  assert.equal(members.data.items[0].is_owner, 1);
+  // thu hồi; không được bỏ Chủ doanh nghiệp cuối cùng
+  assert.equal((await gd.put(`/users/${chilan.id}`, { ...chilan, role: 'member' })).data.is_owner, 0);
+  const me = (await gd.get(`/users/${gd.user.id}`)).data;
+  assert.equal((await gd.put(`/users/${gd.user.id}`, { ...me, role: 'admin' })).status, 400);
+});
+
+test('web push: subscribe a device, notifications are encrypted (RFC 8291) and VAPID-signed, gone devices are removed', async () => {
+  const { flushBackground, unb64url, b64url } = await import('../src/push.js');
+  const demo = await login('demo');
+  const gd = await login('giamdoc');
+  const key = (await demo.get('/push/key')).data.key;
+  assert.equal(unb64url(key).length, 65);
+  // "trình duyệt" giả lập: cặp khoá ECDH của subscription
+  const ua = await crypto.subtle.generateKey({ name: 'ECDH', namedCurve: 'P-256' }, true, ['deriveBits']);
+  const uaPublic = new Uint8Array(await crypto.subtle.exportKey('raw', ua.publicKey));
+  const authSecret = crypto.getRandomValues(new Uint8Array(16));
+  const endpoint = 'https://web.push.apple.com/QTest-device';
+  assert.equal((await demo.post('/push/subscribe', { endpoint: 'http://x', keys: {} })).status, 400);
+  assert.equal((await demo.post('/push/subscribe', { endpoint, keys: { p256dh: b64url(uaPublic), auth: b64url(authSecret) } })).status, 200);
+  assert.equal((await demo.post('/push/status', { endpoint })).data.subscribed, true);
+
+  const sent = [];
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async (url, opts) => { sent.push({ url, opts }); return new Response(null, { status: sent.length === 1 ? 201 : 410 }); };
+  try {
+    await gd.post('/tasks', { title: 'Việc có thông báo đẩy', assignee_id: demo.user.id });
+    await flushBackground();
+    assert.equal(sent.length, 1);
+    const { url, opts } = sent[0];
+    assert.equal(url, endpoint);
+    assert.equal(opts.headers['Content-Encoding'], 'aes128gcm');
+    // VAPID: JWT ES256 ký bằng khoá công khai đã công bố, aud = origin của dịch vụ đẩy
+    const [, jwt, k] = /^vapid t=([^,]+), k=(.+)$/.exec(opts.headers.Authorization);
+    assert.equal(k, key);
+    const [h, p, s] = jwt.split('.');
+    const pub = await crypto.subtle.importKey('raw', unb64url(key), { name: 'ECDSA', namedCurve: 'P-256' }, false, ['verify']);
+    assert.ok(await crypto.subtle.verify({ name: 'ECDSA', hash: 'SHA-256' }, pub, unb64url(s), new TextEncoder().encode(`${h}.${p}`)));
+    assert.equal(JSON.parse(new TextDecoder().decode(unb64url(p))).aud, 'https://web.push.apple.com');
+    // Giải mã như trình duyệt
+    const body = new Uint8Array(opts.body);
+    const salt = body.slice(0, 16);
+    const idlen = body[20];
+    const asPublic = body.slice(21, 21 + idlen);
+    const cipher = body.slice(21 + idlen);
+    const hk = async (saltB, ikm, info, bits) => new Uint8Array(await crypto.subtle.deriveBits({ name: 'HKDF', hash: 'SHA-256', salt: saltB, info },
+      await crypto.subtle.importKey('raw', ikm, 'HKDF', false, ['deriveBits']), bits));
+    const te = new TextEncoder();
+    const asKey = await crypto.subtle.importKey('raw', asPublic, { name: 'ECDH', namedCurve: 'P-256' }, false, []);
+    const ecdh = new Uint8Array(await crypto.subtle.deriveBits({ name: 'ECDH', public: asKey }, ua.privateKey, 256));
+    const info = new Uint8Array([...te.encode('WebPush: info\0'), ...uaPublic, ...asPublic]);
+    const ikm = await hk(authSecret, ecdh, info, 256);
+    const cek = await hk(salt, ikm, te.encode('Content-Encoding: aes128gcm\0'), 128);
+    const nonce = await hk(salt, ikm, te.encode('Content-Encoding: nonce\0'), 96);
+    const plain = new Uint8Array(await crypto.subtle.decrypt({ name: 'AES-GCM', iv: nonce },
+      await crypto.subtle.importKey('raw', cek, 'AES-GCM', false, ['decrypt']), cipher));
+    assert.equal(plain[plain.length - 1], 2);
+    const msg = JSON.parse(new TextDecoder().decode(plain.slice(0, -1)));
+    assert.equal(msg.title, 'LDL Wework');
+    assert.match(msg.body, /Việc có thông báo đẩy/);
+    assert.match(msg.url, /^\/wework\/task\/\d+$/);
+    assert.ok(msg.badge >= 1);
+    // Dịch vụ đẩy báo 410 (thiết bị đã huỷ) → tự xoá đăng ký
+    await gd.post('/tasks', { title: 'Việc thứ hai', assignee_id: demo.user.id });
+    await flushBackground();
+    assert.equal((await demo.post('/push/status', { endpoint })).data.subscribed, false);
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+});
+
+test('opening a task / chat marks its notifications as read (keeps the app icon badge accurate)', async () => {
+  const demo = await login('demo');
+  const gd = await login('giamdoc');
+  const before = (await demo.get('/notifications?limit=1')).data.unread;
+  const t = (await gd.post('/tasks', { title: 'Việc kiểm tra số chưa đọc', assignee_id: demo.user.id })).data;
+  assert.equal((await demo.get('/notifications?limit=1')).data.unread, before + 1);
+  await demo.get(`/tasks/${t.id}`);
+  assert.equal((await demo.get('/notifications?limit=1')).data.unread, before);
+  const dm = (await gd.post('/chat/direct', { user_id: demo.user.id })).data;
+  const fd = new FormData(); fd.append('content', 'Chào em');
+  await gd.post(`/chat/channels/${dm.id}/messages`, fd);
+  assert.equal((await demo.get('/notifications?limit=1')).data.unread, before + 1);
+  await demo.post(`/chat/channels/${dm.id}/read`, {});
+  assert.equal((await demo.get('/notifications?limit=1')).data.unread, before);
+});
+
+test('@mentions in request, document and chat comments: notify and grant access to read the item', async () => {
+  const demo = await login('demo');
+  const mt = await login('minhtrang');
+  const unread = async () => (await mt.get('/notifications?limit=50')).data;
+  // Đề xuất #1 (demo tạo): minhtrang chưa xem được → được nhắc tên → xem được + có thông báo "nhắc đến bạn"
+  const rid = (await demo.get('/requests')).data.items.find((q) => q.creator_id === demo.user.id).id;
+  assert.equal((await mt.get(`/requests/${rid}`)).status, 403);
+  assert.equal((await demo.post(`/requests/${rid}/comments`, { content: 'Nhờ @MinhTrang. xem giúp' })).status, 201);
+  assert.equal((await mt.get(`/requests/${rid}`)).status, 200);
+  assert.ok((await unread()).items.some((n) => n.type === 'mention' && n.link === `/request/${rid}`));
+  // Văn bản nháp: chỉ người tạo / người duyệt xem được → nhắc tên cấp quyền xem để trao đổi
+  const hr = await login('chilan');
+  const gd = await login('giamdoc');
+  const fd = new FormData(); fd.append('title', 'Dự thảo quy chế thưởng'); fd.append('approvers', String(gd.user.id));
+  const doc = (await hr.post('/documents', fd)).data;
+  assert.equal((await mt.get(`/documents/${doc.id}`)).status, 403);
+  await hr.post(`/documents/${doc.id}/comments`, { content: '@minhtrang góp ý phần truyền thông nhé' });
+  assert.equal((await mt.get(`/documents/${doc.id}`)).status, 200);
+  assert.ok((await unread()).items.some((n) => n.type === 'mention' && n.link === `/office/doc/${doc.id}`));
+  // Chat: kênh riêng tư chỉ nhắc được thành viên
+  const ch = (await demo.post('/chat/channels', { name: 'nhom-rieng', kind: 'private', members: [] })).data;
+  const before = (await unread()).items.filter((n) => n.link === `/message/${ch.id}`).length;
+  const m1 = new FormData(); m1.append('content', '@minhtrang ơi');
+  await demo.post(`/chat/channels/${ch.id}/messages`, m1);
+  assert.equal((await unread()).items.filter((n) => n.link === `/message/${ch.id}`).length, before);
+  const chung = (await demo.get('/chat/channels')).data.find((c) => c.kind === 'public');
+  const m2 = new FormData(); m2.append('content', 'Chào @minhtrang');
+  await demo.post(`/chat/channels/${chung.id}/messages`, m2);
+  assert.ok((await unread()).items.some((n) => n.type === 'mention' && n.link === `/message/${chung.id}`));
+});
+
+test('task completion approval per department: staff sends for review, manager approves; completed tasks are locked (comments only)', async () => {
+  const admin = await login('admin');
+  const kd = await login('truongkd');
+  const demo = await login('demo');
+  const dep = (await admin.get('/departments')).data.find((d) => d.name === 'Phòng Kinh doanh');
+  await admin.put(`/departments/${dep.id}`, { ...dep, task_approval: true });
+  const t = (await kd.post('/tasks', { title: 'Báo cáo doanh số tuần', assignee_id: demo.user.id })).data;
+  let d = (await demo.get(`/tasks/${t.id}`)).data;
+  assert.equal(d.requires_approval, true);
+  assert.equal(d.can_approve, false);
+  assert.ok(d.approvers.some((u) => u.id === kd.user.id));
+  // nhân viên bấm Hoàn thành → chuyển "Chờ đánh giá", quản lý nhận thông báo
+  d = (await demo.put(`/tasks/${t.id}`, { status: 'done' })).data;
+  assert.equal(d.status, 'review');
+  assert.ok((await kd.get('/notifications?limit=20')).data.items.some((n) => n.link === `/wework/task/${t.id}` && /gửi duyệt hoàn thành/.test(n.title)));
+  assert.equal((await demo.post(`/tasks/${t.id}/review`, { decision: 'approve' })).status, 403);
+  // trả lại cần lý do
+  assert.equal((await kd.post(`/tasks/${t.id}/review`, { decision: 'reject' })).status, 400);
+  d = (await kd.post(`/tasks/${t.id}/review`, { decision: 'reject', comment: 'Thiếu số liệu miền Trung' })).data;
+  assert.equal(d.status, 'doing');
+  await demo.put(`/tasks/${t.id}`, { status: 'review' });
+  d = (await kd.post(`/tasks/${t.id}/review`, { decision: 'approve' })).data;
+  assert.equal(d.status, 'done');
+  assert.equal(d.locked, true);
+  // đã hoàn thành: không sửa / thêm kết quả / tệp / checklist; vẫn bình luận được
+  assert.equal((await demo.put(`/tasks/${t.id}`, { title: 'Sửa tên' })).status, 403);
+  const fd = new FormData(); fd.append('content', '<p>Kết quả bổ sung</p>');
+  assert.equal((await demo.post(`/tasks/${t.id}/results`, fd)).status, 403);
+  assert.equal((await kd.post(`/tasks/${t.id}/checklist`, { content: 'x' })).status, 403);
+  assert.equal((await demo.post(`/tasks/${t.id}/comments`, { content: 'Em cảm ơn anh' })).status, 201);
+  // chỉ quản lý mở lại được
+  assert.equal((await demo.put(`/tasks/${t.id}`, { status: 'doing' })).status, 403);
+  assert.equal((await kd.put(`/tasks/${t.id}`, { status: 'doing' })).data.status, 'doing');
+  await admin.put(`/departments/${dep.id}`, { ...dep, task_approval: false });
+  // phòng ban tắt duyệt: nhân viên tự hoàn thành như trước
+  assert.equal((await demo.put(`/tasks/${t.id}`, { status: 'done' })).data.status, 'done');
+});
+
+test('task approval: only the department head approves; heads complete their own tasks; toggle per department', async () => {
+  const admin = await login('admin');
+  const kd = await login('truongkd');
+  const mkt = await login('minhtrang');
+  const demo = await login('demo');
+  const deps = (await admin.get('/departments')).data;
+  const kdDep = deps.find((d) => d.name === 'Phòng Kinh doanh');
+  const itDep = deps.find((d) => d.name === 'Phòng IT');
+  // phòng ban chưa có trưởng phòng: không bật được
+  assert.equal((await admin.put(`/departments/${itDep.id}/task-approval`, { enabled: true })).status, 400);
+  assert.equal((await kd.put(`/departments/${kdDep.id}/task-approval`, { enabled: true })).status, 403);
+  assert.equal((await admin.put(`/departments/${kdDep.id}/task-approval`, { enabled: true })).data.task_approval, 1);
+  // quản lý dự án (trưởng phòng khác) giao việc cho nhân viên Kinh doanh: không được duyệt, chỉ trưởng phòng KD duyệt
+  const p = (await mkt.post('/projects', { name: 'Dự án duyệt hoàn thành', members: [demo.user.id] })).data;
+  const t = (await mkt.post('/tasks', { title: 'Khảo sát điểm bán', project_id: p.id, assignee_id: demo.user.id })).data;
+  let d = (await demo.get(`/tasks/${t.id}`)).data;
+  assert.deepEqual(d.approvers.map((u) => u.id), [kd.user.id]);
+  assert.equal((await demo.put(`/tasks/${t.id}`, { status: 'done' })).data.status, 'review');
+  assert.equal((await mkt.get(`/tasks/${t.id}`)).data.can_approve, false);
+  assert.equal((await mkt.post(`/tasks/${t.id}/review`, { decision: 'approve' })).status, 403);
+  assert.equal((await mkt.put(`/tasks/${t.id}`, { status: 'done' })).data.status, 'review');
+  d = (await kd.post(`/tasks/${t.id}/review`, { decision: 'approve' })).data;
+  assert.equal(d.status, 'done');
+  // tạo sẵn ở trạng thái Hoàn thành cũng chuyển Chờ đánh giá
+  assert.equal((await demo.post('/tasks', { title: 'Việc đã làm xong', status: 'done' })).data.status, 'review');
+  // quản trị viên thấy chẩn đoán phòng ban của người thực hiện
+  assert.ok((await admin.get(`/tasks/${t.id}`)).data.approval_departments.some((x) => x.id === kdDep.id && x.task_approval === 1));
+  assert.equal((await demo.get(`/tasks/${t.id}`)).data.approval_departments, undefined);
+  // trưởng phòng tự tích hoàn thành việc của mình
+  const own = (await kd.post('/tasks', { title: 'Họp giao ban tuần' })).data;
+  assert.equal((await kd.put(`/tasks/${own.id}`, { status: 'done' })).data.status, 'done');
+  // tắt: nhân viên tự hoàn thành
+  await admin.put(`/departments/${kdDep.id}/task-approval`, { enabled: false });
+  const t2 = (await kd.post('/tasks', { title: 'Cập nhật giá', assignee_id: demo.user.id })).data;
+  assert.equal((await demo.put(`/tasks/${t2.id}`, { status: 'done' })).data.status, 'done');
+});
+
+test('request staged approval flow: direct manager → related departments → final approver; printable data', async () => {
+  const admin = await login('admin');
+  const users = (await admin.get('/users')).data;
+  const id = (u) => users.find((x) => x.username === u).id;
+  const g = (await admin.post('/request-groups', {
+    name: 'Đề nghị thanh toán kiểm thử', category: 'Tài chính', fields: [{ label: 'Số tiền', type: 'money', required: true }],
+    flow: 'any', approvers: [id('thuhuyen')], custom_approvers: true, manager_approval: true, final_approver_id: id('giamdoc'),
+    print_title: 'GIẤY ĐỀ NGHỊ THANH TOÁN', print_code: 'BM-KT-02', print_note: 'Kèm hoá đơn chứng từ hợp lệ.',
+  })).data;
+  const demo = await login('demo');
+  const preview = (await demo.get(`/request-groups/${g.id}/plan`)).data;
+  assert.deepEqual(preview.steps.map((s) => [s.stage, s.user_id]), [['manager', id('truongkd')], ['dept', id('thuhuyen')], ['final', id('giamdoc')]]);
+  const key = (await demo.get(`/request-groups/${g.id}`)).data.fields[0].key;
+  const fd = new FormData(); fd.append('group_id', g.id); fd.append('data', JSON.stringify({ [key]: '2.500.000' }));
+  const q = (await demo.post('/requests', fd)).data;
+  assert.equal(q.flow, 'sequential');
+  assert.ok(q.submitted_at);
+  assert.equal(q.print.code, 'BM-KT-02');
+  assert.deepEqual(q.approvers.map((a) => a.stage), ['manager', 'dept', 'final']);
+  // phải đúng thứ tự: quản lý trực tiếp → kế toán → giám đốc
+  const gd = await login('giamdoc');
+  assert.equal((await gd.post(`/requests/${q.id}/decide`, { action: 'approve' })).status, 403);
+  const kd = await login('truongkd');
+  await kd.post(`/requests/${q.id}/decide`, { action: 'approve' });
+  const kt = await login('thuhuyen');
+  await kt.post(`/requests/${q.id}/decide`, { action: 'approve' });
+  const done = (await gd.post(`/requests/${q.id}/decide`, { action: 'approve' })).data;
+  assert.equal(done.status, 'approved');
+  assert.ok(done.approvers.every((a) => a.status === 'approved' && a.acted_at));
+  // trưởng phòng gửi: quản lý của họ chính là người duyệt cuối → không duyệt 2 lần
+  const plan2 = (await kd.get(`/request-groups/${g.id}/plan`)).data;
+  assert.deepEqual(plan2.steps.map((s) => s.stage), ['dept', 'final']);
+});
+
+test('wework bulk actions: only admins / business owners, never department heads or staff', async () => {
+  const admin = await login('admin');
+  const owner = await login('giamdoc');
+  const head = await login('truongkd');
+  const staff = await login('demo');
+  const tasks = (await admin.get('/tasks?limit=5')).data.items;
+  assert.ok(tasks.length > 0);
+  const ids = tasks.map((t) => t.id);
+  for (const u of [head, staff]) {
+    const r = await u.post('/tasks/bulk', { ids, action: 'follow' });
+    assert.equal(r.status, 403);
+  }
+  assert.equal((await admin.post('/tasks/bulk', { ids, action: 'follow' })).status, 200);
+  const r = await owner.post('/tasks/bulk', { ids: [], action: 'follow' });
+  assert.equal(r.status, 200);
+});
+
+test('comments accept image / file attachments in tasks, requests and documents', async () => {
+  const admin = await login('admin');
+  await admin.post('/users', { username: 'cmt.outsider', password: '123456', name: 'Người ngoài' });
+  const outsider = await login('cmt.outsider');
+  const task = (await admin.get('/tasks?limit=1')).data.items[0];
+  const reqs = (await admin.get('/requests?box=all&limit=1')).data;
+  const docs = (await admin.get('/documents?limit=1')).data;
+  const targets = [['tasks', task.id], ['requests', (reqs.items || reqs)[0]?.id], ['documents', (docs.items || docs)[0]?.id]].filter(([, id]) => id);
+  assert.ok(targets.length >= 2);
+  for (const [base, id] of targets) {
+    // chỉ có ảnh, không có chữ
+    const fd = new FormData();
+    fd.append('content', '');
+    fd.append('files', new File([new Uint8Array([137, 80, 78, 71])], 'anh.png', { type: 'image/png' }));
+    fd.append('files', new File(['xin chào'], 'ghi-chu.txt', { type: 'text/plain' }));
+    const r = await admin.post(`/${base}/${id}/comments`, fd);
+    assert.equal(r.status, 201, `${base}: ${JSON.stringify(r.data)}`);
+    assert.equal(r.data.files.length, 2);
+    const list = (await admin.get(`/${base}/${id}/comments`)).data;
+    const mine = list.find((x) => x.id === r.data.id);
+    assert.deepEqual(mine.files.map((f) => f.original_name), ['anh.png', 'ghi-chu.txt']);
+    const file = await admin.get(`/${base}/${id}/comment-files/${mine.files[1].id}`);
+    assert.equal(file.status, 200);
+    assert.equal(file.data, 'xin chào');
+    assert.equal((await admin.post(`/${base}/${id}/comment-files/${mine.files[1].id}/link`)).status, 200);
+    // tệp của bản ghi khác / người không có quyền xem
+    assert.equal((await admin.get(`/${base}/${id + 999}/comment-files/${mine.files[1].id}`)).status, 404);
+    if (base === 'requests') assert.equal((await outsider.get(`/${base}/${id}/comment-files/${mine.files[1].id}`)).status, 403);
+    // bình luận trống hoàn toàn vẫn bị từ chối
+    assert.equal((await admin.post(`/${base}/${id}/comments`, { content: '  ' })).status, 400);
+  }
+  // xoá bình luận công việc → xoá luôn tệp
+  const c = (await admin.get(`/tasks/${task.id}/comments`)).data.find((x) => x.files?.length);
+  assert.equal((await admin.del(`/tasks/${task.id}/comments/${c.id}`)).status, 200);
+  assert.equal((await admin.get(`/tasks/${task.id}/comment-files/${c.files[0].id}`)).status, 404);
+});
+
+test('comments can be edited by their author and deleted by the author or an admin', async () => {
+  const admin = await login('admin');
+  const demo = await login('demo');
+  const head = await login('truongkd');
+  const task = (await demo.get('/tasks?limit=1')).data.items[0];
+  const reqs = (await demo.get('/requests?limit=1')).data;
+  const docs = (await demo.get('/documents?limit=1')).data;
+  const targets = [['tasks', task?.id], ['requests', (reqs.items || reqs)[0]?.id], ['documents', (docs.items || docs)[0]?.id]].filter(([, id]) => id);
+  assert.ok(targets.length >= 2);
+  for (const [base, id] of targets) {
+    const fd = new FormData();
+    fd.append('content', 'Bản nháp');
+    fd.append('files', new File(['a'], 'a.txt', { type: 'text/plain' }));
+    fd.append('files', new File(['b'], 'b.txt', { type: 'text/plain' }));
+    const cm = (await demo.post(`/${base}/${id}/comments`, fd)).data;
+    // người khác (kể cả quản trị viên) không sửa được nội dung của người viết
+    assert.equal((await admin.put(`/${base}/${id}/comments/${cm.id}`, { content: 'x' })).status, 403);
+    // sửa: đổi nội dung + @nhắc tên mới, bỏ 1 tệp, thêm 1 tệp
+    const ed = new FormData();
+    ed.append('content', 'Đã chỉnh sửa @thuhuyen');
+    ed.append('remove_files', String(cm.files[0].id));
+    ed.append('files', new File(['c'], 'c.txt', { type: 'text/plain' }));
+    const r = await demo.put(`/${base}/${id}/comments/${cm.id}`, ed);
+    assert.equal(r.status, 200, JSON.stringify(r.data));
+    assert.equal(r.data.content, 'Đã chỉnh sửa @thuhuyen');
+    assert.ok(r.data.updated_at);
+    assert.deepEqual(r.data.files.map((f) => f.original_name), ['b.txt', 'c.txt']);
+    assert.equal((await demo.get(`/${base}/${id}/comment-files/${cm.files[0].id}`)).status, 404);
+    // không được sửa thành bình luận rỗng
+    assert.equal((await demo.put(`/${base}/${id}/comments/${cm.id}`, toForm({ content: '', remove_files: r.data.files.map((f) => f.id).join(',') }))).status, 400);
+    // trưởng phòng không phải người viết → không xoá được; quản trị viên xoá được
+    const other = (await demo.post(`/${base}/${id}/comments`, { content: 'Xoá thử' })).data;
+    if (base === 'tasks') assert.equal((await head.del(`/${base}/${id}/comments/${other.id}`)).status, 403);
+    assert.equal((await admin.del(`/${base}/${id}/comments/${other.id}`)).status, 200);
+    assert.equal((await demo.del(`/${base}/${id}/comments/${cm.id}`)).status, 200);
+    const left = (await demo.get(`/${base}/${id}/comments`)).data.map((x) => x.id);
+    assert.ok(!left.includes(cm.id) && !left.includes(other.id));
+    assert.equal((await demo.get(`/${base}/${id}/comment-files/${r.data.files[0].id}`)).status, 404);
+  }
+  const kt = await login('thuhuyen');
+  const n = (await kt.get('/notifications?limit=20')).data.items.filter((x) => x.type === 'mention' && x.title.includes('LDL Demo'));
+  assert.ok(n.length >= targets.length);
+});
+
+function toForm(obj) {
+  const fd = new FormData();
+  for (const [k, v] of Object.entries(obj)) fd.append(k, v);
+  return fd;
+}
+
+test('share links for comment files last 7 days and download without a session', async () => {
+  const admin = await login('admin');
+  const task = (await admin.get('/tasks?limit=1')).data.items[0];
+  const fd = new FormData();
+  fd.append('files', new File(['noi dung chia se'], 'bao-cao.txt', { type: 'text/plain' }));
+  const cm = (await admin.post(`/tasks/${task.id}/comments`, fd)).data;
+  const view = (await admin.post(`/tasks/${task.id}/comment-files/${cm.files[0].id}/link`)).data;
+  assert.equal(view.expires_in, 900);
+  const share = (await admin.post(`/tasks/${task.id}/comment-files/${cm.files[0].id}/link?share=1`)).data;
+  assert.equal(share.expires_in, 7 * 24 * 3600);
+  const r = await app.fetch(new Request(share.url.replace(/^https?:\/\/[^/]+\/api/, base)));
+  assert.equal(r.status, 200);
+  assert.equal(await r.text(), 'noi dung chia se');
+});
+
+test('comment replies thread under the root comment, notify the replied author, and go with the root on delete', async () => {
+  const admin = await login('admin');
+  const demo = await login('demo');
+  const task = (await demo.get('/tasks?limit=1')).data.items[0];
+  const reqs = (await demo.get('/requests?limit=1')).data;
+  const docs = (await demo.get('/documents?limit=1')).data;
+  const targets = [['tasks', task?.id], ['requests', (reqs.items || reqs)[0]?.id], ['documents', (docs.items || docs)[0]?.id]].filter(([, id]) => id);
+  for (const [base, id] of targets) {
+    const root = (await demo.post(`/${base}/${id}/comments`, { content: `Câu hỏi ${base}` })).data;
+    assert.equal(root.parent_id, null);
+    const r1 = await admin.post(`/${base}/${id}/comments`, { content: 'Trả lời 1', parent_id: root.id });
+    assert.equal(r1.status, 201, JSON.stringify(r1.data));
+    assert.equal(r1.data.parent_id, root.id);
+    // trả lời một trả lời → vẫn gắn vào bình luận gốc (một cấp)
+    const fd = new FormData();
+    fd.append('content', '');
+    fd.append('parent_id', String(r1.data.id));
+    fd.append('files', new File(['x'], 'tra-loi.txt', { type: 'text/plain' }));
+    const r2 = await demo.post(`/${base}/${id}/comments`, fd);
+    assert.equal(r2.status, 201);
+    assert.equal(r2.data.parent_id, root.id);
+    // bình luận cha không thuộc bản ghi này → 404
+    assert.equal((await demo.post(`/${base}/${id + 999}/comments`, { content: 'x', parent_id: root.id })).status, 404);
+    // xoá bình luận gốc → xoá luôn trả lời và tệp của trả lời
+    assert.equal((await demo.del(`/${base}/${id}/comments/${root.id}`)).status, 200);
+    const left = (await demo.get(`/${base}/${id}/comments`)).data.map((x) => x.id);
+    assert.ok(![root.id, r1.data.id, r2.data.id].some((x) => left.includes(x)));
+    assert.equal((await demo.get(`/${base}/${id}/comment-files/${r2.data.files[0].id}`)).status, 404);
+  }
+  const n = (await demo.get('/notifications?limit=30')).data.items.filter((x) => x.title.includes('đã trả lời bình luận của bạn'));
+  assert.ok(n.length >= targets.length);
+});
+
+test('request flows: parallel (all at once), approver blocks with any-one block, visibility, notify manager', async () => {
+  const admin = await login('admin');
+  const demo = await login('demo');
+  const users = (await admin.get('/users')).data;
+  const id = (u) => users.find((x) => x.username === u).id;
+  const deps = (await admin.get('/departments')).data;
+  const kdDep = deps.find((d) => d.name === 'Phòng Kinh doanh').id;
+  const fields = [{ label: 'Nội dung', type: 'textarea', required: true }];
+  // duyệt đồng thời: cả hai cùng nhận, cả hai phải đồng ý
+  const par = (await admin.post('/request-groups', { name: 'Test đồng thời', category: 'Test', flow: 'parallel', fields,
+    approvers: [id('thuhuyen'), id('giamdoc')], custom_approvers: false, notify_manager: true })).data.id;
+  const fd = new FormData();
+  fd.append('group_id', par);
+  fd.append('data', JSON.stringify({ f1: 'x' }));
+  const q = (await demo.post('/requests', fd)).data;
+  assert.deepEqual(q.approvers.map((a) => a.step), [1, 1]);
+  assert.ok(q.followers.some((f) => f.id === id('truongkd')), 'quản lý trực tiếp được thêm vào người theo dõi');
+  const kt = await login('thuhuyen');
+  const gd = await login('giamdoc');
+  assert.equal((await gd.get(`/requests/${q.id}`)).data.my_turn, true);
+  assert.equal((await kt.post(`/requests/${q.id}/decide`, { action: 'approve' })).data.status, 'pending');
+  assert.equal((await gd.post(`/requests/${q.id}/decide`, { action: 'approve' })).data.status, 'approved');
+
+  // khối người duyệt: khối 1 "một người đồng ý" (kế toán / HCNS), khối 2 "tất cả" (giám đốc)
+  const blk = (await admin.post('/request-groups', { name: 'Test khối', category: 'Test', flow: 'blocks', fields, custom_approvers: false,
+    blocks: [{ mode: 'any', users: [id('thuhuyen'), id('chilan')] }, { mode: 'all', users: [id('giamdoc')] }] })).data.id;
+  const g = (await admin.get(`/request-groups/${blk}`)).data;
+  assert.deepEqual(g.blocks.map((b) => b.mode), ['any', 'all']);
+  const fd2 = new FormData();
+  fd2.append('group_id', blk);
+  fd2.append('data', JSON.stringify({ f1: 'y' }));
+  const q2 = (await demo.post('/requests', fd2)).data;
+  const hr = await login('chilan');
+  assert.equal((await gd.get(`/requests/${q2.id}`)).data.my_turn, false);
+  await hr.post(`/requests/${q2.id}/decide`, { action: 'approve' });
+  const after = (await gd.get(`/requests/${q2.id}`)).data;
+  assert.equal(after.approvers.find((a) => a.user_id === id('thuhuyen')).status, 'skipped');
+  assert.equal(after.my_turn, true);
+  assert.equal((await gd.post(`/requests/${q2.id}/decide`, { action: 'approve' })).data.status, 'approved');
+
+  // phạm vi riêng tư: chỉ Phòng Kinh doanh tạo được
+  const pri = (await admin.post('/request-groups', { name: 'Test riêng KD', category: 'Test', flow: 'any', fields, approvers: [id('truongkd')],
+    visibility: 'private', member_departments: [kdDep] })).data.id;
+  assert.ok((await demo.get('/request-groups')).data.some((x) => x.id === pri));
+  assert.ok(!(await kt.get('/request-groups')).data.some((x) => x.id === pri));
+  const fd3 = new FormData();
+  fd3.append('group_id', pri);
+  fd3.append('data', JSON.stringify({ f1: 'z' }));
+  assert.equal((await kt.post('/requests', fd3)).status, 403);
+});
+
+test('request group admin tools: bulk SLA, replace approver, export / import, duplicate', async () => {
+  const admin = await login('admin');
+  const demo = await login('demo');
+  const users = (await admin.get('/users')).data;
+  const id = (u) => users.find((x) => x.username === u).id;
+  const gid = (await admin.post('/request-groups', { name: 'Test công cụ', category: 'Tools', flow: 'sequential',
+    fields: [{ label: 'Nội dung', type: 'textarea', required: true }], approvers: [id('thuhuyen')], followers: [id('chilan')] })).data.id;
+  assert.equal((await demo.post('/request-groups/bulk', { ids: [gid], action: 'sla', sla_hours: 8 })).status, 403);
+  await admin.post('/request-groups/bulk', { ids: [gid], action: 'sla', sla_hours: 8 });
+  assert.equal((await admin.get(`/request-groups/${gid}`)).data.sla_hours, 8);
+
+  const fd = new FormData();
+  fd.append('group_id', gid);
+  fd.append('data', JSON.stringify({ f1: 'a' }));
+  const q = (await demo.post('/requests', fd)).data;
+  const rep = await admin.post('/request-groups/replace-approver', { from_id: id('thuhuyen'), to_id: id('minhtrang'), pending: true });
+  assert.ok(rep.data.groups >= 1);
+  assert.ok(rep.data.requests >= 1);
+  assert.ok((await admin.get(`/request-groups/${gid}`)).data.approvers.some((a) => a.user_id === id('minhtrang')));
+  const mkt = await login('minhtrang');
+  assert.equal((await mkt.get(`/requests/${q.id}`)).data.my_turn, true);
+
+  const exp = (await admin.get(`/request-groups/export?ids=${gid}`)).data;
+  assert.equal(exp.groups[0].approvers[0].username, 'minhtrang');
+  const imp = await admin.post('/request-groups/import', { groups: [{ ...exp.groups[0], name: 'Test nhập JSON' },
+    { name: 'Test nhập Excel', category: 'Tools', flow: 'Duyệt đồng thời', sla: '12', approvers: 'truongkd, giamdoc', followers: '@chilan' },
+    { name: '' }] });
+  assert.equal(imp.data.created.length, 2);
+  assert.equal(imp.data.errors.length, 1);
+  const excel = (await admin.get(`/request-groups/${imp.data.created[1].id}`)).data;
+  assert.equal(excel.flow, 'parallel');
+  assert.equal(excel.sla_hours, 12);
+  assert.equal(excel.approvers.length, 2);
+
+  const dup = (await admin.post(`/request-groups/${gid}/duplicate`)).data.id;
+  const d = (await admin.get(`/request-groups/${dup}`)).data;
+  assert.match(d.name, /Bản sao/);
+  assert.equal(d.active, false);
+  assert.equal(d.approvers.length, 1);
+});
+
+test('HRM records: contracts sync the profile, career events, documents, views, export / import, report', async () => {
+  const hr = await login('chilan');
+  const demo = await login('demo');
+  const kd = await login('truongkd');
+  const cat = (await demo.get('/hrm/catalog')).data;
+  assert.ok(cat.contract_types.length && cat.doc_types.length);
+  assert.equal((await demo.put('/hrm/catalog', { offices: ['X'] })).status, 403);
+  assert.deepEqual((await hr.put('/hrm/catalog', { offices: ['Hà Nội', 'Hà Nội', 'Đà Nẵng'] })).data.offices, ['Hà Nội', 'Đà Nẵng']);
+
+  // hợp đồng mới → hồ sơ cập nhật loại / hạn hợp đồng; lương chỉ HR và chính nhân viên xem
+  const fd = new FormData();
+  fd.append('contract_type', 'Xác định thời hạn 24 tháng');
+  fd.append('start_date', '2026-01-01');
+  fd.append('end_date', '2027-12-31');
+  fd.append('salary', '15.000.000');
+  fd.append('close_previous', '1');
+  fd.append('files', new File(['hop dong'], 'hopdong.pdf', { type: 'application/pdf' }));
+  const k = await hr.post(`/hrm/employees/${demo.user.id}/contracts`, fd);
+  assert.equal(k.status, 201);
+  assert.equal(k.data.salary, 15000000);
+  const prof = (await demo.get(`/hrm/employees/${demo.user.id}`)).data;
+  assert.equal(prof.contract_type, 'Xác định thời hạn 24 tháng');
+  assert.equal(prof.contract_end, '2027-12-31');
+  assert.equal((await demo.get(`/hrm/employees/${demo.user.id}/contracts`)).data.filter((x) => x.status === 'active').length, 1);
+  assert.equal((await kd.get(`/hrm/employees/${demo.user.id}/contracts`)).status, 403);
+  assert.equal((await demo.get(`/hrm/contracts/${k.data.id}/file`)).status, 200);
+  assert.ok((await hr.get('/hrm/contracts?q=Demo')).data.length >= 2);
+
+  // thăng tiến áp dụng ngay → đổi chức danh; lương điều chỉnh bị ẩn với quản lý trực tiếp
+  await hr.post(`/hrm/employees/${demo.user.id}/careers`, { type: 'promotion', effective_date: '2026-06-01', to_value: 'Trưởng nhóm kinh doanh', apply: true });
+  await hr.post(`/hrm/employees/${demo.user.id}/careers`, { type: 'raise', effective_date: '2026-06-01', from_value: '15000000', to_value: '18000000' });
+  assert.equal((await demo.get(`/hrm/employees/${demo.user.id}`)).data.title, 'Trưởng nhóm kinh doanh');
+  const seenByManager = (await kd.get(`/hrm/employees/${demo.user.id}/careers`)).data;
+  assert.equal(seenByManager.find((x) => x.type === 'raise').to_value, null);
+  assert.equal((await demo.get(`/hrm/employees/${demo.user.id}/careers`)).data.find((x) => x.type === 'raise').to_value, '18000000');
+  assert.match((await hr.get('/hrm/employees?q=Demo')).data[0].last_promotion, /Trưởng nhóm/);
+
+  // giấy tờ: nhân viên tự bổ sung, người khác không xem được
+  const fd2 = new FormData();
+  fd2.append('doc_type', 'CCCD / Hộ chiếu');
+  fd2.append('files', new File(['cccd'], 'cccd.jpg', { type: 'image/jpeg' }));
+  const docs = (await demo.post(`/hrm/employees/${demo.user.id}/documents`, fd2)).data;
+  assert.equal(docs.length, 1);
+  assert.equal((await kd.get(`/hrm/employees/${demo.user.id}/documents`)).status, 403);
+  assert.equal((await kd.get(`/hrm/documents/${docs[0].id}`)).status, 404);
+  assert.equal((await hr.get(`/hrm/documents/${docs[0].id}`)).status, 200);
+
+  // view "tôi quản lý", trích xuất CSV, cập nhật hàng loạt
+  const hrUser = hr.user;
+  const mine = (await hr.get('/hrm/employees?view=mine')).data;
+  assert.ok(mine.every((e) => e.manager_id === hrUser.id));
+  const csv = await hr.get('/hrm/employees/export');
+  assert.match(csv.headers.get('content-type'), /text\/csv/);
+  assert.match(csv.data, /Mã NV,Họ tên/);
+  const imp = (await hr.post('/hrm/employees/import', { rows: [{ username: 'demo', office: 'Đà Nẵng', official_date: '20/03/2023' }, { username: 'khongco' }] })).data;
+  assert.equal(imp.updated, 1);
+  assert.equal(imp.errors.length, 1);
+  const d = (await hr.get(`/hrm/employees/${demo.user.id}`)).data;
+  assert.equal(d.office, 'Đà Nẵng');
+  assert.equal(d.official_date, '2023-03-20');
+
+  const rep = (await hr.get('/hrm/report')).data;
+  assert.ok(rep.total >= 9);
+  assert.equal(rep.turnover.length, 12);
+  assert.equal(rep.seniority.reduce((s, b) => s + b.c, 0), rep.total);
+  assert.equal((await demo.get('/hrm/report')).status, 403);
+});
+
+test('wework: job title "Quản trị…" grants top admin rights; titles are not self-editable', async () => {
+  const admin = await login('admin');
+  const kt = await login('thuhuyen');
+  assert.equal((await kt.get('/wework/meta')).data.is_admin, false);
+  // tự đổi chức danh không có tác dụng
+  await kt.put('/auth/me', { title: 'Quản trị viên' });
+  assert.equal((await kt.get('/wework/meta')).data.is_admin, false);
+  assert.equal((await kt.post('/tasks/bulk', { ids: [1], action: 'priority', priority: 'high' })).status, 403);
+  // quản trị viên đặt chức danh → quyền quản trị tối cao trong Wework
+  await admin.put(`/users/${kt.user.id}`, { title: 'Quản trị Wework' });
+  const meta = (await kt.get('/wework/meta')).data;
+  assert.equal(meta.is_admin, true);
+  assert.equal(meta.is_system_admin, false);
+  assert.equal(meta.can_view_reports, true);
+  const hidden = (await admin.get('/tasks?limit=200')).data.items.find((t) => t.assignee_id !== kt.user.id && t.creator_id !== kt.user.id);
+  assert.equal((await kt.get(`/tasks/${hidden.id}`)).status, 200);
+  assert.ok((await admin.get('/wework/settings/admins')).data.some((u) => u.id === kt.user.id && u.by === 'title'));
+  // đổi danh sách chức danh quản trị → mất quyền
+  await admin.put('/wework/settings', { admin_titles: ['Tổng quản lý'] });
+  assert.equal((await kt.get('/wework/meta')).data.is_admin, false);
+  await admin.put('/wework/settings', { admin_titles: ['Quản trị'] });
+  await admin.put(`/users/${kt.user.id}`, { title: 'Kế toán trưởng' });
+});
+
+test('wework: move a task under another task (with its subtasks), detach, no cycles; goals managed by admins', async () => {
+  const admin = await login('admin');
+  const kd = await login('truongkd');
+  const demo = await login('demo');
+  const parent = (await kd.post('/tasks', { title: 'Chiến dịch Q4', assignee_id: demo.user.id })).data;
+  const child = (await kd.post('/tasks', { title: 'Khảo sát điểm bán', assignee_id: demo.user.id })).data;
+  const grand = (await kd.post('/tasks', { title: 'Lập danh sách', parent_id: child.id })).data;
+  // người chỉ được giao việc không được chuyển
+  assert.equal((await demo.post(`/tasks/${child.id}/move`, { parent_id: parent.id })).status, 403);
+  const moved = (await kd.post(`/tasks/${child.id}/move`, { parent_id: parent.id })).data;
+  assert.equal(moved.parent.id, parent.id);
+  assert.ok((await kd.get(`/tasks/${parent.id}`)).data.subtasks.some((x) => x.id === child.id));
+  // không chuyển vào chính nó / công việc cháu
+  assert.equal((await kd.post(`/tasks/${parent.id}/move`, { parent_id: grand.id })).status, 400);
+  assert.equal((await kd.post(`/tasks/${parent.id}/move`, { parent_id: parent.id })).status, 400);
+  const detached = (await kd.post(`/tasks/${child.id}/move`, { parent_id: null })).data;
+  assert.equal(detached.parent, null);
+  assert.equal((await kd.get(`/tasks/${grand.id}`)).data.parent.id, child.id);
+
+  // mục tiêu: quản trị viên xem tất cả, đặt mục tiêu cho người khác, sửa, xoá
+  const g = (await admin.post('/goals', { title: 'Doanh số 5 tỷ', user_id: demo.user.id })).data;
+  assert.equal(g.user_id, demo.user.id);
+  assert.ok((await demo.get('/goals')).data.some((x) => x.id === g.id));
+  assert.ok((await admin.get(`/goals?scope=all&user_id=${demo.user.id}`)).data.some((x) => x.id === g.id && x.owner_name));
+  assert.ok(!(await kd.get('/goals?scope=all')).data.some((x) => x.id === g.id));
+  assert.equal((await admin.put(`/goals/${g.id}`, { title: 'Doanh số 6 tỷ' })).data.title, 'Doanh số 6 tỷ');
+  assert.equal((await kd.del(`/goals/${g.id}`)).status, 404);
+  assert.equal((await admin.del(`/goals/${g.id}`)).status, 200);
+});
+
+test('request title follows "Employee name - Request …"', async () => {
+  const demo = await login('demo');
+  const groups = (await demo.get('/request-groups')).data;
+  const g = groups.find((x) => x.name === 'Đề xuất cấp văn phòng phẩm');
+  const mk = async (title) => {
+    const fd = new FormData();
+    fd.append('group_id', g.id);
+    if (title !== undefined) fd.append('title', title);
+    fd.append('data', JSON.stringify({ items: 'Bút bi' }));
+    return (await demo.post('/requests', fd)).data;
+  };
+  assert.equal((await mk()).title, `${demo.user.name} - Đề xuất cấp văn phòng phẩm`);
+  assert.equal((await mk('Đề xuất mua bút, giấy A4')).title, `${demo.user.name} - Đề xuất mua bút, giấy A4`);
+  assert.equal((await mk(`${demo.user.name} - Đề xuất mực in`)).title, `${demo.user.name} - Đề xuất mực in`);
+});
+
+test('asset: create, hand over to an employee who confirms, transfer, recover; only managers manage', async () => {
+  const hr = await login('chilan');
+  const demo = await login('demo');
+  const pl = await login('phuonglinh');
+  assert.equal((await demo.post('/assets', { name: 'X' })).status, 403);
+  // tạo 2 laptop cùng lúc → mã tự sinh theo loại
+  const created = (await hr.post('/assets', { name: 'Laptop HP ProBook 440', type: 'Máy tính xách tay', price: '17.500.000', purchase_date: '2026-01-10', quantity: 2 })).data;
+  assert.equal(created.items.length, 2);
+  assert.match(created.items[0].code, /^LAP-\d{4}$/);
+  assert.equal(created.items[0].depreciation_months, 36);
+  const [a1, a2] = created.items;
+  // bàn giao → tài sản đang sử dụng, nhân viên xác nhận
+  const h = (await hr.post('/asset/handovers', { kind: 'issue', employee_id: pl.user.id, asset_ids: [a1.id, a2.id], reason: 'adhoc' })).data;
+  assert.equal(h.status, 'pending');
+  assert.equal(h.items.length, 2);
+  assert.equal((await hr.post('/asset/handovers', { kind: 'issue', employee_id: demo.user.id, asset_ids: [a1.id] })).status, 400); // đang có người giữ
+  assert.equal((await demo.post(`/asset/handovers/${h.id}/confirm`, {})).status, 403);
+  assert.equal((await pl.get(`/asset/handovers/${h.id}`)).data.can_confirm, true);
+  assert.equal((await pl.post(`/asset/handovers/${h.id}/confirm`, {})).data.status, 'confirmed');
+  const mine = (await pl.get(`/asset/people/${pl.user.id}`)).data;
+  assert.ok(mine.assets.some((x) => x.id === a1.id && x.status === 'in_use'));
+  assert.equal((await demo.get(`/asset/people/${pl.user.id}`)).status, 403);
+  // quản lý trực tiếp xem được tài sản của nhân viên
+  assert.equal((await (await login('truongkd')).get(`/asset/people/${pl.user.id}`)).status, 200);
+  // điều chuyển a2 sang demo
+  await hr.post(`/assets/${a2.id}/transfer`, { to_user_id: demo.user.id });
+  assert.equal((await hr.get(`/assets/${a2.id}`)).data.holder_id, demo.user.id);
+  // thu hồi a1 (hỏng) → trạng thái hỏng; huỷ biên bản đang chờ → hoàn tác
+  const back = (await hr.post('/asset/handovers', { kind: 'return', employee_id: pl.user.id, asset_ids: [a1.id], items: { [a1.id]: { condition: 'broken' } } })).data;
+  assert.equal((await hr.get(`/assets/${a1.id}`)).data.status, 'broken');
+  await hr.post(`/asset/handovers/${back.id}/cancel`, {});
+  assert.equal((await hr.get(`/assets/${a1.id}`)).data.holder_id, pl.user.id);
+  const hist = (await hr.get(`/assets/${a1.id}`)).data.history;
+  assert.ok(hist.some((t) => t.type === 'assign') && hist.some((t) => t.type === 'return'));
+  const sum = (await hr.get('/asset/summary')).data;
+  assert.ok(sum.total >= 12 && sum.value > 0 && sum.book_value <= sum.value);
+  assert.equal((await demo.get('/asset/summary')).status, 403);
+  // nhân viên chỉ thấy tài sản của mình
+  assert.ok((await demo.get('/assets')).data.every((x) => x.holder_id === demo.user.id));
+});
+
+test('asset: offboarding cannot complete until every asset is recovered; then the profile is marked resigned', async () => {
+  const hr = await login('chilan');
+  const admin = await login('admin');
+  const demo = await login('demo');
+  const p = (await hr.post('/asset/procedures', { kind: 'offboard', user_id: demo.user.id, effective_date: '2026-12-31', resign_reason: 'Nghỉ theo nguyện vọng cá nhân' })).data;
+  assert.equal((await hr.post('/asset/procedures', { kind: 'offboard', user_id: demo.user.id, effective_date: '2026-12-31' })).status, 400);
+  assert.ok(p.assets.length >= 3);
+  assert.equal(p.steps.find((s) => s.key === 'assets').done, false);
+  for (const s of p.steps.filter((x) => x.key !== 'assets')) await hr.put(`/asset/procedures/${p.id}/steps`, { key: s.key, done: true });
+  assert.equal((await hr.put(`/asset/procedures/${p.id}/steps`, { key: 'assets', done: true })).status, 400);
+  assert.equal((await hr.post(`/asset/procedures/${p.id}/complete`, {})).status, 400);
+  // biên bản thu hồi toàn bộ gắn với thủ tục
+  await hr.post('/asset/handovers', { kind: 'return', employee_id: demo.user.id, asset_ids: p.assets.map((a) => a.id), reason: 'offboard', procedure_id: p.id, auto_confirm: true });
+  const ready = (await hr.get(`/asset/procedures/${p.id}`)).data;
+  assert.equal(ready.assets.length, 0);
+  assert.equal(ready.can_complete, true);
+  assert.equal(ready.handovers.length, 1);
+  const done = (await admin.post(`/asset/procedures/${p.id}/complete`, { lock_account: false })).data;
+  assert.equal(done.status, 'done');
+  const prof = (await hr.get(`/hrm/employees/${demo.user.id}`)).data;
+  assert.equal(prof.work_status, 'resigned');
+  assert.equal(prof.resign_date, '2026-12-31');
+  // khôi phục cho các bài kiểm tra khác
+  await hr.put(`/hrm/employees/${demo.user.id}`, { ...prof, work_status: 'working', resign_date: '', resign_reason: '' });
+  // thủ tục nhận việc: bước tài sản xong khi có biên bản bàn giao được xác nhận
+  const nv = (await hr.get('/asset/procedures?kind=onboard&status=open')).data[0];
+  const full = (await hr.get(`/asset/procedures/${nv.id}`)).data;
+  const free = (await hr.get('/assets?status=available')).data.slice(0, 1);
+  await hr.post('/asset/handovers', { kind: 'issue', employee_id: full.user_id, asset_ids: free.map((a) => a.id), reason: 'onboard', procedure_id: nv.id, auto_confirm: true });
+  assert.equal((await hr.get(`/asset/procedures/${nv.id}`)).data.steps.find((s) => s.key === 'assets').done, true);
+});
+
+test('recruitment request: approval creates account + HRM profile + onboarding, idempotent, retry after error', async () => {
+  const admin = await login('admin');
+  const users = (await admin.get('/users')).data;
+  const id = (u) => users.find((x) => x.username === u).id;
+  const group = (await admin.get('/request-groups')).data.find((g) => g.name === 'Đề xuất tuyển dụng');
+  assert.ok(group, 'template group exists');
+  const full = (await admin.get(`/request-groups/${group.id}`)).data;
+  assert.equal(full.automation.type, 'hire');
+  assert.equal(full.automation.map.name, 'name');
+  // admin sets a default password → stored hashed, never returned
+  await admin.put(`/request-groups/${group.id}`, { ...full, approvers: [], followers: [], manager_approval: false,
+    automation: { ...full.automation, password: 'chaomung1' } });
+  const saved = (await admin.get(`/request-groups/${group.id}`)).data;
+  assert.equal(saved.automation.has_password, true);
+  assert.equal(saved.automation.password_hash, undefined);
+
+  const demo = await login('phuonglinh');
+  const approveAll = async (qid) => {
+    for (let k = 0; k < 6; k++) {
+      const q = (await admin.get(`/requests/${qid}`)).data;
+      if (q.status !== 'pending') return q;
+      const step = Math.min(...q.approvers.filter((a) => a.status === 'pending').map((a) => a.step));
+      const who = q.approvers.find((a) => a.status === 'pending' && a.step === step);
+      const u = users.find((x) => x.id === who.user_id);
+      await (await login(u.username)).post(`/requests/${qid}/decide`, { action: 'approve' });
+    }
+    return (await admin.get(`/requests/${qid}`)).data;
+  };
+  const submit = async (data) => {
+    const fd = new FormData();
+    fd.append('group_id', group.id);
+    fd.append('data', JSON.stringify(data));
+    fd.append('approvers', String(id('truongkd')));
+    return (await demo.post('/requests', fd)).data;
+  };
+  const q = await submit({ name: 'Nguyễn Văn Ấn', email: 'an.nguyen.moi@ldl.vn', phone: '0901234567', gender: 'Nam', title: 'Nhân viên kinh doanh',
+    department: 'Phòng sales', manager: id('truongkd'), office: 'Đội sales', employee_type: 'Toàn thời gian', hire_date: '2026-10-15',
+    probation_end: '2026-12-15', reason: 'Bổ sung địa bàn Hà Nam' });
+  assert.ok(q.id, JSON.stringify(q));
+  const done = await approveAll(q.id);
+  assert.equal(done.status, 'approved');
+  const res = done.automation.result;
+  assert.equal(res.status, 'done', JSON.stringify(res));
+  assert.equal(res.username, 'annguyen');
+  assert.equal(res.temp_password, null);
+  // new person can log in with the default password and has an HRM profile in probation
+  const newbie = await raw('/auth/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username: 'annguyen', password: 'chaomung1' }) });
+  assert.equal(newbie.status, 200);
+  const emp = (await admin.get(`/hrm/employees/${res.user_id}`)).data;
+  const flat = { ...emp, ...(emp.profile || {}), ...(emp.user || {}) };
+  assert.equal(flat.work_status, 'probation');
+  assert.equal(flat.hire_date, '2026-10-15');
+  assert.equal(flat.office, 'Đội sales');
+  assert.equal(flat.manager_id, id('truongkd'));
+  const procs = (await admin.get('/asset/procedures?kind=onboard')).data;
+  assert.ok(procs.some((p) => p.user_id === res.user_id && p.status === 'open'));
+  // idempotent: running again does not create a second account
+  await admin.post(`/requests/${q.id}/automation/run`);
+  assert.equal((await admin.get('/users')).data.filter((u) => u.email === 'an.nguyen.moi@ldl.vn').length, 1);
+  // requester (not HR) never sees temp passwords; second person with same name gets a suffix
+  const q2 = await submit({ name: 'Nguyễn Thị An', email: 'an.nguyen.moi@ldl.vn', title: 'Kế toán', department: 'Phòng sales', hire_date: '2026-10-20' });
+  const d2 = await approveAll(q2.id);
+  assert.equal(d2.status, 'approved');
+  assert.equal(d2.automation.result.status, 'error');
+  assert.match(d2.automation.result.error, /đã thuộc tài khoản @annguyen/);
+  assert.equal((await demo.post(`/requests/${q2.id}/automation/run`)).status, 403);
+  // HR fixes by clearing the default password → random temp password shown to HR only
+  await admin.put(`/request-groups/${group.id}`, { ...saved, approvers: [], followers: [], automation: { ...saved.automation, clear_password: true } });
+  await admin.put('/users/' + res.user_id, { email: 'an.nguyen@ldl.vn' });
+  const retry = (await admin.post(`/requests/${q2.id}/automation/run`)).data;
+  assert.equal(retry.automation.result.status, 'done', JSON.stringify(retry.automation));
+  assert.equal(retry.automation.result.username, 'annguyen2');
+  assert.match(retry.automation.result.temp_password, /^\w{10}$/);
+  assert.equal((await demo.get(`/requests/${q2.id}`)).data.automation.result.temp_password, undefined);
+});
+
+test('HRM resigned ⇄ Account: auto-disable on resign, re-enable on return, owner/self protected, import disables', async () => {
+  const admin = await login('admin');
+  const hr = await login('chilan');
+  await hr.post('/hrm/employees/import', { create_accounts: true, password: 'Ldl@2026', rows: [
+    { username: 'nv.nghi', name: 'Nhân viên nghỉ' }, { username: 'nv.nghi2', name: 'Nhân viên nghỉ 2' }] });
+  const all = async () => (await admin.get('/users?all=1')).data;
+  const u = (await all()).find((x) => x.username === 'nv.nghi');
+  const loginAs = (username) => raw('/auth/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username, password: 'Ldl@2026' }) });
+  assert.equal((await loginAs('nv.nghi')).status, 200);
+  let r = (await hr.put(`/hrm/employees/${u.id}`, { work_status: 'resigned', resign_date: '2026-10-01' })).data;
+  assert.equal(r.account, 'disabled');
+  assert.equal((await all()).find((x) => x.id === u.id).active, 0);
+  assert.equal((await loginAs('nv.nghi')).status, 401);
+  r = (await hr.put(`/hrm/employees/${u.id}`, { work_status: 'working' })).data;
+  assert.equal(r.account, 'enabled');
+  assert.equal((await loginAs('nv.nghi')).status, 200);
+  // Chủ doanh nghiệp và chính mình không bị khoá
+  const owner = (await all()).find((x) => x.username === 'giamdoc');
+  assert.equal((await admin.put(`/hrm/employees/${owner.id}`, { work_status: 'resigned' })).data.account, 'kept_owner');
+  await admin.put(`/hrm/employees/${owner.id}`, { work_status: 'working' });
+  assert.equal((await hr.put(`/hrm/employees/${hr.user.id}`, { work_status: 'resigned' })).data.account, 'kept_self');
+  await hr.put(`/hrm/employees/${hr.user.id}`, { work_status: 'working' });
+  // nhập Excel trạng thái "Đã nghỉ việc" → khoá tài khoản
+  const imp = (await hr.post('/hrm/employees/import', { rows: [{ username: 'nv.nghi2', work_status: 'Đã nghỉ việc', resign_date: '01/10/2026' }] })).data;
+  assert.equal(imp.deactivated, 1);
+  assert.equal((await loginAs('nv.nghi2')).status, 401);
 });

@@ -5,8 +5,9 @@ import { api, toFormData } from '../api.js';
 import { useApp, useToast } from '../context.jsx';
 import { Field, UserPicker, FileChip, Spinner, Avatar } from '../components/ui.jsx';
 import { useRequestApp, groupByCategory } from './RequestLayout.jsx';
-import { FieldInput } from './fields.jsx';
-import { cx } from '../utils.js';
+import GroupGuide from './GroupGuide.jsx';
+import { FieldInput, flowLabel, stepNote } from './fields.jsx';
+import { cx, fmtDateTime } from '../utils.js';
 
 function GroupChooser({ onPick }) {
   const { groups } = useRequestApp();
@@ -25,7 +26,8 @@ function GroupChooser({ onPick }) {
               <button key={g.id} className="rq-choose" onClick={() => onPick(g.id)}>
                 <b>{g.starred && <Star size={13} className="starred" fill="currentColor" />} {g.name}</b>
                 <small className="muted">{g.description || 'Không có mô tả'}</small>
-                <small className="muted">{g.flow === 'any' ? 'Chỉ cần một người duyệt' : 'Duyệt lần lượt'}{g.sla_hours ? ` · SLA ${g.sla_hours}h` : ''}</small>
+                <small className="muted">{g.visibility === 'private' ? '🔒 ' : ''}{flowLabel(g.flow)}{g.sla_hours ? ` · SLA ${g.sla_hours}h` : ''}</small>
+                {(g.file_count > 0 || g.has_guide) && <small className="rq-choose-guide">📎 Có biểu mẫu / quy trình hướng dẫn{g.file_count ? ` (${g.file_count} tệp)` : ''}</small>}
               </button>
             ))}
           </div>
@@ -50,6 +52,9 @@ export default function RequestForm() {
   const [files, setFiles] = useState([]);
   const [err, setErr] = useState('');
   const [busy, setBusy] = useState(false);
+  // Tên đề xuất: "Tên nhân viên - …" — tiền tố là tên người tạo, người dùng chỉ nhập phần sau
+  const prefix = `${existing?.creator_name || user.name} - `;
+  const stripPrefix = (t, p) => { let x = String(t || ''); while (p && x.toLowerCase().startsWith(p.toLowerCase())) x = x.slice(p.length); return x.trim(); };
 
   useEffect(() => {
     if (!id) return;
@@ -57,7 +62,7 @@ export default function RequestForm() {
       setExisting(q);
       setGroupId(q.group_id);
       setForm({
-        title: q.title, content: q.content || '', data: q.data || {},
+        title: stripPrefix(q.title, `${q.creator_name} - `), content: q.content || '', data: q.data || {},
         approvers: q.approvers.map((a) => a.user_id), followers: q.followers.map((f) => f.id),
       });
     }).catch((e) => setErr(e.message));
@@ -70,11 +75,20 @@ export default function RequestForm() {
     }).catch((e) => setErr(e.message));
   }, [groupId, id]);
 
+  // xem trước luồng duyệt theo chặng (quản lý trực tiếp của người tạo → phòng ban → người duyệt cuối)
+  const extraKey = group ? form.approvers.filter((x) => !group.approvers.some((a) => a.user_id === x)).join(',') : '';
+  const [plan, setPlan] = useState(null);
+  useEffect(() => {
+    if (!group) return;
+    api.get(`/request-groups/${group.id}/plan`, { extra: extraKey || undefined }).then(setPlan).catch(() => setPlan(null));
+  }, [group, extraKey]);
+
   if (!groupId) return <GroupChooser onPick={setGroupId} />;
   if (!group || (id && !existing)) return <div className="rq-page">{err ? <div className="alert alert-error">{err}</div> : <Spinner />}</div>;
 
   const fixed = group.approvers.map((a) => a.user_id);
   const extra = form.approvers.filter((x) => !fixed.includes(x));
+  const planSteps = plan?.steps || [];
   const setData = (k, v) => setForm({ ...form, data: { ...form.data, [k]: v } });
   const submit = async (draft) => {
     setErr('');
@@ -82,7 +96,7 @@ export default function RequestForm() {
       const v = form.data[f.key];
       if (!draft && f.required && (v === undefined || v === '' || v === null || v === false)) return setErr(`Vui lòng nhập "${f.label}"`);
     }
-    if (!draft && !fixed.length && !extra.length) return setErr('Vui lòng chọn ít nhất một người duyệt');
+    if (!draft && !planSteps.length && !fixed.length && !extra.length) return setErr('Vui lòng chọn ít nhất một người duyệt');
     setBusy(true);
     try {
       const body = { group_id: group.id, title: form.title, content: form.content, data: JSON.stringify(form.data),
@@ -114,8 +128,13 @@ export default function RequestForm() {
       <div className="form-layout">
         <div className="card">
           {group.description && <p className="muted">{group.description}</p>}
+          <GroupGuide groupId={group.id} guide={group.guide} files={group.files} className="rq-guide-inline" title="Đọc trước khi làm đề xuất: biểu mẫu & quy trình" />
           <div className="form-grid one">
-            <Field label="Tên đề xuất" required><input className="input" value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} /></Field>
+            <Field label="Tên đề xuất" required hint="Định dạng: Tên nhân viên - Đề xuất … (tên nhân viên được thêm tự động)">
+              <div className="input-prefix"><span className="input-prefix-text" title={prefix}>{prefix}</span>
+                <input className="input" value={form.title} placeholder={group.name}
+                  onChange={(e) => { const v = e.target.value; setForm({ ...form, title: v.toLowerCase().startsWith(prefix.toLowerCase()) ? v.slice(prefix.length) : v }); }} /></div>
+            </Field>
             {group.fields.map((f) => (
               <Field key={f.key} label={f.label} required={f.required}>
                 <FieldInput field={f} value={form.data[f.key]} onChange={(v) => setData(f.key, v)} users={users} />
@@ -134,15 +153,9 @@ export default function RequestForm() {
           </div>
         </div>
         <div className="card">
-          <h3 className="card-title">Người duyệt · {group.flow === 'any' ? 'Chỉ cần một người duyệt' : 'Duyệt lần lượt'}</h3>
-          {group.approvers.length > 0 && (
-            <ol className="approval-flow">
-              {group.approvers.map((a) => (
-                <li key={a.user_id} className="pending"><Avatar name={a.name} color={a.color} size={28} />
-                  <div className="grow"><b>{a.name}</b><small className="muted block">Bước {a.step} · {a.title || 'Người duyệt mặc định'}</small></div></li>
-              ))}
-            </ol>
-          )}
+          <h3 className="card-title">Luồng duyệt · {flowLabel(group.flow)}</h3>
+          {plan?.no_manager && <p className="muted small">Bạn không có quản lý trực tiếp — đề xuất đi thẳng tới các bước tiếp theo.</p>}
+          {planSteps.length > 0 && <StagedFlow steps={planSteps} preview />}
           {group.custom_approvers ? (
             <Field label={group.approvers.length ? 'Thêm người duyệt' : 'Chọn người duyệt (theo thứ tự)'} required={!group.approvers.length}>
               <UserPicker users={users} multiple exclude={[...fixed, user.id]} value={extra}
@@ -158,13 +171,49 @@ export default function RequestForm() {
   );
 }
 
+export const STAGE_LABEL = { manager: 'Quản lý trực tiếp', dept: 'Phòng ban / người duyệt liên quan', final: 'Người duyệt cuối cùng' };
+
+/** Luồng duyệt chia theo chặng: Quản lý trực tiếp → Phòng ban liên quan → Người duyệt cuối cùng. */
+function StagedFlow({ steps, preview, flow }) {
+  const groups = [];
+  for (const a of steps) {
+    const key = a.stage || 'dept';
+    if (!groups.length || groups[groups.length - 1].key !== key) groups.push({ key, items: [] });
+    groups[groups.length - 1].items.push(a);
+  }
+  return (
+    <div className="stage-flow">
+      {groups.map((g, gi) => (
+        <div key={`${g.key}${gi}`} className={cx('stage', `stage-${g.key}`)}>
+          <div className="stage-title"><span className="stage-no">{gi + 1}</span> {STAGE_LABEL[g.key]}</div>
+          <ol className="approval-flow">
+            {g.items.map((a) => (
+              <li key={a.user_id} className={cx(preview ? 'pending' : a.status)}>
+                <Avatar name={a.name} color={a.color} size={28} />
+                <div className="grow"><b>{a.name}</b><small className="muted block">{stepNote(a, steps, flow)}{a.title ? ` · ${a.title}` : ''}{!preview && a.acted_at ? ` · ${fmtDateTime(a.acted_at)}` : ''}</small>
+                  {!preview && a.comment && <div className="small pre">“{a.comment}”</div>}</div>
+                {!preview && (
+                  <span className={cx('small', { approved: 'text-green', rejected: 'text-red', returned: 'text-red' }[a.status] || 'muted')}>
+                    {{ approved: 'Đã chấp thuận', rejected: 'Từ chối', returned: 'Trả lại', skipped: 'Không cần duyệt', pending: 'Chờ duyệt' }[a.status]}
+                  </span>
+                )}
+              </li>
+            ))}
+          </ol>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export function StatusSteps({ approvers, flow }) {
+  if (approvers.some((a) => a.stage)) return <StagedFlow steps={approvers} flow={flow} />;
   return (
     <ol className="approval-flow">
       {approvers.map((a) => (
         <li key={a.user_id} className={cx(a.status)}>
           <Avatar name={a.name} color={a.color} size={30} />
-          <div className="grow"><b>{a.name}</b><small className="muted block">{flow === 'any' ? 'Người duyệt' : `Bước ${a.step}`}{a.title ? ` · ${a.title}` : ''}</small>
+          <div className="grow"><b>{a.name}</b><small className="muted block">{stepNote(a, approvers, flow)}{a.title ? ` · ${a.title}` : ''}</small>
             {a.comment && <div className="small pre">“{a.comment}”</div>}</div>
           <span className={cx('small', { approved: 'text-green', rejected: 'text-red', returned: 'text-red' }[a.status] || 'muted')}>
             {{ approved: 'Đã chấp thuận', rejected: 'Từ chối', returned: 'Trả lại', skipped: 'Không cần duyệt', pending: 'Chờ duyệt' }[a.status]}

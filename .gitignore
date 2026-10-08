@@ -7,3 +7,7 @@ server/data/
 server/.wrangler/
 .wrangler/
 server/.seed.sql
+release/
+backups/
+data/
+server/.wrangler-import.toml
