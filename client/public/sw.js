@@ -9,8 +9,8 @@ self.addEventListener('push', (event) => {
   const tasks = [
     self.registration.showNotification(title, {
       body: data.body || '',
-      icon: '/logo-192.png',
-      badge: '/logo-192.png',
+      icon: '/android-chrome-192x192.png',
+      badge: '/android-chrome-96x96.png',
       tag: data.tag || undefined,
       renotify: !!data.tag,
       data: { url: data.url || '/' },
