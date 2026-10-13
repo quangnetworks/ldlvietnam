@@ -62,9 +62,12 @@ async function territoryOr404(id) {
   return t;
 }
 
-/** Vị trí bán hàng có mã phụ khi kiêm nhiệm (VD SS kiêm SREP: mã NV-1, mã NV-2); mỗi người kiêm tối đa SUB_MAX vị trí. */
+/**
+ * Vị trí bán hàng có mã phụ khi kiêm nhiệm (VD SS kiêm SREP): mã NV-1 cho lần kiêm nhiệm đầu, mã NV-2 cho lần sau…
+ * — mỗi mã phụ ứng với một giai đoạn kiêm nhiệm.
+ */
 export const SUB_ROLES = ['SREP', 'SREP_KA'];
-export const SUB_MAX = 2;
+export const SUB_MAX = 9;
 const vnToday = () => new Date(Date.now() + 7 * 3600 * 1000).toISOString().slice(0, 10);
 
 /**
@@ -287,19 +290,24 @@ r.post('/sales/territories/:id/members', async (c) => {
   const since = day(b.since); const until = concurrent ? day(b.until) : null;
   if (since === false || until === false) throw badRequest('Ngày không hợp lệ');
   if (until && until < (since || vnToday())) throw badRequest('Ngày kết thúc kiêm nhiệm phải sau ngày bắt đầu và không ở quá khứ');
-  // kiêm nhiệm SREP / SREP KA: cấp mã phụ -1 / -2 (chọn sẵn hoặc lấy số còn trống)
+  // kiêm nhiệm SREP / SREP KA: mã phụ = lần kiêm nhiệm (-1 lần đầu, -2 lần sau…), không dùng lại mã của giai đoạn trước;
+  // gia hạn / sửa chính vị trí đang kiêm thì giữ mã cũ
   let subIndex = null;
   if (concurrent && SUB_ROLES.includes(role)) {
-    const used = (await all(`SELECT sub_index FROM territory_members WHERE user_id = ? AND sub_index IS NOT NULL AND NOT (territory_id = ? AND role = ?)`, u.id, t.id, role))
+    const cur = await get('SELECT sub_index FROM territory_members WHERE territory_id = ? AND user_id = ? AND role = ?', t.id, u.id, role);
+    const busy = (await all('SELECT sub_index FROM territory_members WHERE user_id = ? AND sub_index IS NOT NULL AND NOT (territory_id = ? AND role = ?)', u.id, t.id, role))
       .map((x) => x.sub_index);
     const want = toInt(b.sub_index);
     if (want) {
       if (want < 1 || want > SUB_MAX) throw badRequest(`Mã phụ chỉ từ -1 đến -${SUB_MAX}`);
-      if (used.includes(want)) throw badRequest(`${u.name} đã dùng mã phụ -${want} cho vị trí kiêm nhiệm khác`);
+      if (busy.includes(want)) throw badRequest(`${u.name} đang dùng mã phụ -${want} cho vị trí kiêm nhiệm khác`);
       subIndex = want;
-    } else {
-      subIndex = Array.from({ length: SUB_MAX }, (_, i) => i + 1).find((n) => !used.includes(n)) || null;
-      if (!subIndex) throw badRequest(`${u.name} đã kiêm nhiệm đủ ${SUB_MAX} vị trí SREP (mã -1, -2) — gỡ hoặc chờ hết hạn một vị trí trước`);
+    } else if (cur?.sub_index) subIndex = cur.sub_index;
+    else {
+      const last = (await get(`SELECT MAX(n) AS n FROM (SELECT sub_index AS n FROM territory_members WHERE user_id = ?
+        UNION ALL SELECT sub_index FROM territory_history WHERE user_id = ?)`, u.id, u.id)).n || 0;
+      subIndex = last + 1;
+      if (subIndex > SUB_MAX) throw badRequest(`${u.name} đã kiêm nhiệm ${SUB_MAX} lần — chọn mã phụ thủ công`);
     }
   }
   await assignMember(t, u.id, role, { industry, concurrent, since, until, subIndex, takeOver: !!b.take_over });

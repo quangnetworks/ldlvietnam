@@ -31,11 +31,11 @@ export function IndustryTag({ code, industries }) {
   return <span className={cx('so-ind', `tone-${industryTone(industries, code)}`)} title={it?.name || code}>{code}</span>;
 }
 
-/** Vị trí kiêm nhiệm có mã phụ (SS kiêm SREP: mã NV-1 / mã NV-2) và thời hạn kiêm nhiệm. */
+/** Vị trí kiêm nhiệm có mã phụ theo lần kiêm nhiệm (SS kiêm SREP: lần đầu mã NV-1, lần sau mã NV-2) và thời hạn kiêm nhiệm. */
 export const SUB_ROLES = ['SREP', 'SREP_KA'];
 export function RoleBadge({ role, concurrent, sub }) {
   if (!role) return null;
-  return <span className={cx('so-role', `tone-${ROLE_TONE[role] || 'gray'}`)} title={concurrent ? `Kiêm nhiệm${sub ? ` · mã phụ -${sub}` : ''}` : undefined}>{ROLE_SHORT[role] || role}{sub ? `-${sub}` : ''}{concurrent ? ' · KN' : ''}</span>;
+  return <span className={cx('so-role', `tone-${ROLE_TONE[role] || 'gray'}`)} title={concurrent ? `Kiêm nhiệm${sub ? ` · lần ${sub} (mã phụ -${sub})` : ''}` : undefined}>{ROLE_SHORT[role] || role}{sub ? `-${sub}` : ''}{concurrent ? ' · KN' : ''}</span>;
 }
 /** "đến 31/12" — hạn kiêm nhiệm; sắp hết (≤ 14 ngày) tô cam. */
 function UntilTag({ until }) {
@@ -358,9 +358,9 @@ function AssignModal({ t, data, industry, vacancy, onClose, onDone }) {
         </div>
       )}
       {subRole && (
-        <Field label="Mã phụ vị trí kiêm nhiệm" hint="Mã vị trí = mã nhân viên + mã phụ, VD LDL006-1. Mỗi người kiêm tối đa 2 vị trí SREP.">
+        <Field label="Mã phụ vị trí kiêm nhiệm" hint="Mã phụ = lần kiêm nhiệm: lần đầu -1 (VD LDL006-1), lần sau -2… Tự động: giữ mã khi gia hạn, lần kiêm mới lấy số tiếp theo.">
           <div className="so-ind-pick">
-            {[['', 'Tự động'], ['1', '-1'], ['2', '-2']].map(([v, l]) => (
+            {[['', 'Tự động'], ['1', '-1'], ['2', '-2'], ['3', '-3']].map(([v, l]) => (
               <button key={v} type="button" disabled={!!v && usedSub.includes(Number(v))} title={v && usedSub.includes(Number(v)) ? 'Đã dùng cho vị trí kiêm nhiệm khác' : undefined}
                 className={cx('chip-btn', f.sub_index === v && 'active')} onClick={() => setF({ ...f, sub_index: v })}>{l}</button>
             ))}
