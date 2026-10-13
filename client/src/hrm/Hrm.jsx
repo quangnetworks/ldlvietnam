@@ -3,8 +3,9 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 import {
   Search, ArrowLeft, Cake, FileWarning, UserPlus, Hourglass, Download, Upload, Plus, Trash2, Users2, BarChart3, FileSignature, BadgeCheck,
   PauseCircle, Building2, PieChart, CheckCircle2, Briefcase, IdCard, LogOut, StickyNote, Phone, Mail, CalendarDays, UserCog, MapPin, Clock3,
-  FileText, TrendingUp, Save, Settings2, ShieldCheck, ListChecks, CalendarHeart, Package, Pencil,
+  FileText, TrendingUp, Save, Settings2, ShieldCheck, ListChecks, CalendarHeart, Package, Pencil, Handshake, RotateCcw,
 } from 'lucide-react';
+import AddEmployeeModal, { ENGAGEMENT, fmtRate, RejoinModal } from './AddEmployee.jsx';
 import { PersonAssets } from '../asset/AssetPages.jsx';
 import { SalesFacts, RoleBadge } from './SalesOrg.jsx';
 import { HrHero, Kpi, HrCard, Pill, HBars, StackBar, WORK_TONE, WORK_COLOR, daysLeft } from './hrUi.jsx';
@@ -47,7 +48,9 @@ const leftLabel = (d) => { const n = daysLeft(d); return n == null ? '' : n <= 0
 export function HrmHome() {
   const { user } = useApp();
   const meta = useHrMeta();
-  const [stats] = useFetch(() => (meta?.is_manager ? api.get('/hrm/stats') : Promise.resolve(null)), [meta?.is_manager]);
+  const [stats, reloadStats] = useFetch(() => (meta?.is_manager ? api.get('/hrm/stats') : Promise.resolve(null)), [meta?.is_manager]);
+  const [adding, setAdding] = useState(false);
+  const [cat] = useHrCatalog();
   if (!meta) return <div className="page hr"><Spinner /></div>;
   if (!meta.is_manager) return <HrmEmployee selfId={user.id} />;
   if (!stats) return <div className="page hr"><Spinner /></div>;
@@ -62,14 +65,17 @@ export function HrmHome() {
         subtitle={`${today.charAt(0).toUpperCase()}${today.slice(1)} · ${alerts ? `${alerts} việc nhân sự cần chú ý trong 30 ngày tới` : 'Không có cảnh báo nhân sự trong 30 ngày tới'}`}>
         <Link className="btn" to="/hrm/reports"><BarChart3 size={15} /> Báo cáo</Link>
         <Link className="btn" to="/hrm/contracts"><FileSignature size={15} /> Hợp đồng</Link>
-        <Link className="btn solid" to="/hrm/employees"><Users2 size={15} /> Danh sách nhân sự</Link>
+        <Link className="btn" to="/hrm/employees"><Users2 size={15} /> Danh sách nhân sự</Link>
+        <button className="btn solid" onClick={() => setAdding(true)}><UserPlus size={15} /> Thêm nhân sự</button>
       </HrHero>
+      {adding && <AddEmployeeModal cat={cat} onClose={() => setAdding(false)} onCreated={reloadStats} />}
       <div className="hr-kpis">
         <Kpi i={0} icon={Users2} tone="aqua" label="Đang làm việc" value={stats.total} sub="Không gồm đã nghỉ việc" to="/hrm/employees" />
         <Kpi i={1} icon={BadgeCheck} tone="blue" label="Chính thức" value={count('working')} sub={stats.total ? `${Math.round((count('working') / stats.total) * 100)}% nhân sự` : ''} to="/hrm/employees" />
         <Kpi i={2} icon={Hourglass} tone="amber" label="Thử việc" value={count('probation')} sub={`${stats.probation_ending.length} sắp hết thử việc`} to="/hrm/employees" />
         <Kpi i={3} icon={PauseCircle} tone="violet" label="Tạm nghỉ" value={count('leave')} to="/hrm/employees" />
-        <Kpi i={4} icon={FileWarning} tone="red" label="HĐ sắp hết hạn" value={stats.contracts_expiring.length} sub="Trong 30 ngày" to="/hrm/contracts" />
+        <Kpi i={4} icon={Handshake} tone="green" label="Cộng tác viên" value={stats.collaborators || 0} sub="Hưởng % theo thỏa thuận" to="/hrm/employees?view=collaborator" />
+        <Kpi i={5} icon={FileWarning} tone="red" label="HĐ sắp hết hạn" value={stats.contracts_expiring.length} sub="Trong 30 ngày" to="/hrm/contracts" />
       </div>
       <div className="hr-grid">
         <HrCard i={5} className="hr-span-7" icon={Building2} tone="blue" title="Nhân sự theo phòng ban" count={stats.by_department.length}>
@@ -106,7 +112,8 @@ export function seniority(from, to) {
 
 const VIEWS = [
   { value: '', label: 'Đang làm việc', tone: 'aqua' }, { value: 'all', label: 'Tất cả nhân sự', tone: 'gray' }, { value: 'mine', label: 'Tôi quản lý', tone: 'blue' },
-  { value: 'probation', label: 'Đang thử việc', tone: 'amber' }, { value: 'leave', label: 'Đang tạm nghỉ', tone: 'violet' }, { value: 'resigned', label: 'Nghỉ việc', tone: 'gray' },
+  { value: 'probation', label: 'Đang thử việc', tone: 'amber' }, { value: 'leave', label: 'Đang tạm nghỉ', tone: 'violet' }, { value: 'collaborator', label: 'Cộng tác viên', tone: 'green' },
+  { value: 'resigned', label: 'Nghỉ việc', tone: 'gray' },
 ];
 export const StatusPill = ({ status }) => <Pill tone={WORK_TONE[status] || 'gray'}>{WORK_STATUS[status] || status}</Pill>;
 /** Nhóm cột như Base HRM: Tổng quan, Công việc, Hợp đồng & pháp lý, Hồ sơ & liên hệ. */
@@ -116,6 +123,8 @@ const COLUMN_SETS = {
     ['official_date', 'Ngày chính thức', 'date'], ['last_promotion', 'Thăng tiến gần nhất']] },
   legal: { label: 'Hợp đồng & pháp lý', cols: [['contract_type', 'Hợp đồng'], ['contract_end', 'Hết hạn HĐ', 'date'], ['id_number', 'Số CCCD'], ['insurance_number', 'Số sổ BHXH'], ['tax_code', 'MST TNCN']] },
   sales: { label: 'Kinh doanh', cols: [['sales_role', 'Vị trí kinh doanh'], ['sales_industry', 'Ngành hàng'], ['territory_names', 'Địa bàn phụ trách'], ['manager_name', 'Quản lý trực tiếp'], ['office', 'Văn phòng']] },
+  collab: { label: 'Cộng tác viên', cols: [['engagement', 'Hình thức'], ['commission_rate', 'Tỷ lệ hưởng'], ['commission_basis', 'Cơ sở tính'], ['collab_territory', 'Khu vực'], ['manager_name', 'Người phụ trách'],
+    ['hire_date', 'Bắt đầu hợp tác', 'date'], ['contract_end', 'Hết hạn thỏa thuận', 'date']] },
   contact: { label: 'Hồ sơ & liên hệ', cols: [['gender', 'Giới tính'], ['birthday', 'Ngày sinh', 'date'], ['phone', 'Điện thoại'], ['email', 'Email'], ['resign_date', 'Ngày nghỉ việc', 'date']] },
 };
 
@@ -132,7 +141,8 @@ export function HrmEmployees() {
   const navigate = useNavigate();
   const [cat] = useHrCatalog();
   const [q, setQ] = useState('');
-  const [view, setView] = useState('');
+  const [view, setViewRaw] = useState(() => (VIEWS.some((v) => v.value && v.value === new URLSearchParams(window.location.search).get('view')) ? new URLSearchParams(window.location.search).get('view') : ''));
+  const [adding, setAdding] = useState(false);
   const [dep, setDep] = useState('');
   const [office, setOffice] = useState('');
   const [type, setType] = useState('');
@@ -141,7 +151,8 @@ export function HrmEmployees() {
   const [territory, setTerritory] = useState('');
   const [industry, setIndustry] = useState('');
   const [sales] = useFetch(() => api.get('/sales/structure'), []);
-  const [colSet, setColSet] = useState('overview');
+  const [colSet, setColSet] = useState(view === 'collaborator' ? 'collab' : 'overview');
+  const setView = (v) => { setViewRaw(v); if (v === 'collaborator') setColSet('collab'); else if (colSet === 'collab') setColSet('overview'); };
   const [importing, setImporting] = useState(false);
   const dq = useDebounced(q);
   const params = { q: dq, view, department_id: dep, office, employee_type: type, contract, sales_role: salesRole, territory_id: territory, industry };
@@ -159,15 +170,18 @@ export function HrmEmployees() {
     if (k === 'sales_role') return e.sales_role ? <RoleBadge role={e.sales_role} /> : '—';
     if (k === 'sales_industry') return e.sales_industry ? (sales?.industries || []).find((x) => x.code === e.sales_industry)?.name || e.sales_industry : e.sales_role ? 'Chung' : '—';
     if (k === 'seniority') return seniority(e.hire_date, e.resign_date);
+    if (k === 'engagement') return <Pill tone={e.engagement === 'collaborator' ? 'green' : 'blue'}>{ENGAGEMENT[e.engagement]}</Pill>;
+    if (k === 'commission_rate') return e.commission_rate != null ? <b className="hr-rate">{fmtRate(e.commission_rate)}</b> : e.engagement === 'collaborator' ? <span className="text-red small">Chưa có thỏa thuận</span> : '—';
     if (k === 'contract_end') return <span className={e.contract_end && e.contract_end < new Date(Date.now() + 30 * 864e5).toISOString().slice(0, 10) ? 'text-red' : ''}>{fmtDate(e.contract_end)}</span>;
     const v = e[k];
     return kind === 'date' ? fmtDate(v) : v || '—';
   };
   return (
     <div className="page hr">
-      <HrHero icon={Users2} tone="indigo" title="Danh sách nhân sự" subtitle="Tra cứu hồ sơ, lọc theo phòng ban / văn phòng / cơ cấu kinh doanh; nhập từ Excel để thêm nhân sự mới (tạo tài khoản), lịch sử công tác, hợp đồng">
+      <HrHero icon={Users2} tone="indigo" title="Danh sách nhân sự" subtitle="Tra cứu hồ sơ, lọc theo phòng ban / văn phòng / cơ cấu kinh doanh; thêm trực tiếp nhân viên hoặc cộng tác viên (hưởng % theo thỏa thuận), hoặc nhập hàng loạt từ Excel">
         <a className="btn" href={api.url('/hrm/employees/export', params)}><Download size={15} /> Trích xuất Excel</a>
-        <button className="btn solid" onClick={() => setImporting(true)}><Upload size={15} /> Nhập từ Excel</button>
+        <button className="btn" onClick={() => setImporting(true)}><Upload size={15} /> Nhập từ Excel</button>
+        <button className="btn solid" onClick={() => setAdding(true)}><UserPlus size={15} /> Thêm nhân sự</button>
       </HrHero>
       <div className="hr-seg" role="tablist">
         {VIEWS.map((v) => (
@@ -212,7 +226,7 @@ export function HrmEmployees() {
               <tr key={e.id} className={cx('clickable hr-row', picked.has(e.id) && 'picked')} onClick={() => navigate(`/hrm/employees/${e.id}`)}>
                 <td className="hr-pick" onClick={(ev) => ev.stopPropagation()}><input type="checkbox" aria-label={`Chọn ${e.name}`} checked={picked.has(e.id)} onChange={() => togglePick(e.id)} /></td>
                 <td>{e.employee_code ? <span className="hr-code">{e.employee_code}</span> : <span className="muted">—</span>}</td>
-                <td><span className="hr-name"><Avatar name={e.name} color={e.color} uid={e.id} size={32} /><span><b>{e.name}</b><small className="muted block">{e.title}</small></span></span></td>
+                <td><span className="hr-name"><Avatar name={e.name} color={e.color} uid={e.id} size={32} /><span><b>{e.name}</b>{e.engagement === 'collaborator' && <span className="hr-ctv" title="Cộng tác viên">CTV</span>}<small className="muted block">{e.title}</small></span></span></td>
                 {COLUMN_SETS[colSet].cols.map((c) => <td key={c[0]}>{cell(e, c)}</td>)}
               </tr>))}</tbody>
           </table></div>
@@ -221,6 +235,7 @@ export function HrmEmployees() {
         </div>
       )}
       {importing && <ImportProfilesModal onClose={() => setImporting(false)} onDone={reload} />}
+      {adding && <AddEmployeeModal cat={cat} onClose={() => setAdding(false)} onCreated={reload} />}
       {bulk && <BulkEditModal ids={[...picked]} cat={cat} onClose={() => setBulk(false)} onDone={() => { setBulk(false); setPicked(new Set()); reload(); }} />}
     </div>
   );
@@ -273,6 +288,7 @@ function BulkEditModal({ ids, cat, onClose, onDone }) {
 /** Nhóm trường hồ sơ; list = lấy lựa chọn từ danh mục HRM (Cài đặt). */
 const FIELD_GROUPS = [
   ['Thông tin công việc', [
+    ['engagement', 'Hình thức hợp tác', Object.keys(ENGAGEMENT), 'Nhân viên: hợp đồng lao động · Cộng tác viên: thỏa thuận hợp tác hưởng %'],
     ['department_id', 'Phòng ban', 'department', 'Đơn vị tổ chức (dùng chung toàn hệ thống: phân quyền, duyệt, giao việc)'],
     ['office', 'Văn phòng', 'list:offices', 'Nơi / khối làm việc, VD Văn phòng, Đội sales — khác Phòng ban'],
     ['employee_code', 'Mã nhân viên'], ['work_status', 'Trạng thái', Object.keys(WORK_STATUS)], ['job_position', 'Vị trí công việc', 'list:positions'],
@@ -297,6 +313,7 @@ export function HrmEmployee({ selfId }) {
   const meta = useHrMeta();
   const [cat] = useHrCatalog();
   const [tab, setTab] = useState('profile');
+  const [rejoining, setRejoining] = useState(false);
   const [e, reload, loading, error] = useFetch(() => api.get(`/hrm/employees/${id}`), [id]);
   const [f, setF] = useState(null);
   useEffect(() => { if (e) setF(Object.fromEntries([...ALL_FIELDS.map(([k]) => [k, e[k] == null ? '' : String(e[k])]), ['note', e.note || '']])); }, [e]);
@@ -321,7 +338,8 @@ export function HrmEmployee({ selfId }) {
     return list && [...new Set([...list, ...(cur && !list.includes(cur) ? [cur] : [])])];
   };
   const dirty = e && f && [...ALL_FIELDS.map(([k]) => k), 'note'].some((k) => String(f[k] ?? '') !== String(e[k] ?? ''));
-  const TABS = [['profile', 'Hồ sơ', IdCard], ['contracts', 'Hợp đồng', FileSignature], ['career', 'Phát triển sự nghiệp', TrendingUp], ['documents', 'Giấy tờ', FileText],
+  const collab = e.engagement === 'collaborator';
+  const TABS = [['profile', 'Hồ sơ', IdCard], ['contracts', collab ? 'Thỏa thuận hợp tác' : 'Hợp đồng', collab ? Handshake : FileSignature], ['career', 'Phát triển sự nghiệp', TrendingUp], ['documents', 'Giấy tờ', FileText],
     ['assets', 'Tài sản', Package]];
   return (
     <div className="page hr">
@@ -335,13 +353,15 @@ export function HrmEmployee({ selfId }) {
             <div className="row gap-sm wrap"><h1>{e.name}</h1><StatusPill status={e.work_status} /></div>
             <div className="muted">{e.title || 'Chưa có chức danh'}{e.department_name ? ` · ${e.department_name}` : ''}</div>
             <div className="hr-facts">
+              {e.engagement === 'collaborator' && <span className="hr-fact tone-green"><Handshake size={13} /> Cộng tác viên{e.commission_rate != null ? ` · hưởng ${fmtRate(e.commission_rate)}${e.commission_basis ? ` ${e.commission_basis.toLowerCase()}` : ''}` : ' · chưa có thỏa thuận'}</span>}
+              {e.engagement === 'collaborator' && e.collab_territory && <span className="hr-fact tone-aqua"><MapPin size={13} /> Khu vực {e.collab_territory}</span>}
               {e.employee_code && <span className="hr-fact tone-gray"><IdCard size={13} /> {e.employee_code}</span>}
               {e.hire_date && <span className="hr-fact tone-aqua"><Clock3 size={13} /> Thâm niên {seniority(e.hire_date, e.resign_date)}</span>}
               {e.job_position && <span className="hr-fact tone-blue"><Briefcase size={13} /> {e.job_position}</span>}
               {e.office && <span className="hr-fact tone-violet"><MapPin size={13} /> {e.office}</span>}
               {e.manager_name && <span className="hr-fact tone-amber"><UserCog size={13} /> Quản lý: {e.manager_name}</span>}
               <SalesFacts userId={e.id} />
-              {e.contract_end && <span className={cx('hr-fact', daysLeft(e.contract_end) <= 30 ? 'tone-red' : 'tone-green')}><FileSignature size={13} /> HĐ đến {fmtDate(e.contract_end)}</span>}
+              {e.contract_end && <span className={cx('hr-fact', daysLeft(e.contract_end) <= 30 ? 'tone-red' : 'tone-green')}><FileSignature size={13} /> {e.engagement === 'collaborator' ? 'Thỏa thuận' : 'HĐ'} đến {fmtDate(e.contract_end)}</span>}
             </div>
           </div>
           <div className="row gap-sm wrap">
@@ -354,6 +374,14 @@ export function HrmEmployee({ selfId }) {
           {TABS.map(([k, l, Icon]) => <button key={k} role="tab" aria-selected={tab === k} className={cx(tab === k && 'active')} onClick={() => setTab(k)}><Icon size={15} /> {l}</button>)}
         </nav>
       </section>
+      {edit && e.work_status === 'resigned' && (
+        <div className="hr-rejoin-bar hr-rise">
+          <RotateCcw size={18} />
+          <span className="grow small"><b>Nhân sự đã nghỉ việc.</b> Có thể quay lại làm việc theo hình thức cộng tác viên cho một khu vực công ty quy định, hưởng % theo thỏa thuận.</span>
+          <button className="btn btn-primary btn-sm" onClick={() => setRejoining(true)}><Handshake size={14} /> Quay lại làm cộng tác viên</button>
+        </div>
+      )}
+      {rejoining && <RejoinModal person={e} cat={cat} onClose={() => setRejoining(false)} onDone={() => { setRejoining(false); setTab('contracts'); reload(); }} />}
       {selfId && <div className="alert alert-info">Đây là hồ sơ nhân sự của bạn. Liên hệ phòng Hành chính Nhân sự nếu thông tin chưa chính xác.</div>}
       <div className="hr-tab-panel" key={tab}>
         {tab === 'profile' && f && (
@@ -381,8 +409,8 @@ export function HrmEmployee({ selfId }) {
                             </select>
                           ) : opts ? (
                             <select className="input" disabled={!edit} value={f[k]} onChange={(ev) => setF({ ...f, [k]: ev.target.value })}>
-                              <option value="">—</option>
-                              {opts.map((o) => <option key={o} value={o}>{WORK_STATUS[o] || o}</option>)}
+                              {k !== 'engagement' && <option value="">—</option>}
+                              {opts.map((o) => <option key={o} value={o}>{WORK_STATUS[o] || ENGAGEMENT[o] || o}</option>)}
                             </select>
                           ) : <input className="input" type={type === 'date' ? 'date' : 'text'} disabled={!edit} value={f[k]} onChange={(ev) => setF({ ...f, [k]: ev.target.value })} />}
                         </Field>
@@ -404,7 +432,7 @@ export function HrmEmployee({ selfId }) {
             )}
           </>
         )}
-        {tab === 'contracts' && (edit || self ? <ContractsPanel userId={id} canEdit={edit} /> : <HrCard><div className="hr-empty"><ShieldCheck size={16} /> Chỉ nhân viên và quản lý nhân sự xem được hợp đồng.</div></HrCard>)}
+        {tab === 'contracts' && (edit || self ? <ContractsPanel userId={id} canEdit={edit} collab={collab} /> : <HrCard><div className="hr-empty"><ShieldCheck size={16} /> Chỉ nhân viên và quản lý nhân sự xem được hợp đồng.</div></HrCard>)}
         {tab === 'career' && <CareersPanel userId={id} canEdit={edit} />}
         {tab === 'assets' && <PersonAssets userId={id} />}
         {tab === 'documents' && (edit || self ? <DocumentsPanel userId={id} isHr={edit} selfView={self} /> : <HrCard><div className="hr-empty"><ShieldCheck size={16} /> Chỉ nhân viên và quản lý nhân sự xem được giấy tờ.</div></HrCard>)}

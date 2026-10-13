@@ -6,7 +6,7 @@ import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
   Plus, Search, Trash2, Pencil, Paperclip, Upload, Download, FileText, TrendingUp, ArrowRightLeft, Award, AlertTriangle, BadgeDollarSign, FileSignature, Layers,
-  CheckCircle2, AlarmClock, History, XCircle, BarChart3, Users2, Users, UserPlus, UserMinus, Percent, Clock3, Activity, Shapes, Cake, MapPin, Briefcase, Network, Map as MapIcon, Tags,
+  Handshake, RotateCcw, CheckCircle2, AlarmClock, History, XCircle, BarChart3, Users2, Users, UserPlus, UserMinus, Percent, Clock3, Activity, Shapes, Cake, MapPin, Briefcase, Network, Map as MapIcon, Tags,
 } from 'lucide-react';
 import { api, toFormData } from '../api.js';
 import { useApp, useFetch, useToast } from '../context.jsx';
@@ -17,6 +17,7 @@ import FileViewer from '../components/FileViewer.jsx';
 import { useDebounced } from '../components/shell.jsx';
 import { readWorkbook, rowsToObjects, downloadCsv, downloadXlsx } from '../sheet.js';
 import { fmtDate, cx } from '../utils.js';
+import { AgreementFields, PAYMENT_CYCLES, fmtRate } from './AddEmployee.jsx';
 
 export const CONTRACT_STATUS = { active: 'Đang hiệu lực', ended: 'Đã hết hạn', terminated: 'Đã chấm dứt' };
 const CONTRACT_TONE = { active: 'green', ended: 'gray', terminated: 'red' };
@@ -26,6 +27,7 @@ export const CAREER_TYPES = {
   transfer: { tone: 'violet', label: 'Điều chuyển', icon: ArrowRightLeft, cls: 'badge-purple', to: 'Phòng ban mới' },
   reward: { tone: 'amber', label: 'Khen thưởng', icon: Award, cls: 'badge-orange', to: 'Danh hiệu / hình thức' },
   discipline: { tone: 'red', label: 'Kỷ luật', icon: AlertTriangle, cls: 'badge-red', to: 'Hình thức kỷ luật' },
+  rejoin: { tone: 'aqua', label: 'Quay lại làm việc', icon: RotateCcw, cls: 'badge-green', to: 'Hình thức / khu vực', from: 'Trước đây' },
 };
 const money = (v) => (v == null || v === '' ? '—' : `${Number(v).toLocaleString('vi-VN')} ₫`);
 const isMoneyText = (v) => /^\d+$/.test(String(v || ''));
@@ -36,7 +38,7 @@ export function useHrCatalog() {
 }
 
 // ================================================================ hợp đồng
-export function ContractModal({ userId, contract, onClose, onSaved }) {
+export function ContractModal({ userId, contract, kind: kindProp, onClose, onSaved }) {
   const { users } = useApp();
   const toast = useToast();
   const [cat] = useHrCatalog();
@@ -44,8 +46,10 @@ export function ContractModal({ userId, contract, onClose, onSaved }) {
     user_id: userId || contract?.user_id || null, code: contract?.code || '', contract_type: contract?.contract_type || '',
     start_date: contract?.start_date || new Date().toISOString().slice(0, 10), end_date: contract?.end_date || '',
     salary: contract?.salary ?? '', status: contract?.status === 'ended' && contract?.end_date ? 'active' : contract?.status || 'active',
-    note: contract?.note || '', close_previous: !contract,
+    note: contract?.note || '', close_previous: !contract, kind: contract?.kind || kindProp || 'labor',
+    commission_rate: contract?.commission_rate ?? '', commission_basis: contract?.commission_basis || '', payment_cycle: contract?.payment_cycle || (contract ? '' : 'monthly'), scope: contract?.scope || '',
   }));
+  const collab = f.kind === 'collab';
   const [file, setFile] = useState(null);
   const [busy, setBusy] = useState(false);
   const set = (k) => (e) => setF({ ...f, [k]: e?.target ? (e.target.type === 'checkbox' ? e.target.checked : e.target.value) : e });
@@ -59,21 +63,29 @@ export function ContractModal({ userId, contract, onClose, onSaved }) {
     } catch (e) { toast(e.message, 'error'); } finally { setBusy(false); }
   };
   return (
-    <Modal title={contract ? 'Sửa hợp đồng' : 'Thêm hợp đồng lao động'} onClose={onClose} width={620}
-      footer={<><button className="btn" onClick={onClose}>Hủy</button><button className="btn btn-primary" disabled={busy || !f.user_id || !f.contract_type} onClick={save}>Lưu hợp đồng</button></>}>
+    <Modal title={contract ? (collab ? 'Sửa thỏa thuận hợp tác' : 'Sửa hợp đồng') : collab ? 'Thêm thỏa thuận hợp tác' : 'Thêm hợp đồng lao động'} onClose={onClose} width={620}
+      footer={<><button className="btn" onClick={onClose}>Hủy</button><button className="btn btn-primary" disabled={busy || !f.user_id || (!collab && !f.contract_type) || (collab && !(Number(String(f.commission_rate).replace(',', '.')) > 0))} onClick={save}>{collab ? 'Lưu thỏa thuận' : 'Lưu hợp đồng'}</button></>}>
+      <div className="hr-seg hr-kind-seg" role="tablist">
+        {[['labor', 'Hợp đồng lao động', FileSignature], ['collab', 'Thỏa thuận cộng tác viên (hưởng %)', Handshake]].map(([k, l, Icon]) => (
+          <button key={k} type="button" role="tab" aria-selected={f.kind === k} className={cx(k === 'collab' ? 'tone-green' : 'tone-blue', f.kind === k && 'active')}
+            onClick={() => setF({ ...f, kind: k, contract_type: k === 'collab' ? '' : f.contract_type })}><Icon size={14} /> {l}</button>
+        ))}
+      </div>
       <div className="form-grid">
         {!userId && !contract && <div className="span-2"><Field label="Nhân sự" required><UserPicker users={users} value={f.user_id} onChange={set('user_id')} /></Field></div>}
+        {collab ? <AgreementFields f={f} set={(k) => (e) => setF((x) => ({ ...x, [k]: e?.target ? e.target.value : e }))} cat={cat} /> : <>
         <Field label="Loại hợp đồng" required>
           <select className="input" value={f.contract_type} onChange={set('contract_type')}>
             <option value="">— Chọn —</option>
             {[...new Set([...(cat?.contract_types || []), ...(f.contract_type ? [f.contract_type] : [])])].map((t) => <option key={t}>{t}</option>)}
           </select>
         </Field>
-        <Field label="Số hợp đồng"><input className="input" value={f.code} onChange={set('code')} placeholder="VD: 12/2026/HĐLĐ" /></Field>
+        </>}
+        <Field label={collab ? 'Số thỏa thuận' : 'Số hợp đồng'}><input className="input" value={f.code} onChange={set('code')} placeholder={collab ? 'VD: 05/2026/TTHT' : 'VD: 12/2026/HĐLĐ'} /></Field>
         <Field label="Ngày bắt đầu" required><input className="input" type="date" value={f.start_date} onChange={set('start_date')} /></Field>
         <Field label="Ngày kết thúc" hint="Để trống: không xác định thời hạn"><input className="input" type="date" value={f.end_date} onChange={set('end_date')} /></Field>
-        <Field label="Mức lương (VNĐ)">
-          <input className="input" inputMode="numeric" value={f.salary === '' ? '' : Number(String(f.salary).replace(/\D/g, '') || 0).toLocaleString('vi-VN')}
+        <Field label={collab ? 'Khoản cố định (VNĐ, nếu có)' : 'Mức lương (VNĐ)'} hint={collab ? 'VD phụ cấp hằng tháng; để trống nếu chỉ hưởng %' : ''}>
+          <input className="input" inputMode="numeric" value={f.salary === '' || f.salary == null ? '' : Number(String(f.salary).replace(/\D/g, '') || 0).toLocaleString('vi-VN')}
             onChange={(e) => setF({ ...f, salary: e.target.value.replace(/\D/g, '') })} />
         </Field>
         <Field label="Trạng thái">
@@ -83,12 +95,12 @@ export function ContractModal({ userId, contract, onClose, onSaved }) {
         </Field>
         <div className="span-2"><Field label="Ghi chú"><textarea className="input" rows={2} value={f.note} onChange={set('note')} /></Field></div>
         <div className="span-2">
-          <Field label="Tệp hợp đồng (bản scan / PDF)">
+          <Field label={collab ? 'Tệp thỏa thuận (bản scan / PDF)' : 'Tệp hợp đồng (bản scan / PDF)'}>
             <input type="file" className="input" onChange={(e) => setFile(e.target.files[0] || null)} />
             {contract?.original_name && !file && <small className="muted">Đang có: {contract.original_name}</small>}
           </Field>
         </div>
-        {!contract && <label className="check span-2"><input type="checkbox" checked={f.close_previous} onChange={set('close_previous')} /> Kết thúc các hợp đồng đang hiệu lực trước đó của nhân sự</label>}
+        {!contract && <label className="check span-2"><input type="checkbox" checked={f.close_previous} onChange={set('close_previous')} /> Kết thúc {collab ? 'các thỏa thuận' : 'các hợp đồng lao động'} đang hiệu lực trước đó của nhân sự</label>}
       </div>
     </Modal>
   );
@@ -97,14 +109,18 @@ export function ContractModal({ userId, contract, onClose, onSaved }) {
 function ContractTable({ items, showPerson, canEdit, onEdit, onDelete, onOpenFile }) {
   return (
     <div className="table-wrap"><table className="table nowrap-cells">
-      <thead><tr>{showPerson && <th>Nhân sự</th>}<th>Số HĐ</th><th>Loại hợp đồng</th><th>Bắt đầu</th><th>Kết thúc</th><th>Mức lương</th><th>Trạng thái</th><th /></tr></thead>
+      <thead><tr>{showPerson && <th>Nhân sự</th>}<th>Số HĐ</th><th>Loại hợp đồng</th><th>Bắt đầu</th><th>Kết thúc</th><th>Lương / Tỷ lệ hưởng</th><th>Trạng thái</th><th /></tr></thead>
       <tbody>{items.map((k) => (
         <tr key={k.id} className="hr-row">
           {showPerson && <td><Link to={`/hrm/employees/${k.user_id}`} className="hr-name"><Avatar name={k.name} color={k.color} uid={k.user_id} size={30} />
             <span><b>{k.name}</b><small className="muted block">{k.employee_code || ''}{k.department_name ? ` · ${k.department_name}` : ''}</small></span></Link></td>}
-          <td>{k.code ? <span className="hr-code">{k.code}</span> : <span className="muted">—</span>}</td><td>{k.contract_type}</td><td>{fmtDate(k.start_date)}</td>
+          <td>{k.code ? <span className="hr-code">{k.code}</span> : <span className="muted">—</span>}</td><td>{k.kind === 'collab' ? <span className="hr-kind-collab"><Handshake size={13} /> {k.contract_type}</span> : k.contract_type}</td><td>{fmtDate(k.start_date)}</td>
           <td>{k.end_date ? <>{fmtDate(k.end_date)}{k.status === 'active' && daysLeft(k.end_date) <= 30 && <span className="hr-after"><Pill tone="red">Còn {Math.max(0, daysLeft(k.end_date))} ngày</Pill></span>}</> : <span className="muted">Không thời hạn</span>}</td>
-          <td>{money(k.salary)}</td>
+          <td>{k.kind === 'collab'
+            ? <span title={k.scope || ''}><b className="hr-rate">{fmtRate(k.commission_rate)}</b>{k.commission_basis && <small className="muted"> {k.commission_basis.toLowerCase()}</small>}
+              {k.territory_name && <small className="hr-kind-collab block"><MapPin size={11} /> {k.territory_name}</small>}
+              {k.payment_cycle && <small className="muted block">{PAYMENT_CYCLES[k.payment_cycle]}{k.salary ? ` · cố định ${money(k.salary)}` : ''}</small>}</span>
+            : money(k.salary)}</td>
           <td><Pill tone={CONTRACT_TONE[k.status]}>{CONTRACT_STATUS[k.status]}</Pill></td>
           <td><div className="row gap-xs">
             {k.original_name && <button className="icon-btn sm" title={k.original_name} aria-label="Xem tệp hợp đồng" onClick={() => onOpenFile(k)}><Paperclip size={14} /></button>}
@@ -122,7 +138,7 @@ function useContractActions(reload) {
   const [editing, setEditing] = useState(null); // hợp đồng | 'new'
   const [viewing, setViewing] = useState(null);
   const remove = async (k) => {
-    if (!window.confirm(`Xoá hợp đồng "${k.contract_type}" của ${k.name}?`)) return;
+    if (!window.confirm(`Xoá ${k.kind === 'collab' ? 'thỏa thuận hợp tác' : `hợp đồng "${k.contract_type}"`} của ${k.name}?`)) return;
     try { await api.del(`/hrm/contracts/${k.id}`); toast('Đã xoá hợp đồng'); reload(); } catch (e) { toast(e.message, 'error'); }
   };
   const viewer = viewing && (
@@ -132,15 +148,16 @@ function useContractActions(reload) {
   return { editing, setEditing, remove, setViewing, viewer };
 }
 
-export function ContractsPanel({ userId, canEdit }) {
+export function ContractsPanel({ userId, canEdit, collab }) {
   const [items, reload, loading] = useFetch(() => api.get(`/hrm/employees/${userId}/contracts`), [userId]);
   const a = useContractActions(reload);
   return (
-    <HrCard icon={FileSignature} tone="green" title="Hợp đồng lao động" count={items?.length}
-      action={canEdit && <button className="btn btn-sm btn-primary" onClick={() => a.setEditing('new')}><Plus size={14} /> Thêm hợp đồng</button>}>
-      {loading && !items ? <Spinner /> : !items?.length ? <div className="hr-empty"><FileSignature size={16} /> Chưa có hợp đồng</div>
+    <HrCard icon={collab ? Handshake : FileSignature} tone="green" title={collab ? 'Thỏa thuận hợp tác' : 'Hợp đồng lao động'} count={items?.length}
+      action={canEdit && <button className="btn btn-sm btn-primary" onClick={() => a.setEditing('new')}><Plus size={14} /> {collab ? 'Thêm thỏa thuận' : 'Thêm hợp đồng'}</button>}>
+      {collab && <p className="muted small">Cộng tác viên làm việc theo thỏa thuận hợp tác, hưởng % theo thỏa thuận — không ký hợp đồng lao động.</p>}
+      {loading && !items ? <Spinner /> : !items?.length ? <div className="hr-empty">{collab ? <Handshake size={16} /> : <FileSignature size={16} />} {collab ? 'Chưa có thỏa thuận hợp tác' : 'Chưa có hợp đồng'}</div>
         : <ContractTable items={items} canEdit={canEdit} onEdit={a.setEditing} onDelete={a.remove} onOpenFile={a.setViewing} />}
-      {a.editing && <ContractModal userId={userId} contract={a.editing === 'new' ? null : a.editing} onClose={() => a.setEditing(null)} onSaved={() => { a.setEditing(null); reload(); }} />}
+      {a.editing && <ContractModal userId={userId} kind={collab ? 'collab' : 'labor'} contract={a.editing === 'new' ? null : a.editing} onClose={() => a.setEditing(null)} onSaved={() => { a.setEditing(null); reload(); }} />}
       {a.viewer}
     </HrCard>
   );
@@ -151,19 +168,23 @@ export function HrmContracts() {
   const [q, setQ] = useState('');
   const [status, setStatus] = useState('');
   const [type, setType] = useState('');
+  const [kind, setKind] = useState('');
   const dq = useDebounced(q);
-  const [items, reload, loading, error] = useFetch(() => api.get('/hrm/contracts', { q: dq, status, type }), [dq, status, type]);
+  const [items, reload, loading, error] = useFetch(() => api.get('/hrm/contracts', { q: dq, status, type, kind }), [dq, status, type, kind]);
   const a = useContractActions(reload);
   const [all] = useFetch(() => api.get('/hrm/contracts'), [items]);
   if (error) return <div className="page hr"><div className="alert alert-error">{error.message}</div></div>;
   const n = (st) => (all || []).filter((k) => (st === 'expiring' ? k.status === 'active' && k.end_date && daysLeft(k.end_date) >= 0 && daysLeft(k.end_date) <= 30 : k.status === st)).length;
-  const exportCsv = () => downloadCsv('hop-dong-lao-dong', ['Nhân sự', 'Mã NV', 'Phòng ban', 'Số HĐ', 'Loại hợp đồng', 'Bắt đầu', 'Kết thúc', 'Mức lương', 'Trạng thái'],
-    items.map((k) => [k.name, k.employee_code, k.department_name, k.code, k.contract_type, k.start_date, k.end_date || 'Không thời hạn', k.salary, CONTRACT_STATUS[k.status]]));
+  const exportCsv = () => downloadCsv('hop-dong-thoa-thuan', ['Nhân sự', 'Mã NV', 'Phòng ban', 'Hình thức', 'Số HĐ', 'Loại hợp đồng', 'Bắt đầu', 'Kết thúc', 'Mức lương / khoản cố định',
+    'Tỷ lệ hưởng (%)', 'Cơ sở tính', 'Kỳ thanh toán', 'Trạng thái'],
+  items.map((k) => [k.name, k.employee_code, k.department_name, k.kind === 'collab' ? 'Thỏa thuận cộng tác viên' : 'Hợp đồng lao động', k.code, k.contract_type, k.start_date,
+    k.end_date || 'Không thời hạn', k.salary, k.commission_rate, k.commission_basis, PAYMENT_CYCLES[k.payment_cycle] || '', CONTRACT_STATUS[k.status]]));
   const pick = (st) => setStatus(status === st ? '' : st);
   return (
     <div className="page hr">
-      <HrHero icon={FileSignature} tone="teal" title="Hợp đồng lao động" subtitle="Theo dõi hiệu lực, thời hạn và tệp hợp đồng của toàn công ty">
+      <HrHero icon={FileSignature} tone="teal" title="Hợp đồng & thỏa thuận" subtitle="Hợp đồng lao động của nhân viên và thỏa thuận hợp tác (hưởng %) của cộng tác viên: hiệu lực, thời hạn, tệp đính kèm">
         {items?.length > 0 && <button className="btn" onClick={exportCsv}><Download size={15} /> Trích xuất</button>}
+        <button className="btn" onClick={() => a.setEditing('new-collab')}><Handshake size={15} /> Thêm thỏa thuận CTV</button>
         <button className="btn solid" onClick={() => a.setEditing('new')}><Plus size={15} /> Thêm hợp đồng</button>
       </HrHero>
       <div className="hr-kpis">
@@ -172,6 +193,11 @@ export function HrmContracts() {
         <Kpi i={2} icon={AlarmClock} tone="red" label="Sắp hết hạn" sub="Trong 30 ngày" value={n('expiring')} onClick={() => pick('expiring')} active={status === 'expiring'} />
         <Kpi i={3} icon={History} tone="gray" label="Đã hết hạn" value={n('ended')} onClick={() => pick('ended')} active={status === 'ended'} />
         <Kpi i={4} icon={XCircle} tone="orange" label="Đã chấm dứt" value={n('terminated')} onClick={() => pick('terminated')} active={status === 'terminated'} />
+      </div>
+      <div className="hr-seg" role="tablist">
+        {[['', 'Tất cả', 'gray'], ['labor', 'Hợp đồng lao động', 'blue'], ['collab', 'Thỏa thuận cộng tác viên', 'green']].map(([v, l, tone]) => (
+          <button key={v} role="tab" aria-selected={kind === v} className={cx(`tone-${tone}`, kind === v && 'active')} onClick={() => setKind(v)}><i />{l}</button>
+        ))}
       </div>
       <div className="hr-toolbar">
         <div className="ww-search"><Search size={14} /><input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Tên nhân sự, số HĐ, mã NV" /></div>
@@ -183,7 +209,7 @@ export function HrmContracts() {
           <div className="hr-table-foot"><span>{items.length} hợp đồng</span><span>Bấm biểu tượng kẹp giấy để xem tệp</span></div>
         </div>
       )}
-      {a.editing && <ContractModal contract={a.editing === 'new' ? null : a.editing} onClose={() => a.setEditing(null)} onSaved={() => { a.setEditing(null); reload(); }} />}
+      {a.editing && <ContractModal kind={a.editing === 'new-collab' ? 'collab' : 'labor'} contract={typeof a.editing === 'string' ? null : a.editing} onClose={() => a.setEditing(null)} onSaved={() => { a.setEditing(null); reload(); }} />}
       {a.viewer}
     </div>
   );
@@ -216,7 +242,7 @@ export function CareerModal({ userId, onClose, onSaved }) {
         {!userId && <div className="span-2"><Field label="Nhân sự" required><UserPicker users={users} value={f.user_id} onChange={set('user_id')} /></Field></div>}
         <Field label="Loại">
           <select className="input" value={f.type} onChange={(e) => setF({ ...f, type: e.target.value, from_value: '', to_value: '' })}>
-            {Object.entries(CAREER_TYPES).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
+            {Object.entries(CAREER_TYPES).filter(([k]) => k !== 'rejoin').map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
           </select>
         </Field>
         <Field label="Ngày hiệu lực" required><input className="input" type="date" value={f.effective_date} onChange={set('effective_date')} /></Field>
@@ -392,7 +418,7 @@ export const PROFILE_COLUMNS = [
   ['username', 'Tài khoản', 'Tên đăng nhập'], ['employee_code', 'Mã NV', 'Mã nhân viên'], ['name', 'Họ tên', 'Họ và tên'], ['email', 'Email'],
   ['phone', 'Điện thoại', 'Số điện thoại'], ['birthday', 'Ngày sinh'], ['title', 'Chức danh'], ['department', 'Phòng ban'],
   ['manager_username', 'Quản lý trực tiếp (tài khoản / mã NV)', 'Quản lý (tài khoản)'],
-  ['gender', 'Giới tính'], ['job_position', 'Vị trí công việc'], ['employee_type', 'Phân loại nhân sự'], ['office', 'Văn phòng'],
+  ['gender', 'Giới tính'], ['job_position', 'Vị trí công việc'], ['employee_type', 'Phân loại nhân sự'], ['engagement', 'Hình thức hợp tác', 'Hình thức'], ['office', 'Văn phòng'],
   ['hire_date', 'Ngày bắt đầu', 'Ngày vào làm'], ['probation_end', 'Hết thử việc'], ['official_date', 'Ngày chính thức'], ['work_status', 'Trạng thái'],
   ['id_number', 'Số CCCD'], ['id_issue_date', 'Ngày cấp'], ['id_issue_place', 'Nơi cấp'], ['insurance_number', 'Số sổ BHXH'], ['tax_code', 'MST TNCN', 'Mã số thuế'],
   ['bank_account', 'Tài khoản ngân hàng'], ['emergency_contact', 'Liên hệ khẩn cấp'], ['resign_date', 'Ngày nghỉ việc'], ['resign_reason', 'Lý do nghỉ việc'],
@@ -405,15 +431,18 @@ const CAREER_COLUMNS = [
 const CONTRACT_COLUMNS = [
   ['username', 'Tài khoản'], ['employee_code', 'Mã NV', 'Mã nhân viên'], ['code', 'Số hợp đồng', 'Số HĐ'], ['contract_type', 'Loại hợp đồng'],
   ['start_date', 'Ngày bắt đầu'], ['end_date', 'Ngày kết thúc'], ['salary', 'Mức lương'], ['status', 'Trạng thái'], ['note', 'Ghi chú'],
+  ['kind', 'Hình thức', 'Loại văn bản'], ['commission_rate', 'Tỷ lệ hưởng (%)', 'Tỷ lệ hưởng'], ['commission_basis', 'Cơ sở tính'], ['payment_cycle', 'Kỳ thanh toán'],
 ];
 const TEMPLATE_GUIDE = [
   ['Sheet "Nhân sự"', 'Mỗi dòng một nhân sự. Nhận diện bằng Tài khoản hoặc Mã NV. Chưa có trên hệ thống → tạo tài khoản mới (cần Họ tên; thiếu Tài khoản thì dùng Mã NV làm tên đăng nhập).'],
   ['', 'Đã có → chỉ cập nhật các ô có giá trị, ô trống giữ nguyên. Ngày ghi dd/mm/yyyy hoặc yyyy-mm-dd.'],
   ['', 'Trạng thái: Chính thức / Thử việc / Tạm nghỉ / Đã nghỉ việc (nhân sự đã nghỉ việc được lưu hồ sơ, tài khoản bị khoá).'],
+  ['', 'Hình thức hợp tác: Nhân viên (hợp đồng lao động) / Cộng tác viên (thỏa thuận hợp tác hưởng %). Để trống = Nhân viên.'],
   ['', 'Phòng ban chưa có sẽ được tạo. Quản lý trực tiếp ghi tài khoản hoặc mã NV của người quản lý.'],
   ['', 'Vị trí kinh doanh: NSM, RSM, ASM, SS, PG, SREP, SREP KA — Địa bàn: đúng tên trong Cơ cấu kinh doanh (VD Miền Bắc, Hà Nội, Đồng Nai) — Ngành hàng: Hóa mỹ phẩm / Thực phẩm (để trống = phụ trách chung).'],
   ['Sheet "Lịch sử công tác"', 'Quá trình công tác trước đây: Thăng tiến, Điều chỉnh lương, Điều chuyển, Khen thưởng, Kỷ luật. Dòng trùng (cùng người, loại, ngày, nội dung) được bỏ qua.'],
   ['Sheet "Hợp đồng"', 'Các hợp đồng lao động đã ký. Trạng thái: Đang hiệu lực / Đã hết hạn / Đã chấm dứt. Hợp đồng đang hiệu lực mới nhất cập nhật vào hồ sơ.'],
+  ['', 'Thỏa thuận cộng tác viên: cột Hình thức ghi "Thỏa thuận CTV", điền Tỷ lệ hưởng (%), Cơ sở tính (VD Doanh số bán hàng), Kỳ thanh toán (Hàng tháng / Hàng quý / Theo từng giao dịch).'],
   ['Lưu ý', 'Có thể chỉ điền 1 sheet. Tối đa 1.000 nhân sự, 5.000 dòng lịch sử, 3.000 hợp đồng mỗi lần nhập.'],
 ];
 
@@ -662,6 +691,7 @@ export const CATALOG_LABELS = {
   positions: ['Vị trí công việc', 'Dùng cho vị trí và thăng tiến'],
   employee_types: ['Phân loại nhân sự', 'VD: Toàn thời gian, Bán thời gian'],
   contract_types: ['Phân loại hợp đồng', 'Loại hợp đồng lao động'],
+  collab_bases: ['Cơ sở tính hưởng % (cộng tác viên)', 'VD: Doanh số bán hàng, Doanh thu thuần, Lợi nhuận gộp'],
   doc_types: ['Phân loại giấy tờ', 'Hồ sơ giấy tờ nhân viên'],
   resign_reasons: ['Lý do nghỉ việc', 'Dùng khi ghi nhận nghỉ việc'],
 };

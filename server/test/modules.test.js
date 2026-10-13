@@ -121,6 +121,62 @@ test('HRM: managers see profiles, members only themselves', async () => {
   assert.ok(stats.data.contracts_expiring.length >= 1);
 });
 
+test('HRM: add people directly; collaborators work under a % agreement instead of a labour contract', async () => {
+  const hr = await login('chilan');
+  const demo = await login('demo');
+  const body = { name: 'Trần Cộng Tác', username: 'ctv.tran', password: 'abc12345', employee_code: 'CTV001', engagement: 'collaborator',
+    hire_date: '2026-10-01', agreement: { commission_rate: '7,5', commission_basis: 'Doanh số bán hàng', payment_cycle: 'monthly', scope: 'Giới thiệu khách hàng khu vực Hà Nội' } };
+  assert.equal((await demo.post('/hrm/employees', body)).status, 403);
+  assert.equal((await hr.post('/hrm/employees', { ...body, agreement: { commission_rate: 0 } })).status, 400);
+  const res = await hr.post('/hrm/employees', body);
+  assert.equal(res.status, 201);
+  assert.equal(res.data.engagement, 'collaborator');
+  assert.equal(res.data.commission_rate, 7.5);
+  assert.equal(res.data.employee_type, 'Cộng tác viên');
+  assert.equal((await hr.post('/hrm/employees', body)).status, 400); // trùng tài khoản
+  // đăng nhập được ngay bằng mật khẩu đã đặt
+  assert.equal((await raw('/auth/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username: 'ctv.tran', password: 'abc12345' }) })).status, 200);
+  // thỏa thuận hợp tác thay cho hợp đồng lao động
+  const ks = (await hr.get(`/hrm/employees/${res.data.id}/contracts`)).data;
+  assert.equal(ks.length, 1);
+  assert.equal(ks[0].kind, 'collab');
+  assert.equal(ks[0].payment_cycle, 'monthly');
+  assert.ok((await hr.get('/hrm/contracts?kind=collab')).data.some((k) => k.user_id === res.data.id));
+  assert.ok(!(await hr.get('/hrm/contracts?kind=labor')).data.some((k) => k.user_id === res.data.id));
+  // danh sách "Cộng tác viên" + thống kê
+  const ctv = (await hr.get('/hrm/employees?view=collaborator')).data;
+  assert.deepEqual(ctv.map((e) => e.username), ['ctv.tran']);
+  assert.equal((await hr.get('/hrm/stats')).data.collaborators, 1);
+  // nhân viên thường: có thể kèm hợp đồng lao động
+  const emp = await hr.post('/hrm/employees', { name: 'Lê Nhân Viên', username: 'nv.le', password: 'abc12345', work_status: 'probation',
+    agreement: { contract_type: 'Thử việc', end_date: '2026-12-31', salary: '12.000.000' } });
+  assert.equal(emp.status, 201);
+  assert.equal(emp.data.engagement, 'employee');
+  assert.equal(emp.data.contract_type, 'Thử việc');
+  assert.equal((await hr.get(`/hrm/employees/${emp.data.id}/contracts`)).data[0].salary, 12000000);
+
+  // nhân sự cũ quay lại làm cộng tác viên cho một khu vực công ty quy định
+  const region = (await hr.get('/sales/structure')).data.territories.find((t) => t.level === 'region');
+  assert.equal((await hr.post(`/hrm/employees/${emp.data.id}/rejoin`, { commission_rate: 5, territory_id: region.id })).status, 400); // đang làm việc
+  await hr.put(`/hrm/employees/${emp.data.id}`, { work_status: 'resigned', resign_date: '2026-11-30', resign_reason: 'Nghỉ theo nguyện vọng cá nhân' });
+  assert.equal((await raw('/auth/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username: 'nv.le', password: 'abc12345' }) })).status, 401); // tài khoản bị khoá
+  assert.equal((await hr.post(`/hrm/employees/${emp.data.id}/rejoin`, { commission_rate: 5 })).status, 400); // thiếu khu vực
+  const back = await hr.post(`/hrm/employees/${emp.data.id}/rejoin`, { start_date: '2027-01-02', commission_rate: 5, commission_basis: 'Doanh số bán hàng', territory_id: region.id });
+  assert.equal(back.status, 200);
+  assert.equal(back.data.engagement, 'collaborator');
+  assert.equal(back.data.work_status, 'working');
+  assert.equal(back.data.active, 1);
+  assert.equal(back.data.resign_date, null);
+  assert.equal(back.data.collab_territory, region.name);
+  assert.equal((await raw('/auth/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username: 'nv.le', password: 'abc12345' }) })).status, 200);
+  const hist = (await hr.get(`/hrm/employees/${emp.data.id}/contracts`)).data;
+  assert.deepEqual(hist.map((k) => [k.kind, k.status]), [['collab', 'active'], ['labor', 'ended']]); // hợp đồng cũ vẫn giữ
+  assert.equal(hist[0].territory_name, region.name);
+  assert.ok((await hr.get(`/hrm/employees/${emp.data.id}/careers`)).data.some((k) => k.type === 'rejoin'));
+  // lọc theo địa bàn tìm ra cộng tác viên của khu vực
+  assert.ok((await hr.get(`/hrm/employees?territory_id=${region.id}`)).data.some((e) => e.id === emp.data.id));
+});
+
 test('Checkin: in/out once per day; manager sees team; timesheet', async () => {
   const demo = await login('demo');
   const today = await demo.get('/checkin/today');

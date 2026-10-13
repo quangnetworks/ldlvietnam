@@ -3,10 +3,12 @@
  *  - thông báo đã đọc > 90 ngày, mọi thông báo > 365 ngày
  *  - lịch sử đăng nhập > 180 ngày, nhật ký gửi webhook > 60 ngày
  * Xoá theo lô 5.000 dòng để mỗi câu lệnh ngắn (giới hạn thời gian truy vấn của Cloudflare D1).
+ *  - kiêm nhiệm (cơ cấu kinh doanh) hết thời hạn: rời vị trí kiêm nhiệm
  * Nhật ký hoạt động / lịch sử hệ thống (audit) giữ nguyên.
  */
 import { run } from './db.js';
 import { syncSearch } from './search.js';
+import { expireConcurrent } from './routes/territory.js';
 
 const RULES = [
   ['notifications', "is_read = 1 AND created_at < datetime('now', '-90 day')"],
@@ -24,6 +26,8 @@ export async function housekeeping({ maxRounds = 20 } = {}) {
       if (changes < 5000) break;
     }
   }
+  // Kiêm nhiệm hết thời hạn → vị trí trống chờ người phụ trách mới
+  try { removed.expired_posts = await expireConcurrent(); } catch { /* không bắt buộc */ }
   // Chỉ mục tìm kiếm: xử lý nốt hàng đợi rồi gộp các phân đoạn FTS cho truy vấn nhanh
   try {
     await syncSearch(3);

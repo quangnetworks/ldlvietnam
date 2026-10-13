@@ -287,3 +287,32 @@ test('HRM: phòng ban vs văn phòng — đổi phòng ban trên hồ sơ, cập
   const oldId = (await hr.get('/hrm/employees?view=resigned')).data.find((x) => x.username === 'sr.cu').id;
   assert.equal((await hr.get(`/sales/users/${oldId}?history=1`)).data.length, 1);
 });
+
+test('SS kiêm nhiệm SREP trong một giai đoạn: mã phụ -1 / -2, hết hạn thì vị trí trống', async () => {
+  const hr = await login('chilan');
+  const s = (await hr.get('/sales/structure')).data;
+  const users = (await hr.get('/users')).data;
+  const demo = users.find((x) => x.username === 'demo');
+  const P = (name) => s.territories.find((t) => t.name === name && t.level === 'province');
+  const add = (t, extra) => hr.post(`/sales/territories/${P(t).id}/members`, { user_id: demo.id, role: 'SREP', is_concurrent: true, ...extra });
+  // ngày kết thúc phải hợp lệ, không ở quá khứ
+  assert.equal((await add('Hưng Yên', { since: '2026-10-01', until: '2026-09-01' })).status, 400);
+  const a = await add('Hưng Yên', { since: '2026-10-01', until: '2099-12-31' });
+  assert.equal(a.status, 201);
+  assert.equal(a.data.sub_index, 1);
+  assert.equal((await add('Hải Dương', { sub_index: 1 })).status, 400);           // -1 đã dùng
+  assert.equal((await add('Hải Dương', {})).data.sub_index, 2);
+  assert.equal((await add('Bắc Ninh', {})).status, 400);                          // tối đa 2 vị trí SREP kiêm nhiệm
+  const posts = (await hr.get(`/sales/users/${demo.id}`)).data.filter((x) => x.role === 'SREP');
+  assert.deepEqual(posts.map((x) => [x.territory_name, x.post_code, x.until]).sort(), [['Hưng Yên', 'LDL006-1', '2099-12-31'], ['Hải Dương', 'LDL006-2', null]]);
+  // vị trí chính vẫn là SS
+  assert.equal((await hr.get(`/hrm/employees/${demo.id}`)).data.sales_role, 'SS');
+  assert.match((await hr.get(`/hrm/employees/${demo.id}`)).data.territory_names, /Hưng Yên \(KN SREP -1 đến 2099-12-31\)/);
+  // hết hạn kiêm nhiệm → rời vị trí, vị trí SREP thành vị trí trống; mã -1 được dùng lại
+  const { run } = await import('../src/db.js');
+  await run("UPDATE territory_members SET until = '2020-01-01' WHERE user_id = ? AND sub_index = 1", demo.id);
+  const after2 = (await hr.get('/sales/structure')).data;
+  assert.ok(!after2.members.some((m) => m.user_id === demo.id && m.territory_id === P('Hưng Yên').id && m.role === 'SREP'));
+  assert.ok(after2.vacancies.some((v) => v.territory_id === P('Hưng Yên').id && v.role === 'SREP' && v.reason === 'expired' && v.sub_index === 1));
+  assert.equal((await add('Bắc Ninh', {})).data.sub_index, 1);
+});
