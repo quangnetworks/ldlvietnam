@@ -11,6 +11,7 @@ import { createNodeDriver } from './drivers/node-sqlite.js';
 import { createFsStorage } from './drivers/fs-storage.js';
 import { buildSeed, resetStatements } from './seed.js';
 import { housekeeping } from './maintenance.js';
+import { hrmReminders } from './routes/hrm.js';
 import { hashPassword } from './auth.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -80,4 +81,8 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.a
   serve({ fetch: createNodeApp().fetch, port, hostname }, () => console.log(`LDL Workspace: http://localhost:${port} (mở từ máy khác: http://<IP-máy-chủ>:${port})`));
   // dọn dẹp dữ liệu cũ mỗi ngày (trên Cloudflare dùng Cron Trigger)
   setInterval(() => housekeeping().catch((e) => console.error('housekeeping:', e)), 24 * 3600e3).unref();
+  // nhắc việc HRM lúc 8 giờ sáng (giờ Việt Nam); mỗi mốc chỉ nhắc một lần nên chạy lại cũng không trùng
+  setInterval(() => {
+    if (new Date(Date.now() + 7 * 3600e3).getUTCHours() === 8) hrmReminders().catch((e) => console.error('hrm reminders:', e));
+  }, 3600e3).unref();
 }

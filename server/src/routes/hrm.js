@@ -1,6 +1,6 @@
 /** HRM+ modules: LDL HRM (hồ sơ nhân sự), LDL Checkin (chấm công), LDL Timeoff (nghỉ phép). */
 import { Hono } from 'hono';
-import { all, get, run, batch, getSetting, setSetting } from '../db.js';
+import { all, get, run, batch, getSetting, setSetting, notify } from '../db.js';
 import { requireAdmin, underSql, isSubordinate, hashPassword } from '../auth.js';
 import { badRequest, notFound, forbidden, toInt, idList, jsonBody, formBody, storeFiles, removeFile, sendFile } from '../util.js';
 import { publicFileLink } from '../files.js';
@@ -27,6 +27,66 @@ async function jsonSetting(key, defaults) {
   try { return { ...defaults, ...JSON.parse((await getSetting(key)) || '{}') }; } catch { return { ...defaults }; }
 }
 const hrmSettings = () => jsonSetting('hrm_settings', { managers: [] });
+
+/**
+ * Thử việc theo Bộ luật Lao động 2019 — Điều 24 (chỉ thử việc 1 lần cho một công việc), Điều 25 (thời gian tối đa):
+ * người quản lý doanh nghiệp ≤ 180 ngày; cao đẳng trở lên ≤ 60 ngày; trung cấp / công nhân kỹ thuật / nhân viên nghiệp vụ ≤ 30 ngày;
+ * công việc khác ≤ 6 ngày làm việc. Công ty có thể đặt thời gian chuẩn ngắn hơn (Cài đặt HRM); gia hạn được duyệt nhưng
+ * tổng thời gian không vượt mức tối đa của luật.
+ */
+export const PROBATION_LEVELS = {
+  manager: { label: 'Người quản lý doanh nghiệp', max: 180 },
+  college: { label: 'Chức danh cần trình độ cao đẳng trở lên', max: 60 },
+  intermediate: { label: 'Trung cấp, công nhân kỹ thuật, nhân viên nghiệp vụ', max: 30 },
+  other: { label: 'Công việc khác', max: 6, workdays: true },
+};
+const PROBATION_DEFAULTS = { default_level: 'college', days: { manager: 180, college: 60, intermediate: 30, other: 6 }, by_position: {} };
+const addDays = (iso, n) => { const d = new Date(`${iso}T00:00:00Z`); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); };
+const dayDiff = (a, b) => Math.round((Date.parse(`${b}T00:00:00Z`) - Date.parse(`${a}T00:00:00Z`)) / 864e5);
+/** Quy định thử việc của công ty (danh mục HRM) + thông tin dùng để đếm ngày làm việc. */
+async function probationContext() {
+  const cat = await catalog();
+  const pol = { ...PROBATION_DEFAULTS, ...(cat.probation || {}) };
+  pol.days = { ...PROBATION_DEFAULTS.days, ...(pol.days || {}) };
+  const ck = await checkinSettings();
+  return { pol, holidays: new Set((cat.holidays || []).map((h) => h.date)), workSaturday: ck.work_saturday !== false };
+}
+/** Nhóm công việc: chọn trên hồ sơ → theo vị trí công việc (Cài đặt) → mặc định. */
+function probationLevelOf(ctx, level, position) {
+  if (PROBATION_LEVELS[level]) return level;
+  const byPos = ctx.pol.by_position?.[position];
+  return PROBATION_LEVELS[byPos] ? byPos : PROBATION_LEVELS[ctx.pol.default_level] ? ctx.pol.default_level : 'college';
+}
+/** Ngày cuối cùng sau n ngày (lịch) hoặc n ngày làm việc (bỏ Chủ nhật, ngày lễ, Thứ 7 nếu công ty nghỉ Thứ 7), tính cả ngày bắt đầu. */
+function probationEndOf(ctx, start, level, n) {
+  if (!PROBATION_LEVELS[level].workdays) return addDays(start, n - 1);
+  let d = start; let count = 0;
+  for (let i = 0; i < 60; i++, d = addDays(d, 1)) {
+    const dow = new Date(`${d}T00:00:00Z`).getUTCDay();
+    if (dow === 0 || (dow === 6 && !ctx.workSaturday) || ctx.holidays.has(d)) continue;
+    if (++count >= n) return d;
+  }
+  return d;
+}
+/** Thông tin thử việc của một hồ sơ: nhóm, thời gian chuẩn của công ty, hạn tối đa theo luật. */
+function probationInfo(ctx, { hire_date, probation_level, job_position, probation_end }) {
+  const level = probationLevelOf(ctx, probation_level, job_position);
+  const L = PROBATION_LEVELS[level];
+  const std = Math.min(Math.max(1, toInt(ctx.pol.days[level], L.max)), L.max);
+  return {
+    level, label: L.label, legal_days: L.max, workdays: !!L.workdays, standard_days: std,
+    standard_end: hire_date ? probationEndOf(ctx, hire_date, level, std) : null,
+    legal_end: hire_date ? probationEndOf(ctx, hire_date, level, L.max) : null,
+    end: probation_end || null,
+  };
+}
+/** Kiểm tra ngày hết thử việc không vượt hạn tối đa theo luật. */
+function checkProbationEnd(info) {
+  if (info.end && info.legal_end && info.end > info.legal_end) {
+    throw badRequest(`Thử việc tối đa ${info.legal_days} ${info.workdays ? 'ngày làm việc' : 'ngày'} với nhóm "${info.label}" (Điều 25 Bộ luật Lao động 2019) — hết thử việc chậm nhất ngày ${info.legal_end.split('-').reverse().join('/')}`);
+  }
+  if (info.end && info.end < '1900-01-01') throw badRequest('Ngày hết thử việc không hợp lệ');
+}
 // photo_rules: [{ office, staff, sales }] — bắt buộc chụp ảnh + định vị khi chấm công bằng điện thoại, theo văn phòng
 // (office '' = nhân viên chưa gán văn phòng); staff / sales: áp dụng cho nhân viên văn phòng / đội sales (users.sales_role).
 const checkinSettings = () => jsonSetting('checkin_settings', { start: '08:30', end: '17:30', grace: 10, ip_only: false, ip_rules: [], work_saturday: true, photo_rules: [] });
@@ -52,7 +112,7 @@ async function canSeeUser(viewer, userId) {
 // ================================================================ HRM
 const HR_FIELDS = ['employee_code', 'gender', 'id_number', 'id_issue_date', 'id_issue_place', 'hire_date', 'probation_end', 'contract_type',
   'contract_end', 'work_status', 'insurance_number', 'tax_code', 'bank_account', 'emergency_contact', 'note',
-  'official_date', 'office', 'job_position', 'employee_type', 'resign_date', 'resign_reason', 'engagement'];
+  'official_date', 'office', 'job_position', 'employee_type', 'resign_date', 'resign_reason', 'engagement', 'probation_level'];
 const DATE_FIELDS = ['id_issue_date', 'hire_date', 'probation_end', 'contract_end', 'official_date', 'resign_date'];
 const WORK_STATUS = ['working', 'probation', 'leave', 'resigned'];
 /** Hình thức hợp tác: nhân viên (hợp đồng lao động) | cộng tác viên (thỏa thuận hợp tác, hưởng % theo thỏa thuận). */
@@ -80,7 +140,11 @@ const EMP_SELECT = `SELECT u.id, u.name, u.username, u.email, u.phone, u.title, 
     (SELECT t.name FROM territories t WHERE t.id = ${AGREEMENT_SQL('territory_id')}) AS collab_territory
   FROM users u LEFT JOIN departments d ON d.id = u.department_id LEFT JOIN users m ON m.id = u.manager_id
   LEFT JOIN hr_profiles h ON h.user_id = u.id`;
-const empView = (e) => ({ ...e, id: e.id ?? e.user_id, work_status: e.work_status || 'working', engagement: e.engagement || 'employee' });
+const empView = (e) => {
+  const v = { ...e, id: e.id ?? e.user_id, work_status: e.work_status || 'working', engagement: e.engagement || 'employee' };
+  v.payroll_missing = payrollMissing(v);
+  return v;
+};
 
 r.get('/hrm/meta', async (c) => c.json({ is_manager: await isHrManager(c.get('user')), settings: await hrmSettings() }));
 
@@ -105,6 +169,7 @@ function employeeFilter(user, q, search = null) {
   const view = q.view || q.status || 'working_all';
   if (view === 'all') { /* mọi nhân sự */ } else if (view === 'resigned') where.push("(h.work_status = 'resigned' OR u.active = 0)");
   else if (view === 'mine') { where.push(`${underSql('u.id')} AND u.active = 1 AND IFNULL(h.work_status, 'working') <> 'resigned'`); params.push(user.id); }
+  else if (view === 'payroll') where.push(`u.active = 1 AND IFNULL(h.work_status, 'working') <> 'resigned' AND ${PAYROLL_MISSING_SQL}`);
   else if (view === 'collaborator') where.push("u.active = 1 AND IFNULL(h.work_status, 'working') <> 'resigned' AND h.engagement = 'collaborator'");
   else if (['working', 'probation', 'leave'].includes(view)) { where.push("IFNULL(h.work_status, 'working') = ? AND u.active = 1"); params.push(view); }
   else where.push("u.active = 1 AND IFNULL(h.work_status, 'working') <> 'resigned'");
@@ -140,6 +205,11 @@ const EXPORT_COLS = [
   ['last_promotion', 'Thăng tiến gần nhất'], ['resign_date', 'Ngày nghỉ việc'], ['resign_reason', 'Lý do nghỉ việc'],
 ];
 const STATUS_TEXT = { working: 'Chính thức', probation: 'Thử việc', leave: 'Tạm nghỉ', resigned: 'Đã nghỉ việc' };
+/** Thông tin bắt buộc để nhận lương / thù lao (sổ BHXH chỉ áp dụng nhân viên có hợp đồng lao động). */
+export const PAYROLL_FIELDS = { id_number: 'Số CCCD', tax_code: 'Mã số thuế TNCN', bank_account: 'Tài khoản ngân hàng', insurance_number: 'Số sổ BHXH' };
+const PAYROLL_MISSING_SQL = `(IFNULL(h.id_number, '') = '' OR IFNULL(h.tax_code, '') = '' OR IFNULL(h.bank_account, '') = ''
+  OR (IFNULL(h.engagement, 'employee') = 'employee' AND IFNULL(h.insurance_number, '') = ''))`;
+const payrollMissing = (e) => Object.keys(PAYROLL_FIELDS).filter((k) => !String(e[k] ?? '').trim() && !(k === 'insurance_number' && e.engagement === 'collaborator'));
 
 /** Trích xuất danh sách nhân sự (CSV mở bằng Excel), theo view & bộ lọc đang chọn. */
 r.get('/hrm/employees/export', async (c) => {
@@ -426,6 +496,13 @@ r.post('/hrm/employees', async (c) => {
   }
   hr.work_status = b.work_status || 'working';
   if (engagement === 'collaborator' && !hr.employee_type) hr.employee_type = 'Cộng tác viên';
+  if (hr.work_status === 'probation') {
+    hr.hire_date ||= vnDate();                         // chưa nhập: bắt đầu từ hôm nay
+    const info = probationInfo(await probationContext(), hr);
+    hr.probation_level = info.level;
+    hr.probation_end ||= info.standard_end;            // tự động theo quy định
+    checkProbationEnd({ ...info, end: hr.probation_end });
+  }
   const keys = Object.keys(hr);
   const { lastId: id } = await run(`INSERT INTO users(username, password_hash, name, email, phone, title, department_id, manager_id, role, birthday, address, active, color)
     VALUES (?,?,?,?,?,?,?,?, 'member', ?, ?, 1, ?)`, username, await hashPassword(String(b.password)), name, clean(b.email) || null, clean(b.phone) || null,
@@ -488,6 +565,119 @@ r.post('/hrm/employees/:id/rejoin', async (c) => {
   return c.json(empView(await get(`${EMP_SELECT} WHERE u.id = ?`, id)));
 });
 
+// ---------------------------------------------------------------- thử việc & gia hạn thử việc
+const EXT_SELECT = `SELECT x.*, u.name, u.color, rb.name AS requested_by_name, db.name AS decided_by_name, h.hire_date, h.probation_level, h.job_position, h.probation_end
+  FROM hr_probation_extensions x JOIN users u ON u.id = x.user_id LEFT JOIN users rb ON rb.id = x.requested_by LEFT JOIN users db ON db.id = x.decided_by
+  LEFT JOIN hr_profiles h ON h.user_id = x.user_id`;
+/** Người duyệt gia hạn: quản trị viên + Quản lý nhân sự. */
+async function probationApprovers() {
+  const admins = (await all("SELECT id FROM users WHERE role = 'admin' AND active = 1")).map((x) => x.id);
+  return [...new Set([...admins, ...(await hrmSettings()).managers])];
+}
+/** Đề xuất gia hạn: Quản lý nhân sự, hoặc cấp quản lý (trực tiếp / gián tiếp) của người thử việc. */
+async function canRequestExtension(user, userId) {
+  return user.id !== userId && ((await isHrManager(user)) || isSubordinate(user.id, userId));
+}
+
+r.get('/hrm/employees/:id/probation', async (c) => {
+  const user = c.get('user');
+  const id = toInt(c.req.param('id'));
+  if (!(await canSeeUser(user, id))) throw forbidden();
+  const h = await get(`SELECT u.id, IFNULL(h.work_status, 'working') AS work_status, h.hire_date, h.probation_end, h.probation_level, h.job_position
+    FROM users u LEFT JOIN hr_profiles h ON h.user_id = u.id WHERE u.id = ?`, id);
+  if (!h) throw notFound();
+  const info = probationInfo(await probationContext(), h);
+  const extensions = await all(`${EXT_SELECT} WHERE x.user_id = ? ORDER BY x.id DESC`, id);
+  return c.json({ ...info, work_status: h.work_status, hire_date: h.hire_date, extensions,
+    can_request: h.work_status === 'probation' && (await canRequestExtension(user, id)), can_approve: await isHrManager(user) });
+});
+
+r.get('/hrm/probation-extensions', async (c) => {
+  await requireHr(c);
+  const st = c.req.query('status') || 'pending';
+  return c.json(await all(`${EXT_SELECT} WHERE x.status = ? ORDER BY x.id DESC LIMIT 200`, st));
+});
+
+r.post('/hrm/employees/:id/probation-extensions', async (c) => {
+  const user = c.get('user');
+  const id = toInt(c.req.param('id'));
+  if (!(await canRequestExtension(user, id))) throw forbidden('Chỉ Quản lý nhân sự hoặc cấp quản lý của nhân sự mới đề xuất gia hạn thử việc');
+  const h = await get(`SELECT u.name, IFNULL(h.work_status, 'working') AS work_status, h.hire_date, h.probation_end, h.probation_level, h.job_position
+    FROM users u LEFT JOIN hr_profiles h ON h.user_id = u.id WHERE u.id = ?`, id);
+  if (!h) throw notFound();
+  if (h.work_status !== 'probation') throw badRequest(`${h.name} không ở trạng thái thử việc`);
+  if (!h.hire_date) throw badRequest('Hồ sơ chưa có ngày bắt đầu — cập nhật trước khi gia hạn');
+  if (await get("SELECT 1 FROM hr_probation_extensions WHERE user_id = ? AND status = 'pending'", id)) throw badRequest('Đang có một đề xuất gia hạn chờ duyệt');
+  const b = await jsonBody(c);
+  const info = probationInfo(await probationContext(), h);
+  const cur = h.probation_end || info.standard_end;
+  const newEnd = isoDate(b.new_end) || (toInt(b.days) > 0 ? addDays(cur, toInt(b.days)) : null);
+  if (!newEnd) throw badRequest('Chọn ngày hết thử việc mới');
+  if (newEnd <= cur) throw badRequest('Ngày hết thử việc mới phải sau ngày hiện tại');
+  checkProbationEnd({ ...info, end: newEnd });
+  const reason = clean(b.reason).slice(0, 2000);
+  if (!reason) throw badRequest('Nhập lý do gia hạn');
+  const { lastId } = await run('INSERT INTO hr_probation_extensions(user_id, old_end, new_end, reason, requested_by) VALUES (?,?,?,?,?)', id, cur, newEnd, reason, user.id);
+  await notify(await probationApprovers(), { actorId: user.id, app: 'hrm', type: 'probation',
+    title: `${user.name} đề xuất gia hạn thử việc ${h.name} đến ${newEnd.split('-').reverse().join('/')}`, link: `/hrm/employees/${id}` });
+  await audit(user.id, 'hrm.probation', `Đề xuất gia hạn thử việc ${h.name}: ${cur} → ${newEnd}`);
+  return c.json(await get(`${EXT_SELECT} WHERE x.id = ?`, lastId), 201);
+});
+
+/** Duyệt / từ chối (Quản lý nhân sự, quản trị viên); người đề xuất huỷ được đề xuất của mình khi chưa duyệt. */
+r.post('/hrm/probation-extensions/:xid/:action', async (c) => {
+  const user = c.get('user');
+  const action = c.req.param('action');
+  if (!['approve', 'reject', 'cancel'].includes(action)) throw notFound();
+  const x = await get(`${EXT_SELECT} WHERE x.id = ?`, toInt(c.req.param('xid')));
+  if (!x) throw notFound('Không tìm thấy đề xuất');
+  if (x.status !== 'pending') throw badRequest('Đề xuất đã được xử lý');
+  const note = clean((await jsonBody(c)).note).slice(0, 2000) || null;
+  if (action === 'cancel') {
+    if (x.requested_by !== user.id) throw forbidden('Chỉ người đề xuất mới huỷ được');
+    await run("UPDATE hr_probation_extensions SET status = 'cancelled', decided_at = datetime('now') WHERE id = ?", x.id);
+    return c.json({ ok: true });
+  }
+  if (!(await isHrManager(user))) throw forbidden('Chỉ Quản lý nhân sự hoặc quản trị viên mới duyệt gia hạn thử việc');
+  if (x.requested_by === user.id && user.role !== 'admin') throw forbidden('Không tự duyệt đề xuất của chính mình — cần Quản lý nhân sự khác hoặc quản trị viên');
+  if (action === 'approve') {
+    checkProbationEnd({ ...probationInfo(await probationContext(), x), end: x.new_end });   // luật / quy định có thể đã đổi
+    await batch([
+      ["UPDATE hr_probation_extensions SET status = 'approved', decided_by = ?, decided_at = datetime('now'), decision_note = ? WHERE id = ?", [user.id, note, x.id]],
+      ["UPDATE hr_profiles SET probation_end = ?, updated_at = datetime('now') WHERE user_id = ?", [x.new_end, x.user_id]],
+    ]);
+  } else {
+    if (!note) throw badRequest('Nhập lý do từ chối');
+    await run("UPDATE hr_probation_extensions SET status = 'rejected', decided_by = ?, decided_at = datetime('now'), decision_note = ? WHERE id = ?", user.id, note, x.id);
+  }
+  const d = x.new_end.split('-').reverse().join('/');
+  await notify([x.requested_by, x.user_id], { actorId: user.id, app: 'hrm', type: 'probation',
+    title: action === 'approve' ? `${user.name} đã duyệt gia hạn thử việc ${x.name} đến ${d}` : `${user.name} đã từ chối gia hạn thử việc ${x.name}${note ? `: ${note}` : ''}`,
+    link: `/hrm/employees/${x.user_id}` });
+  await audit(user.id, 'hrm.probation', `${action === 'approve' ? 'Duyệt' : 'Từ chối'} gia hạn thử việc ${x.name} đến ${x.new_end}`);
+  return c.json(await get(`${EXT_SELECT} WHERE x.id = ?`, x.id));
+});
+
+/** Nhân sự tự bổ sung thông tin nhận lương (CCCD, MST, tài khoản ngân hàng, sổ BHXH) — Quản lý nhân sự được thông báo. */
+r.put('/hrm/me/payroll', async (c) => {
+  const user = c.get('user');
+  if (user.role === 'guest') throw forbidden();
+  const b = await jsonBody(c);
+  const keys = ['id_number', 'id_issue_date', 'id_issue_place', 'tax_code', 'bank_account', 'insurance_number'].filter((k) => b[k] !== undefined);
+  if (!keys.length) throw badRequest('Chưa có thông tin cần cập nhật');
+  if (b.id_issue_date && isoDate(b.id_issue_date) === false) throw badRequest('Ngày cấp không hợp lệ');
+  if (b.id_number && !/^\d{9}(\d{3})?$/.test(clean(b.id_number))) throw badRequest('Số CCCD gồm 12 chữ số (CMND cũ 9 chữ số)');
+  if (b.tax_code && !/^\d{10}(-\d{3})?$/.test(clean(b.tax_code)) && !/^\d{12}$/.test(clean(b.tax_code))) throw badRequest('Mã số thuế gồm 10 chữ số (hoặc số CCCD 12 chữ số)');
+  const val = (k) => (k === 'id_issue_date' ? isoDate(b[k]) || null : clean(b[k]).slice(0, 200) || null);
+  await run(`INSERT INTO hr_profiles(user_id, ${keys.join(', ')}, updated_at) VALUES (?, ${keys.map(() => '?').join(', ')}, datetime('now'))
+    ON CONFLICT(user_id) DO UPDATE SET ${keys.map((k) => `${k} = excluded.${k}`).join(', ')}, updated_at = datetime('now')`, user.id, ...keys.map(val));
+  await notify(await probationApprovers(), { actorId: user.id, app: 'hrm', type: 'payroll',
+    title: `${user.name} đã cập nhật hồ sơ nhận lương (${keys.map((k) => ({ ...PAYROLL_FIELDS, id_issue_date: 'ngày cấp', id_issue_place: 'nơi cấp' })[k]).join(', ')})`,
+    link: `/hrm/employees/${user.id}` });
+  await audit(user.id, 'hrm.payroll', `Tự cập nhật hồ sơ nhận lương: ${keys.join(', ')}`);
+  return c.json(empView(await get(`${EMP_SELECT} WHERE u.id = ?`, user.id)));
+});
+
 r.get('/hrm/employees/:id', async (c) => {
   const id = toInt(c.req.param('id'));
   if (!(await canSeeUser(c.get('user'), id))) throw forbidden();
@@ -499,10 +689,21 @@ r.get('/hrm/employees/:id', async (c) => {
 r.put('/hrm/employees/:id', async (c) => {
   await requireHr(c);
   const id = toInt(c.req.param('id'));
-  const u = await get(`SELECT u.id, u.username, u.role, u.is_owner, u.department_id, IFNULL(h.work_status, 'working') AS work_status
+  const u = await get(`SELECT u.id, u.username, u.role, u.is_owner, u.department_id, IFNULL(h.work_status, 'working') AS work_status,
+      h.probation_end, h.hire_date, h.probation_level, h.job_position
     FROM users u LEFT JOIN hr_profiles h ON h.user_id = u.id WHERE u.id = ?`, id);
   if (!u) throw notFound();
   const b = await jsonBody(c);
+  if (b.probation_level === undefined) b.probation_level = u.probation_level;   // ô không có trên biểu mẫu thì giữ nguyên
+  if (b.probation_level && !PROBATION_LEVELS[b.probation_level]) throw badRequest('Nhóm công việc thử việc không hợp lệ');
+  // thử việc: tự tính ngày hết thử việc theo quy định khi để trống; không cho vượt hạn tối đa của luật
+  if (b.work_status === 'probation' && b.hire_date && /^\d{4}-\d{2}-\d{2}$/.test(b.hire_date)) {
+    const info = probationInfo(await probationContext(), { ...b, probation_end: b.probation_end || null });
+    b.probation_level = info.level;
+    if (!b.probation_end) b.probation_end = info.standard_end;
+    const changed = b.probation_end !== u.probation_end || b.hire_date !== u.hire_date || b.probation_level !== u.probation_level;
+    if (changed) checkProbationEnd({ ...info, end: b.probation_end });
+  }
   // Phòng ban (đơn vị tổ chức, dùng chung toàn hệ thống) — khác "Văn phòng" (nơi / khối làm việc trên hồ sơ HRM)
   if (b.department_id !== undefined && toInt(b.department_id) !== u.department_id) {
     await setDepartment(c.get('user'), [u], toInt(b.department_id));
@@ -512,7 +713,7 @@ r.put('/hrm/employees/:id', async (c) => {
   for (const k of DATE_FIELDS) {
     if (b[k] && !/^\d{4}-\d{2}-\d{2}$/.test(b[k])) throw badRequest('Ngày không hợp lệ');
   }
-  const vals = HR_FIELDS.map((k) => (b[k] === undefined || b[k] === '' ? null : String(b[k]).slice(0, 500)));
+  const vals = HR_FIELDS.map((k) => (b[k] == null || b[k] === '' ? null : String(b[k]).slice(0, 500)));
   vals[HR_FIELDS.indexOf('work_status')] ||= 'working';
   await run(`INSERT INTO hr_profiles(user_id, ${HR_FIELDS.join(', ')}, updated_at) VALUES (?, ${HR_FIELDS.map(() => '?').join(', ')}, datetime('now'))
     ON CONFLICT(user_id) DO UPDATE SET ${HR_FIELDS.map((k) => `${k} = excluded.${k}`).join(', ')}, updated_at = datetime('now')`, id, ...vals);
@@ -592,6 +793,10 @@ r.get('/hrm/stats', async (c) => {
   return c.json({
     total: (await get(`SELECT COUNT(*) AS c ${base} WHERE ${active}`)).c,
     collaborators: (await get(`SELECT COUNT(*) AS c ${base} WHERE ${active} AND h.engagement = 'collaborator'`)).c,
+    payroll_missing: (await all(`SELECT u.id, u.name, u.color, h.id_number, h.tax_code, h.bank_account, h.insurance_number, h.engagement ${base}
+      WHERE ${active} AND ${PAYROLL_MISSING_SQL} ORDER BY u.name COLLATE NOCASE`)).map((e) => ({ id: e.id, name: e.name, color: e.color, missing: payrollMissing(e) })),
+    probation_requests: await all(`SELECT x.id AS xid, u.id, u.name, u.color, x.old_end, x.new_end, rb.name AS requested_by_name FROM hr_probation_extensions x
+      JOIN users u ON u.id = x.user_id LEFT JOIN users rb ON rb.id = x.requested_by WHERE x.status = 'pending' ORDER BY x.id`),
     by_department: await all(`SELECT IFNULL(d.name, 'Chưa phân phòng') AS name, COUNT(*) AS c ${base} LEFT JOIN departments d ON d.id = u.department_id
       WHERE ${active} GROUP BY d.id ORDER BY c DESC`),
     by_status: await all(`SELECT IFNULL(h.work_status, 'working') AS status, COUNT(*) AS c ${base} WHERE u.active = 1 AND u.role <> 'guest' GROUP BY 1`),
@@ -630,6 +835,8 @@ const cleanList = (v, max = 60) => [...new Set((Array.isArray(v) ? v : String(v 
 /** Danh mục + các giá trị đang dùng trên hồ sơ (VD văn phòng nhập từ Excel chưa có trong danh mục) để lọc / chọn được. */
 r.get('/hrm/catalog', async (c) => {
   const cat = await catalog();
+  cat.probation = (await probationContext()).pol;
+  cat.probation_levels = PROBATION_LEVELS;
   for (const [k, col] of [['offices', 'office'], ['positions', 'job_position'], ['employee_types', 'employee_type']]) {
     const used = (await all(`SELECT DISTINCT ${col} AS v FROM hr_profiles WHERE IFNULL(${col}, '') <> ''`)).map((x) => x.v);
     cat[k] = [...new Set([...(cat[k] || []), ...used])];
@@ -641,6 +848,16 @@ r.put('/hrm/catalog', async (c) => {
   const b = await jsonBody(c);
   const cur = await catalog();
   const next = { ...cur };
+  if (b.probation !== undefined) {
+    const pb = b.probation || {};
+    next.probation = {
+      default_level: PROBATION_LEVELS[pb.default_level] ? pb.default_level : 'college',
+      // thời gian chuẩn của công ty: 1 … mức tối đa của luật
+      days: Object.fromEntries(Object.entries(PROBATION_LEVELS).map(([k, L]) => [k, Math.min(Math.max(1, toInt(pb.days?.[k], L.max)), L.max)])),
+      by_position: Object.fromEntries(Object.entries(pb.by_position || {}).filter(([pos, lv]) => String(pos).trim() && PROBATION_LEVELS[lv])
+        .slice(0, 100).map(([pos, lv]) => [String(pos).trim().slice(0, 120), lv])),
+    };
+  }
   for (const k of Object.keys(CATALOG_DEFAULTS)) {
     if (b[k] === undefined) continue;
     next[k] = k === 'holidays'
@@ -650,7 +867,7 @@ r.put('/hrm/catalog', async (c) => {
   }
   await setSetting('hrm_catalog', JSON.stringify(next));
   await audit(c.get('user').id, 'hrm.catalog', 'Cập nhật danh mục LDL HRM');
-  return c.json(next);
+  return c.json({ ...next, probation: (await probationContext()).pol, probation_levels: PROBATION_LEVELS });
 });
 
 // ---------------------------------------------------------------- hợp đồng lao động
@@ -1221,5 +1438,65 @@ r.put('/checkin/settings', requireAdmin, async (c) => {
   await audit(c.get('user').id, 'checkin.settings', 'Cập nhật cài đặt LDL Checkin');
   return c.json(next);
 });
+
+/**
+ * Nhắc việc HRM (chạy 08:00 mỗi ngày): mỗi mốc chỉ nhắc một lần (bảng hr_reminders).
+ *  - Hạn đánh giá thử việc: trước 7 ngày, 3 ngày, đúng ngày, quá hạn chưa đánh giá → Quản lý nhân sự + quản lý trực tiếp
+ *  - Hợp đồng lao động / thỏa thuận cộng tác viên sắp hết hạn: trước 30, 15, 7 ngày và đúng ngày → Quản lý nhân sự + quản lý trực tiếp
+ *  - Hồ sơ nhận lương còn thiếu: nhắc chính nhân sự mỗi tuần; Quản lý nhân sự nhận bản tổng hợp
+ */
+export async function hrmReminders(now = new Date()) {
+  const today = vnDate(now);
+  const fmt = (d) => d.split('-').reverse().join('/');
+  const left = (d) => dayDiff(today, d);
+  const bucket = (n, steps) => (n < 0 ? 'overdue' : steps.find((x) => n <= x));
+  const sent = new Set((await all("SELECT key FROM hr_reminders WHERE sent_at >= datetime('now', '-400 day')")).map((x) => x.key));
+  const hr = await probationApprovers();
+  const out = { probation: 0, contracts: 0, payroll: 0 };
+  const fresh = [];
+  const send = async (key, ids, title, link, type) => {
+    if (sent.has(key)) return false;
+    sent.add(key); fresh.push(key);
+    await notify(ids, { app: 'hrm', type, title, link });
+    return true;
+  };
+  const alive = "u.active = 1 AND IFNULL(h.work_status, 'working') <> 'resigned'";
+
+  // 1. hạn đánh giá thử việc
+  for (const p of await all(`SELECT u.id, u.name, u.manager_id, h.probation_end FROM users u JOIN hr_profiles h ON h.user_id = u.id
+      WHERE ${alive} AND h.work_status = 'probation' AND h.probation_end IS NOT NULL AND h.probation_end <= date(?, '+7 day') AND h.probation_end >= date(?, '-30 day')`, today, today)) {
+    const n = left(p.probation_end);
+    const b = bucket(n, [0, 3, 7]);
+    const title = b === 'overdue' ? `Quá hạn đánh giá thử việc: ${p.name} — hết thử việc ${fmt(p.probation_end)}, cần đánh giá và cập nhật trạng thái`
+      : n === 0 ? `Hôm nay hết thử việc: ${p.name} — cần đánh giá thử việc`
+        : `Sắp đến hạn đánh giá thử việc: ${p.name} — hết thử việc ${fmt(p.probation_end)} (còn ${n} ngày)`;
+    if (await send(`prob:${p.id}:${p.probation_end}:${b}`, [...hr, p.manager_id], title, `/hrm/employees/${p.id}`, 'probation')) out.probation++;
+  }
+  // 2. hợp đồng / thỏa thuận sắp hết hạn (bản đang hiệu lực)
+  for (const k of await all(`SELECT k.id, k.kind, k.contract_type, k.end_date, u.id AS uid, u.name, u.manager_id FROM hr_contracts k
+      JOIN users u ON u.id = k.user_id LEFT JOIN hr_profiles h ON h.user_id = u.id
+      WHERE ${alive} AND k.status = 'active' AND k.end_date IS NOT NULL AND k.end_date BETWEEN ? AND date(?, '+30 day')`, today, today)) {
+    const n = left(k.end_date);
+    const what = k.kind === 'collab' ? 'Thỏa thuận hợp tác' : `Hợp đồng "${k.contract_type}"`;
+    const title = n === 0 ? `${what} của ${k.name} hết hạn hôm nay — cần gia hạn / ký mới hoặc chấm dứt`
+      : `${what} của ${k.name} sắp hết hạn: ${fmt(k.end_date)} (còn ${n} ngày)`;
+    if (await send(`ct:${k.id}:${k.end_date}:${bucket(n, [0, 7, 15, 30])}`, [...hr, k.manager_id], title, `/hrm/employees/${k.uid}`, 'contract')) out.contracts++;
+  }
+  // 3. hồ sơ nhận lương còn thiếu — mỗi tuần một lần (theo tuần ISO)
+  const d = new Date(`${today}T00:00:00Z`); d.setUTCDate(d.getUTCDate() + 3 - ((d.getUTCDay() + 6) % 7));
+  const week = `${d.getUTCFullYear()}-W${String(1 + Math.round((d - new Date(Date.UTC(d.getUTCFullYear(), 0, 4))) / 6048e5)).padStart(2, '0')}`;
+  const missing = (await all(`SELECT u.id, u.name, h.id_number, h.tax_code, h.bank_account, h.insurance_number, h.engagement FROM users u
+      LEFT JOIN hr_profiles h ON h.user_id = u.id WHERE ${alive} AND u.role <> 'guest' AND ${PAYROLL_MISSING_SQL}`)).map((e) => ({ ...e, miss: payrollMissing(e) }));
+  for (const e of missing) {
+    if (await send(`pay:${e.id}:${week}`, [e.id], `Bổ sung hồ sơ để nhận lương: còn thiếu ${e.miss.map((k) => PAYROLL_FIELDS[k]).join(', ')}`, '/hrm', 'payroll')) out.payroll++;
+  }
+  if (missing.length) await send(`paysum:${week}`, hr, `${missing.length} nhân sự chưa đủ hồ sơ nhận lương (CCCD, MST, tài khoản ngân hàng, sổ BHXH)`, '/hrm/employees?view=payroll', 'payroll');
+
+  if (fresh.length) {
+    for (let i = 0; i < fresh.length; i += 100) await batch(fresh.slice(i, i + 100).map((k) => ['INSERT OR IGNORE INTO hr_reminders(key) VALUES (?)', [k]]));
+    await run("DELETE FROM hr_reminders WHERE sent_at < datetime('now', '-400 day')");
+  }
+  return out;
+}
 
 export default r;

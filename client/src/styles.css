@@ -2534,3 +2534,26 @@ button.stat-tile.active { border-color: var(--blue); box-shadow: 0 0 0 3px var(-
 .hr-rejoin-bar > svg { color: var(--hr-green); flex: none; }
 .so-until { font-size: 10.5px; padding: 0 6px; border-radius: 6px; line-height: 17px; background: var(--hr-gray-soft); color: var(--text-2); white-space: nowrap; }
 .so-until.soon { background: var(--hr-orange-soft); color: var(--hr-orange); font-weight: 600; }
+
+/* ---------- HRM: thử việc, gia hạn, hồ sơ nhận lương ---------- */
+.hr-prob-head { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; margin-bottom: 12px; }
+.hr-prob-head > span { display: flex; flex-direction: column; gap: 2px; padding: 8px 10px; border-radius: 10px; background: var(--bg-3); }
+.hr-prob-bar { position: relative; height: 10px; border-radius: 6px; background: var(--hr-gray-soft); overflow: visible; }
+.hr-prob-bar .cur, .hr-prob-bar .std { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 6px; }
+.hr-prob-bar .cur { background: var(--hr-amber); opacity: .85; }
+.hr-prob-bar .std { background: var(--hr-amber); opacity: .35; z-index: 1; border-right: 2px solid var(--hr-amber); }
+.hr-prob-bar .now { position: absolute; top: -4px; bottom: -4px; width: 2px; margin-left: -1px; background: var(--text); border-radius: 2px; z-index: 2; }
+.hr-prob-legend { display: flex; flex-wrap: wrap; gap: 6px 16px; margin-top: 8px; align-items: center; }
+.hr-prob-legend span { display: inline-flex; align-items: center; gap: 5px; }
+.hr-prob-legend i { width: 10px; height: 10px; border-radius: 3px; background: var(--hr-amber); }
+.hr-prob-legend i.std { opacity: .4; }
+.hr-prob-ext { margin-top: 6px; }
+.hr-prob-ext-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; padding: 10px 0; border-top: 1px solid var(--line); }
+.hr-prob-law { display: flex; gap: 8px; align-items: flex-start; padding: 10px 12px; border-radius: 10px; background: var(--hr-amber-soft); line-height: 1.5; }
+.hr-prob-law svg { flex: none; margin-top: 2px; color: var(--hr-amber); }
+.hr-prob-days { width: 90px; }
+.hr-prob-map { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 6px 14px; }
+.hr-prob-map-row { display: flex; align-items: center; gap: 10px; font-size: 13px; }
+.hr-prob-map-row select { max-width: 200px; }
+.hr-pay-alert { display: flex; align-items: center; gap: 8px; padding: 10px 12px; margin-bottom: 12px; border-radius: 10px; background: var(--hr-red-soft); color: color-mix(in srgb, var(--hr-red) 80%, var(--text)); }
+.input.hr-missing { border-color: color-mix(in srgb, var(--hr-red) 60%, var(--line)); background: color-mix(in srgb, var(--hr-red-soft) 50%, var(--bg)); }

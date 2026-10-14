@@ -6,6 +6,7 @@ import {
   FileText, TrendingUp, Save, Settings2, ShieldCheck, ListChecks, CalendarHeart, Package, Pencil, Handshake, RotateCcw,
 } from 'lucide-react';
 import AddEmployeeModal, { ENGAGEMENT, fmtRate, RejoinModal } from './AddEmployee.jsx';
+import { ProbationPanel, ProbationSettings, PROBATION_LEVELS, PayrollSelfCard, PAYROLL_FIELDS } from './Probation.jsx';
 import { PersonAssets } from '../asset/AssetPages.jsx';
 import { SalesFacts, RoleBadge } from './SalesOrg.jsx';
 import { HrHero, Kpi, HrCard, Pill, HBars, StackBar, WORK_TONE, WORK_COLOR, daysLeft } from './hrUi.jsx';
@@ -87,6 +88,10 @@ export function HrmHome() {
         </HrCard>
         <div className="hr-span-6"><PeopleCard i={7} title="Hợp đồng sắp hết hạn" icon={FileWarning} tone="red" to="/hrm/contracts" empty="Không có hợp đồng hết hạn trong 30 ngày"
           items={stats.contracts_expiring.map((x) => ({ ...x, sub: x.contract_type }))} chip={(x) => `${fmtDate(x.contract_end)} · ${leftLabel(x.contract_end)}`} /></div>
+        {stats.probation_requests?.length > 0 && <div className="hr-span-12"><PeopleCard i={8} title="Đề xuất gia hạn thử việc chờ duyệt" icon={Hourglass} tone="orange" empty=""
+          items={stats.probation_requests.map((x) => ({ ...x, sub: `${x.requested_by_name} đề xuất` }))} chip={(x) => `${fmtDate(x.old_end)} → ${fmtDate(x.new_end)}`} /></div>}
+        {stats.payroll_missing?.length > 0 && <div className="hr-span-12"><PeopleCard i={8} title="Thiếu hồ sơ nhận lương" icon={FileWarning} tone="red" empty="" to="/hrm/employees?view=payroll"
+          items={stats.payroll_missing} chip={(x) => `Thiếu ${x.missing.map((k) => PAYROLL_FIELDS[k]).join(', ')}`} /></div>}
         <div className="hr-span-6"><PeopleCard i={8} title="Sắp hết thử việc" icon={Hourglass} tone="amber" to="/hrm/employees?view=probation" empty="Không có ai sắp hết thử việc"
           items={stats.probation_ending} chip={(x) => `${fmtDate(x.probation_end)} · ${leftLabel(x.probation_end)}`} /></div>
         <div className="hr-span-6"><PeopleCard i={9} title="Sinh nhật trong tháng" icon={Cake} tone="pink" empty="Không có sinh nhật trong tháng này"
@@ -112,7 +117,7 @@ export function seniority(from, to) {
 
 const VIEWS = [
   { value: '', label: 'Đang làm việc', tone: 'aqua' }, { value: 'all', label: 'Tất cả nhân sự', tone: 'gray' }, { value: 'working', label: 'Chính thức', tone: 'blue' }, { value: 'mine', label: 'Tôi quản lý', tone: 'blue' },
-  { value: 'probation', label: 'Đang thử việc', tone: 'amber' }, { value: 'leave', label: 'Đang tạm nghỉ', tone: 'violet' }, { value: 'collaborator', label: 'Cộng tác viên', tone: 'green' },
+  { value: 'probation', label: 'Đang thử việc', tone: 'amber' }, { value: 'leave', label: 'Đang tạm nghỉ', tone: 'violet' }, { value: 'collaborator', label: 'Cộng tác viên', tone: 'green' }, { value: 'payroll', label: 'Thiếu hồ sơ lương', tone: 'red' },
   { value: 'resigned', label: 'Nghỉ việc', tone: 'gray' },
 ];
 export const StatusPill = ({ status }) => <Pill tone={WORK_TONE[status] || 'gray'}>{WORK_STATUS[status] || status}</Pill>;
@@ -297,7 +302,8 @@ const FIELD_GROUPS = [
     ['office', 'Văn phòng', 'list:offices', 'Nơi / khối làm việc, VD Văn phòng, Đội sales — khác Phòng ban'],
     ['employee_code', 'Mã nhân viên'], ['work_status', 'Trạng thái', Object.keys(WORK_STATUS)], ['job_position', 'Vị trí công việc', 'list:positions'],
     ['employee_type', 'Phân loại nhân sự', 'list:employee_types'], ['hire_date', 'Ngày bắt đầu', 'date'],
-    ['probation_end', 'Hết thử việc', 'date'], ['official_date', 'Ngày chính thức', 'date'],
+    ['probation_level', 'Nhóm thử việc', Object.keys(PROBATION_LEVELS), 'Điều 25 Bộ luật Lao động 2019 — quyết định thời gian thử việc tối đa'],
+    ['probation_end', 'Hết thử việc', 'date', 'Để trống: tự tính theo quy định thử việc'], ['official_date', 'Ngày chính thức', 'date'],
     ['contract_type', 'Loại hợp đồng', 'list:contract_types'], ['contract_end', 'Ngày hết hạn HĐ', 'date'],
   ]],
   ['Thông tin cá nhân & pháp lý', [
@@ -360,6 +366,7 @@ export function HrmEmployee({ selfId }) {
               {e.engagement === 'collaborator' && <span className="hr-fact tone-green"><Handshake size={13} /> Cộng tác viên{e.commission_rate != null ? ` · hưởng ${fmtRate(e.commission_rate)}${e.commission_basis ? ` ${e.commission_basis.toLowerCase()}` : ''}` : ' · chưa có thỏa thuận'}</span>}
               {e.engagement === 'collaborator' && e.collab_territory && <span className="hr-fact tone-aqua"><MapPin size={13} /> Khu vực {e.collab_territory}</span>}
               {e.employee_code && <span className="hr-fact tone-gray"><IdCard size={13} /> {e.employee_code}</span>}
+              {e.work_status !== 'resigned' && e.payroll_missing?.length > 0 && <span className="hr-fact tone-red" title="Thông tin cần để nhận lương"><FileWarning size={13} /> Thiếu hồ sơ lương: {e.payroll_missing.map((k) => PAYROLL_FIELDS[k]).join(', ')}</span>}
               {e.hire_date && <span className="hr-fact tone-aqua"><Clock3 size={13} /> Thâm niên {seniority(e.hire_date, e.resign_date)}</span>}
               {e.job_position && <span className="hr-fact tone-blue"><Briefcase size={13} /> {e.job_position}</span>}
               {e.office && <span className="hr-fact tone-violet"><MapPin size={13} /> {e.office}</span>}
@@ -393,6 +400,8 @@ export function HrmEmployee({ selfId }) {
       <div className="hr-tab-panel" key={tab}>
         {tab === 'profile' && f && (
           <>
+            <ProbationPanel key={`${e.work_status}-${e.probation_end}`} userId={id} onChanged={reload} />
+            {self && <PayrollSelfCard key={e.updated_at} e={e} onSaved={reload} />}
             <HrCard icon={Phone} tone="aqua" title="Liên hệ">
               <div className="hr-field-grid">
                 <Field label="Email"><input className="input" value={e.email || ''} disabled /></Field>
@@ -417,7 +426,7 @@ export function HrmEmployee({ selfId }) {
                           ) : opts ? (
                             <select className="input" disabled={!edit} value={f[k]} onChange={(ev) => setF({ ...f, [k]: ev.target.value })}>
                               {k !== 'engagement' && <option value="">—</option>}
-                              {opts.map((o) => <option key={o} value={o}>{WORK_STATUS[o] || ENGAGEMENT[o] || o}</option>)}
+                              {opts.map((o) => <option key={o} value={o}>{WORK_STATUS[o] || ENGAGEMENT[o] || PROBATION_LEVELS[o] || o}</option>)}
                             </select>
                           ) : <input className="input" type={type === 'date' ? 'date' : 'text'} disabled={!edit} value={f[k]} onChange={(ev) => setF({ ...f, [k]: ev.target.value })} />}
                         </Field>
@@ -488,6 +497,7 @@ export function HrmSettings() {
           {Object.entries(CATALOG_LABELS).map(([k, [label, hint]]) => <ListEditor key={k} label={label} hint={hint} value={cat[k] || []} onChange={setList(k)} />)}
         </div>
       </HrCard>
+      <ProbationSettings cat={cat} setCat={setCat} onSave={saveCat} />
       <HrCard icon={CalendarHeart} tone="pink" title="Ngày lễ" count={(cat.holidays || []).length} i={2}
         action={<button className="btn btn-primary btn-sm" onClick={saveCat}><Save size={14} /> Lưu</button>}>
         {(cat.holidays || []).map((h, i) => (

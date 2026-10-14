@@ -1522,3 +1522,70 @@ test('HRM resigned ⇄ Account: auto-disable on resign, re-enable on return, own
   assert.equal(imp.deactivated, 1);
   assert.equal((await loginAs('nv.nghi2')).status, 401);
 });
+
+test('HRM: thử việc tự tính theo Bộ luật Lao động 2019, gia hạn cần duyệt và không vượt mức tối đa', async () => {
+  const hr = await login('chilan');
+  const admin = await login('admin');
+  const users = (await hr.get('/users')).data;
+  const mgr = users.find((u) => u.username === 'duylinh');
+  // mặc định nhóm "cao đẳng trở lên": tối đa 60 ngày; công ty đặt chuẩn 45 ngày, Giám đốc thuộc nhóm quản lý doanh nghiệp
+  await hr.put('/hrm/catalog', { probation: { default_level: 'college', days: { college: 45, manager: 120, intermediate: 500 }, by_position: { 'Giám đốc': 'manager' } } });
+  const cat = (await hr.get('/hrm/catalog')).data;
+  assert.equal(cat.probation.days.college, 45);
+  assert.equal(cat.probation.days.intermediate, 30);                   // không vượt mức luật
+  const add = (extra) => hr.post('/hrm/employees', { name: 'Ngô Thử Việc', password: 'abc12345', work_status: 'probation', hire_date: '2026-10-01', manager_id: mgr.id, ...extra });
+  const a = await add({ username: 'tv.ngo' });
+  assert.equal(a.status, 201);
+  assert.deepEqual([a.data.probation_level, a.data.probation_end], ['college', '2026-11-14']);   // 45 ngày tính cả ngày đầu
+  const gd = await add({ username: 'gd.ngo', job_position: 'Giám đốc' });
+  assert.deepEqual([gd.data.probation_level, gd.data.probation_end], ['manager', '2027-01-28']);   // chuẩn công ty 120 ngày (luật tối đa 180)
+  assert.equal((await add({ username: 'tv.qua', probation_end: '2026-12-15' })).status, 400);   // vượt 60 ngày
+  // "công việc khác": 6 ngày làm việc (bỏ Chủ nhật)
+  const other = await add({ username: 'tv.khac', probation_level: 'other', hire_date: '2026-10-02' });   // Thứ 6
+  assert.equal(other.data.probation_end, '2026-10-08');                // T6, T7, T2, T3, T4, T5
+  const info = (await hr.get(`/hrm/employees/${a.data.id}/probation`)).data;
+  assert.deepEqual([info.legal_end, info.standard_end, info.can_request], ['2026-11-29', '2026-11-14', true]);
+
+  // cấp quản lý đề xuất gia hạn; không quá mức luật; chỉ 1 đề xuất chờ duyệt
+  const m = await login('duylinh');
+  assert.equal((await m.post(`/hrm/employees/${a.data.id}/probation-extensions`, { new_end: '2026-12-10', reason: 'Cần thêm thời gian đánh giá' })).status, 400);
+  assert.equal((await m.post(`/hrm/employees/${a.data.id}/probation-extensions`, { new_end: '2026-11-29' })).status, 400);   // thiếu lý do
+  const x = await m.post(`/hrm/employees/${a.data.id}/probation-extensions`, { new_end: '2026-11-29', reason: 'Cần thêm thời gian đánh giá kỹ năng bán hàng' });
+  assert.equal(x.status, 201);
+  assert.equal((await m.post(`/hrm/employees/${a.data.id}/probation-extensions`, { days: 5, reason: 'x' })).status, 400);
+  assert.equal((await m.post(`/hrm/probation-extensions/${x.data.id}/approve`, {})).status, 403);     // quản lý trực tiếp không tự duyệt
+  assert.ok((await hr.get('/hrm/stats')).data.probation_requests.some((r) => r.xid === x.data.id));
+  const ok = await hr.post(`/hrm/probation-extensions/${x.data.id}/approve`, { note: 'Đồng ý' });
+  assert.equal(ok.data.status, 'approved');
+  assert.equal((await hr.get(`/hrm/employees/${a.data.id}`)).data.probation_end, '2026-11-29');
+  // đã hết mức luật → không gia hạn thêm được
+  assert.equal((await m.post(`/hrm/employees/${a.data.id}/probation-extensions`, { days: 1, reason: 'Thêm' })).status, 400);
+  // HR tự đề xuất thì cần người khác (quản trị viên) duyệt; từ chối phải có lý do
+  const y = await hr.post(`/hrm/employees/${gd.data.id}/probation-extensions`, { days: 10, reason: 'Chờ kết quả dự án' });
+  assert.equal((await hr.post(`/hrm/probation-extensions/${y.data.id}/approve`, {})).status, 403);
+  assert.equal((await admin.post(`/hrm/probation-extensions/${y.data.id}/reject`, {})).status, 400);
+  assert.equal((await admin.post(`/hrm/probation-extensions/${y.data.id}/reject`, { note: 'Đủ thời gian đánh giá' })).data.status, 'rejected');
+  // nhân viên đang làm chính thức không gia hạn thử việc
+  assert.equal((await hr.post(`/hrm/employees/${mgr.id}/probation-extensions`, { days: 5, reason: 'x' })).status, 400);
+
+  // nhắc việc 08:00: hạn đánh giá thử việc (trước 7 ngày) → HR + quản lý trực tiếp; mỗi mốc chỉ một lần
+  const { hrmReminders } = await import('../src/routes/hrm.js');
+  const r1 = await hrmReminders(new Date('2026-11-23T01:00:00Z'));       // còn 6 ngày tới 29/11
+  assert.ok(r1.probation >= 1);
+  const notes = async (who) => (await who.get('/notifications')).data;
+  const titles = (list) => (list.items || list).map((n) => n.title);
+  assert.ok(titles(await notes(m)).some((t) => t.includes('Sắp đến hạn đánh giá thử việc: Ngô Thử Việc — hết thử việc 29/11/2026 (còn 6 ngày)')));
+  assert.equal((await hrmReminders(new Date('2026-11-24T01:00:00Z'))).probation, 0);   // cùng mốc 7 ngày: không nhắc lại
+  assert.ok((await hrmReminders(new Date('2026-11-27T01:00:00Z'))).probation >= 1);   // mốc 3 ngày
+  // hồ sơ nhận lương còn thiếu: nhắc chính nhân sự mỗi tuần
+  assert.ok(r1.payroll >= 1);
+  const tv = await (async () => { const r = await raw('/auth/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username: 'tv.ngo', password: 'abc12345' }) }); return r.data.token; })();
+  const tvCall = (method, url, body) => raw(url, { method, headers: { Authorization: `Bearer ${tv}`, 'Content-Type': 'application/json' }, body: body && JSON.stringify(body) });
+  assert.ok(titles((await tvCall('GET', '/notifications')).data).some((t) => /Bổ sung hồ sơ để nhận lương: còn thiếu Số CCCD, Mã số thuế TNCN, Tài khoản ngân hàng, Số sổ BHXH/.test(t)));
+  assert.ok((await hr.get('/hrm/employees?view=payroll')).data.some((e) => e.username === 'tv.ngo'));
+  // nhân sự tự bổ sung; sai định dạng bị từ chối
+  assert.equal((await tvCall('PUT', '/hrm/me/payroll', { id_number: '123' })).status, 400);
+  const me = await tvCall('PUT', '/hrm/me/payroll', { id_number: '001095000222', tax_code: '8012345678', bank_account: 'Vietcombank 0011001234567' });
+  assert.deepEqual(me.data.payroll_missing, ['insurance_number']);
+  assert.ok(!(await hr.get('/hrm/stats')).data.payroll_missing.some((x) => x.id === me.data.id && x.missing.includes('bank_account')));
+});

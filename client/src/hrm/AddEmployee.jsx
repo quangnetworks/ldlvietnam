@@ -82,7 +82,7 @@ export default function AddEmployeeModal({ cat, onClose, onCreated }) {
   const today = new Date().toISOString().slice(0, 10);
   const [f, setF] = useState({
     engagement: 'employee', name: '', username: '', password: randomPassword(), employee_code: '', email: '', phone: '', birthday: '', gender: '',
-    title: '', department_id: '', office: '', job_position: '', employee_type: '', manager_id: null, hire_date: today, work_status: 'probation',
+    title: '', department_id: '', office: '', job_position: '', employee_type: '', manager_id: null, hire_date: today, work_status: 'probation', probation_level: '',
   });
   const [a, setA] = useState({ contract_type: '', code: '', end_date: '', salary: '', commission_rate: '', commission_basis: '', payment_cycle: 'monthly', scope: '' });
   const [userTouched, setUserTouched] = useState(false);
@@ -193,6 +193,23 @@ export default function AddEmployeeModal({ cat, onClose, onCreated }) {
             <select className="input" value={f.work_status} onChange={set('work_status')}><option value="probation">Thử việc</option><option value="working">Chính thức</option></select>
           </Field>
         )}
+        {!collab && f.work_status === 'probation' && (() => {
+          // xem trước ngày hết thử việc (máy chủ tính chính xác, gồm cả ngày làm việc / ngày lễ)
+          const pol = cat?.probation || {};
+          const levels = cat?.probation_levels || {};
+          const lv = f.probation_level || pol.by_position?.[f.job_position] || pol.default_level || 'college';
+          const L = levels[lv];
+          const n = L ? Math.min(pol.days?.[lv] ?? L.max, L.max) : null;
+          const end = L && !L.workdays && f.hire_date ? new Date(Date.parse(`${f.hire_date}T00:00:00Z`) + (n - 1) * 864e5).toISOString().slice(0, 10) : null;
+          return (
+            <div className="span-2"><Field label="Nhóm thử việc" hint={L ? `Thử việc ${n} ${L.workdays ? 'ngày làm việc' : 'ngày'}${end ? ` — tự tính đến ${end.split('-').reverse().join('/')}` : ''} (luật tối đa ${L.max} ${L.workdays ? 'ngày làm việc' : 'ngày'})` : ''}>
+              <select className="input" value={f.probation_level} onChange={set('probation_level')}>
+                <option value="">Tự động theo vị trí công việc</option>
+                {Object.entries(levels).map(([k, x]) => <option key={k} value={k}>{x.label} (≤ {x.max} {x.workdays ? 'ngày làm việc' : 'ngày'})</option>)}
+              </select>
+            </Field></div>
+          );
+        })()}
         <div className="span-2"><Field label={collab ? 'Người phụ trách / quản lý trực tiếp' : 'Quản lý trực tiếp'}>
           <UserPicker users={users.filter((u) => u.role !== 'guest')} value={f.manager_id} onChange={set('manager_id')} placeholder="Chọn người" />
         </Field></div>

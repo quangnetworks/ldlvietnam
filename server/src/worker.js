@@ -9,6 +9,7 @@ import { setStorage, createR2Storage } from './storage.js';
 import { createD1Driver } from './drivers/d1.js';
 import { setPushEnv } from './push.js';
 import { housekeeping } from './maintenance.js';
+import { hrmReminders } from './routes/hrm.js';
 
 const app = createApp();
 let ready = false;
@@ -27,9 +28,10 @@ export default {
     if (url.pathname.startsWith('/api/')) return app.fetch(request, env, ctx);
     return env.ASSETS.fetch(request);
   },
-  // Cron (wrangler.toml → [triggers]): dọn dẹp dữ liệu cũ mỗi đêm
+  // Cron (wrangler.toml → [triggers]): "0 1 * * *" = 08:00 giờ Việt Nam nhắc việc HRM; còn lại: dọn dẹp dữ liệu cũ mỗi đêm
   async scheduled(event, env, ctx) {
     init(env);
-    ctx.waitUntil(housekeeping().then((r) => console.log('housekeeping', JSON.stringify(r))));
+    if (event.cron === '0 1 * * *') ctx.waitUntil(hrmReminders().then((r) => console.log('hrm reminders', JSON.stringify(r))));
+    else ctx.waitUntil(housekeeping().then((r) => console.log('housekeeping', JSON.stringify(r))));
   },
 };
