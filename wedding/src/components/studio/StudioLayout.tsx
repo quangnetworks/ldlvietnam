@@ -1,21 +1,47 @@
-import { useEffect, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import { Link, NavLink, Outlet, useLocation } from 'react-router-dom';
-import { Download, FileSpreadsheet, LayoutGrid, Menu, Palette, Settings, Users, X, ExternalLink } from 'lucide-react';
+import { ExternalLink, FileSpreadsheet, LayoutGrid, LogOut, Menu, Palette, Send, Settings, Users, X } from 'lucide-react';
+import { api } from '../../lib/api';
+import { Login } from './Login';
 import { cx, daysUntil } from '../../lib/format';
 import { reception, wedding } from '../../data/wedding';
 import { Monogram } from '../ui/Monogram';
-import { StudioProvider } from './StudioContext';
+import { StudioProvider, useStudio } from './StudioContext';
 
 const nav = [
   { to: '/studio', end: true, label: 'Tổng quan', icon: LayoutGrid },
   { to: '/studio/thiet-ke', label: 'Thiết kế thiệp', icon: Palette },
   { to: '/studio/khach-moi', label: 'Danh sách khách mời', icon: Users },
   { to: '/studio/nhap-excel', label: 'Nhập Excel', icon: FileSpreadsheet },
-  { to: '/studio/xuat-thiep', label: 'Xuất thiệp', icon: Download },
+  { to: '/studio/xuat-thiep', label: 'Gửi & xuất thiệp', icon: Send },
   { to: '/studio/cai-dat', label: 'Cài đặt', icon: Settings },
 ];
 
 export function StudioLayout() {
+  const [auth, setAuth] = useState<'checking' | 'in' | 'out'>('checking');
+  useEffect(() => {
+    api.me().then((r) => setAuth(r.admin ? 'in' : 'out')).catch(() => setAuth('out'));
+  }, []);
+  const onLoggedOut = useCallback(() => setAuth('out'), []);
+  if (auth === 'checking') return <div className="velvet min-h-dvh" />;
+  if (auth === 'out') return <Login onSuccess={() => setAuth('in')} />;
+  return (
+    <StudioProvider onLoggedOut={onLoggedOut}>
+      <StudioShell />
+    </StudioProvider>
+  );
+}
+
+function LogoutButton() {
+  const { logout } = useStudio();
+  return (
+    <button onClick={logout} className="mx-3 mb-2 flex items-center gap-3 rounded-xl px-3.5 py-2.5 text-[13.5px] text-espresso-soft hover:bg-white/50 hover:text-espresso">
+      <LogOut className="size-[17px]" strokeWidth={1.6} /> Đăng xuất
+    </button>
+  );
+}
+
+function StudioShell() {
   const [open, setOpen] = useState(false);
   const loc = useLocation();
   useEffect(() => setOpen(false), [loc.pathname]);
@@ -53,7 +79,8 @@ export function StudioLayout() {
           </NavLink>
         ))}
       </nav>
-      <div className="m-4 rounded-2xl velvet p-5 text-ivory">
+      <LogoutButton />
+      <div className="m-4 mt-0 rounded-2xl velvet p-5 text-ivory">
         <p className="eyebrow text-champagne-light/75">Tiệc cưới</p>
         <p className="mt-2 font-serif text-[18px] leading-tight">
           {wedding.groom.fullName}
@@ -69,7 +96,7 @@ export function StudioLayout() {
   );
 
   return (
-    <StudioProvider>
+    <>
       <div className="paper min-h-dvh lg:pl-[264px]">
         <aside className="fixed inset-y-0 left-0 z-40 hidden w-[264px] border-r border-champagne/35 bg-ivory-deep/80 lg:block">{sidebar}</aside>
 
@@ -97,7 +124,7 @@ export function StudioLayout() {
 
         <Outlet />
       </div>
-    </StudioProvider>
+    </>
   );
 }
 

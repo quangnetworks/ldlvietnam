@@ -1,5 +1,7 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { Download, Eye, EyeOff, Lock, PanelsTopLeft, Redo2, Save, Undo2 } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { useToast } from '../../components/ui/Toast';
 import { InvitationCard } from '../../components/invitation/InvitationCard';
 import { useStudio } from '../../components/studio/StudioContext';
 import { Button, IconButton } from '../../components/ui/Button';
@@ -11,14 +13,28 @@ import { cx, dotDate } from '../../lib/format';
 import { useHistory } from '../../lib/useHistory';
 
 export default function Designer() {
-  const { design, setDesign, guests } = useStudio();
+  const { design, setDesign, guests, saveDesign, dirty } = useStudio();
+  const toast = useToast();
+  const navigate = useNavigate();
+  const [saving, setSaving] = useState(false);
+  const save = async () => {
+    setSaving(true);
+    try {
+      await saveDesign();
+      toast({ kind: 'success', title: 'Đã lưu thiết kế', body: 'Link thiệp và ảnh xuất sẽ dùng bản này.' });
+    } catch (e) {
+      toast({ kind: 'warning', title: 'Chưa lưu được', body: (e as Error).message });
+    } finally {
+      setSaving(false);
+    }
+  };
   const h = useHistory(design, setDesign);
   const [selected, setSelected] = useState<SectionId>('guest');
   const [previewOnly, setPreviewOnly] = useState(false);
   const [guestId, setGuestId] = useState(guests[0]?.guest_id ?? '');
   const [nameDraft, setNameDraft] = useState(design.templateName);
   useEffect(() => setNameDraft(design.templateName), [design.templateName]);
-  const guestName = guests.find((g) => g.guest_id === guestId)?.display_name ?? 'Quý Khách';
+  const guestName = guests.find((g) => g.guest_id === guestId)?.display_name ?? 'Nguyễn Văn A';
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -61,10 +77,10 @@ export default function Designer() {
         <Button size="sm" variant={previewOnly ? 'primary' : 'secondary'} onClick={() => setPreviewOnly((v) => !v)} icon={previewOnly ? <PanelsTopLeft className="size-4" /> : <Eye className="size-4" />}>
           {previewOnly ? 'Thoát xem trước' : 'Xem trước'}
         </Button>
-        <Button size="sm" variant="secondary" soon icon={<Save className="size-4" />}>
-          Lưu thiết kế
+        <Button size="sm" variant={dirty ? 'primary' : 'secondary'} disabled={!dirty || saving} onClick={save} icon={<Save className="size-4" />}>
+          {saving ? 'Đang lưu…' : dirty ? 'Lưu thiết kế' : 'Đã lưu'}
         </Button>
-        <Button size="sm" variant="primary" soon icon={<Download className="size-4" />}>
+        <Button size="sm" variant="secondary" disabled={dirty} title={dirty ? 'Lưu thiết kế trước khi xuất' : undefined} onClick={() => navigate('/studio/xuat-thiep')} icon={<Download className="size-4" />}>
           Xuất thiệp
         </Button>
       </div>
@@ -145,7 +161,7 @@ export default function Designer() {
               label="Xem với tên khách"
               value={guestId}
               onChange={(e) => setGuestId(e.target.value)}
-              options={guests.map((g) => ({ value: g.guest_id, label: g.display_name }))}
+              options={guests.length ? guests.map((g) => ({ value: g.guest_id, label: g.display_name })) : [{ value: '', label: 'Nguyễn Văn A (mẫu)' }]}
             />
           </div>
           <div className={cx('w-full rounded-[38px] bg-espresso p-[9px] shadow-[0_50px_90px_-45px_rgba(48,9,16,0.75)]', previewOnly ? 'max-w-[460px]' : 'max-w-[380px]')}>
@@ -230,7 +246,7 @@ function Properties({
           {[wedding.families.groom, wedding.families.bride].map((f) => (
             <ReadOnly key={f.side} label={f.label} value={`${f.father.title} ${f.father.name}\n${f.mother.title} ${f.mother.name}\n${f.addressLines.join(' ')}`} />
           ))}
-          <Note>Thông tin gia đình lấy từ hồ sơ cưới (Cài đặt). Chỉnh sửa hồ sơ sẽ có ở giai đoạn 2.</Note>
+          <Note>Thông tin gia đình lấy từ hồ sơ cưới, giữ nguyên theo thiệp tham chiếu.</Note>
         </>
       );
     case 'ceremony':

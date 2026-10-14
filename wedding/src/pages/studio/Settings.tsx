@@ -1,4 +1,9 @@
-import { CheckCircle2, HardDrive, TriangleAlert } from 'lucide-react';
+import { useState } from 'react';
+import { CheckCircle2, Download, HardDrive, KeyRound, TriangleAlert } from 'lucide-react';
+import { Button } from '../../components/ui/Button';
+import { TextField } from '../../components/ui/Field';
+import { useToast } from '../../components/ui/Toast';
+import { api } from '../../lib/api';
 import { PageHeader, Panel } from '../../components/studio/StudioLayout';
 import { Badge } from '../../components/ui/StatusBadge';
 import { ceremony, dataFlags, reception, wedding } from '../../data/wedding';
@@ -32,7 +37,7 @@ export default function Settings() {
               </div>
             ))}
           </dl>
-          <p className="border-t border-espresso/8 bg-ivory-deep/50 px-6 py-3 text-[12px] text-espresso-soft">Chỉnh sửa hồ sơ trực tiếp sẽ có ở giai đoạn 2.</p>
+          <p className="border-t border-espresso/8 bg-ivory-deep/50 px-6 py-3 text-[12px] text-espresso-soft">Hồ sơ cưới cố định theo thiệp tham chiếu (src/data/wedding.ts) để tránh chỉnh nhầm.</p>
         </Panel>
 
         <div className="space-y-6 xl:col-span-5">
@@ -57,17 +62,72 @@ export default function Settings() {
             </ul>
           </Panel>
 
+          <PasswordPanel />
+
           <Panel className="p-6">
             <p className="flex items-center gap-2 font-serif text-[22px] text-burgundy-800">
               <HardDrive className="size-5 text-champagne-deep" strokeWidth={1.4} /> Lưu trữ dữ liệu
             </p>
             <p className="mt-3 text-[13.5px] leading-relaxed text-espresso-soft">
-              Hiện tại <b className="font-semibold text-espresso">chưa có lưu trữ</b>: mọi thay đổi trong Studio chỉ nằm trong bộ nhớ của tab đang mở và sẽ mất khi tải lại trang. Không có đồng
-              bộ hay sao lưu. Cơ chế lưu trữ (trên thiết bị hoặc máy chủ) sẽ được chọn ở giai đoạn 2.
+              Khách mời, link và thiết kế được lưu trên máy chủ Cloudflare (Durable Object của Worker <b className="text-espresso">hm-wedding</b>), dùng được trên mọi
+              thiết bị khi đăng nhập. Hệ thống <b className="text-espresso">không tự sao lưu</b> — hãy tải bản sao lưu định kỳ. Ảnh PNG được tạo trên trình duyệt và
+              không lưu trên máy chủ.
             </p>
+            <a
+              href="/api/backup"
+              className="mt-4 inline-flex h-9 items-center gap-2 rounded-full border border-espresso/15 bg-white/60 px-4 text-[13px] font-medium text-espresso hover:text-burgundy-700"
+            >
+              <Download className="size-4" /> Tải bản sao lưu (JSON)
+            </a>
           </Panel>
         </div>
       </div>
     </>
+  );
+}
+
+function PasswordPanel() {
+  const toast = useToast();
+  const [cur, setCur] = useState('');
+  const [next, setNext] = useState('');
+  const [again, setAgain] = useState('');
+  const [busy, setBusy] = useState(false);
+  const mismatch = again.length > 0 && again !== next;
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setBusy(true);
+    try {
+      await api.changePassword(cur, next);
+      toast({ kind: 'success', title: 'Đã đổi mật khẩu', body: 'Các thiết bị khác đã bị đăng xuất.' });
+      setCur('');
+      setNext('');
+      setAgain('');
+    } catch (err) {
+      toast({ kind: 'warning', title: 'Chưa đổi được mật khẩu', body: (err as Error).message });
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <Panel className="p-6">
+      <p className="flex items-center gap-2 font-serif text-[22px] text-burgundy-800">
+        <KeyRound className="size-5 text-champagne-deep" strokeWidth={1.4} /> Đổi mật khẩu Studio
+      </p>
+      <form onSubmit={submit} className="mt-4 space-y-3">
+        <TextField label="Mật khẩu hiện tại" type="password" autoComplete="current-password" value={cur} onChange={(e) => setCur(e.target.value)} />
+        <TextField label="Mật khẩu mới (ít nhất 10 ký tự)" type="password" autoComplete="new-password" value={next} onChange={(e) => setNext(e.target.value)} />
+        <TextField
+          label="Nhập lại mật khẩu mới"
+          type="password"
+          autoComplete="new-password"
+          value={again}
+          onChange={(e) => setAgain(e.target.value)}
+          hint={mismatch ? <span className="text-burgundy-600">Không khớp</span> : undefined}
+        />
+        <Button type="submit" variant="primary" size="sm" disabled={busy || !cur || next.length < 10 || next !== again}>
+          {busy ? 'Đang lưu…' : 'Đổi mật khẩu'}
+        </Button>
+      </form>
+    </Panel>
   );
 }

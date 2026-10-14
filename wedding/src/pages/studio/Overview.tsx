@@ -5,19 +5,29 @@ import { PageHeader, Panel } from '../../components/studio/StudioLayout';
 import { useStudio } from '../../components/studio/StudioContext';
 import { ButtonLink } from '../../components/ui/Button';
 import { ScaledFrame } from '../../components/ui/ScaledFrame';
-import { DemoTag } from '../../components/ui/StatusBadge';
-import { demoActivity, demoStats } from '../../data/demo';
 import { ceremony, dataFlags, reception } from '../../data/wedding';
 import { cx, daysUntil, dotDate } from '../../lib/format';
+import { relTime } from '../../lib/clipboard';
 
 export default function Overview() {
-  const { design } = useStudio();
+  const { savedDesign: design, guests } = useStudio();
+  const total = guests.length;
+  const created = guests.filter((g) => g.invitation_status !== 'draft').length;
+  const exported = guests.filter((g) => g.invitation_status === 'exported').length;
+  const pending = guests.filter((g) => g.invitation_status === 'error' || g.invitation_status === 'draft').length;
+  const sent = guests.filter((g) => g.link_sent_at).length;
+  const opened = guests.filter((g) => g.opened_at).length;
+  const groups = new Set(guests.map((g) => g.guest_group).filter(Boolean)).size;
   const stats = [
-    { label: 'Tổng khách mời', value: demoStats.totalGuests, note: '6 nhóm khách' },
-    { label: 'Thiệp đã tạo', value: demoStats.created, note: `${Math.round((demoStats.created / demoStats.totalGuests) * 100)}% danh sách` },
-    { label: 'Thiệp đã xuất', value: demoStats.exported, note: 'PNG 1080 × 1920' },
-    { label: 'Thiệp cần xử lý', value: demoStats.pending, note: 'Thiếu xưng hô · lỗi tên', alert: true },
+    { label: 'Tổng khách mời', value: total, note: `${groups} nhóm khách` },
+    { label: 'Thiệp đã tạo', value: created, note: total ? `${Math.round((created / total) * 100)}% danh sách` : '—' },
+    { label: 'Thiệp đã xuất ảnh', value: exported, note: 'PNG 1080 × 1920' },
+    { label: 'Thiệp cần xử lý', value: pending, note: 'Chưa tạo hoặc xuất lỗi', alert: pending > 0 },
   ];
+  const recent = [...guests]
+    .filter((g) => g.last_opened_at)
+    .sort((a, b) => (b.last_opened_at ?? '').localeCompare(a.last_opened_at ?? ''))
+    .slice(0, 5);
   const flagsToConfirm = dataFlags.filter((f) => f.status === 'needs-confirmation');
 
   return (
@@ -47,7 +57,9 @@ export default function Overview() {
         <div>
           <div className="mb-3 flex items-center justify-between">
             <h2 className="text-[13px] font-medium text-espresso-soft">Tiến độ thiệp mời</h2>
-            <DemoTag />
+            <p className="text-[12.5px] text-espresso-soft">
+              Link đã gửi <b className="text-espresso">{sent}</b> · đã mở <b className="text-[#3d5a3a]">{opened}</b>
+            </p>
           </div>
           <div className="grid grid-cols-2 gap-px overflow-hidden rounded-[20px] border border-espresso/8 bg-espresso/8 xl:grid-cols-4">
             {stats.map((s) => (
@@ -111,7 +123,7 @@ export default function Overview() {
           <Panel className="flex gap-5 p-6 xl:col-span-5">
             <div className="w-[120px] shrink-0 self-start overflow-hidden rounded-md shadow-[0_18px_30px_-18px_rgba(48,9,16,0.55)] sm:w-[150px]">
               <ScaledFrame>
-                <InvitationCard guestName="Nguyễn Văn A" design={design} />
+                <InvitationCard guestName={guests[0]?.display_name ?? 'Tên khách mời'} design={design} />
               </ScaledFrame>
             </div>
             <div className="flex min-w-0 flex-col">
@@ -132,7 +144,7 @@ export default function Overview() {
               {[
                 { to: '/studio/thiet-ke', icon: Palette, n: '01', t: 'Hoàn thiện mẫu', d: 'Duyệt bố cục, màu và lời mời.' },
                 { to: '/studio/nhap-excel', icon: FileSpreadsheet, n: '02', t: 'Nhập khách mời', d: 'Từ Excel hoặc thêm thủ công.' },
-                { to: '/studio/xuat-thiep', icon: Download, n: '03', t: 'Xuất thiệp', d: 'PNG từng khách & gói ZIP.' },
+                { to: '/studio/xuat-thiep', icon: Download, n: '03', t: 'Gửi thiệp', d: 'Link riêng hoặc ảnh PNG từng khách.' },
               ].map(({ to, icon: Icon, n, t, d }) => (
                 <Link key={to} to={to} className="group rounded-2xl border border-espresso/8 bg-ivory p-4 transition-colors hover:border-champagne">
                   <div className="flex items-center justify-between">
@@ -146,23 +158,26 @@ export default function Overview() {
             </div>
           </Panel>
 
-          {/* Hoạt động */}
+          {/* Lượt mở thiệp */}
           <Panel className="p-6 xl:col-span-5">
-            <div className="flex items-center justify-between">
-              <h2 className="font-serif text-[24px] font-medium text-burgundy-800">Hoạt động gần đây</h2>
-              <DemoTag>Minh họa</DemoTag>
-            </div>
-            <ul className="mt-5 space-y-4">
-              {demoActivity.map((a) => (
-                <li key={a.text} className="flex gap-3">
-                  <CheckCircle2 className="mt-0.5 size-4 shrink-0 text-champagne-deep" strokeWidth={1.6} />
-                  <div>
-                    <p className="text-[13.5px] text-espresso">{a.text}</p>
-                    <p className="text-[12px] text-espresso-soft/80">{a.when}</p>
-                  </div>
-                </li>
-              ))}
-            </ul>
+            <h2 className="font-serif text-[24px] font-medium text-burgundy-800">Khách vừa mở thiệp</h2>
+            {recent.length ? (
+              <ul className="mt-5 space-y-4">
+                {recent.map((g) => (
+                  <li key={g.guest_id} className="flex gap-3">
+                    <CheckCircle2 className="mt-0.5 size-4 shrink-0 text-champagne-deep" strokeWidth={1.6} />
+                    <div className="min-w-0">
+                      <p className="truncate text-[13.5px] text-espresso">{g.display_name}</p>
+                      <p className="text-[12px] text-espresso-soft/80">
+                        {relTime(g.last_opened_at)} · {g.open_count} lượt
+                      </p>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="mt-4 text-[13.5px] leading-relaxed text-espresso-soft">Chưa có ai mở link. Gửi link riêng ở mục “Gửi &amp; xuất thiệp” để theo dõi tại đây.</p>
+            )}
           </Panel>
         </div>
       </div>

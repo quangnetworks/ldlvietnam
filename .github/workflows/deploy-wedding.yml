@@ -1,0 +1,67 @@
+name: Deploy H&M Wedding (hm-wedding)
+
+# Worker riêng cho website thiệp cưới (thư mục wedding/), tên miền temp.vanquang.xyz.
+# Dùng chung secrets CLOUDFLARE_API_TOKEN / CLOUDFLARE_ACCOUNT_ID với workflow LDL Workspace
+# nhưng không đụng tới Worker ldlvietnam-workspace.
+
+on:
+  push:
+    branches: [main, claude/charming-heisenberg-xtzan2]
+    paths: ['wedding/**', '.github/workflows/deploy-wedding.yml']
+  workflow_dispatch:
+
+concurrency:
+  group: hm-wedding-deploy
+  cancel-in-progress: false
+
+defaults:
+  run:
+    working-directory: wedding
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      WRANGLER_SEND_METRICS: 'false'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: wedding/package-lock.json
+      - run: npm ci
+      - name: Kiểm tra kiểu & build
+        run: npm run build
+      - name: Kiểm tra secrets
+        id: check
+        run: |
+          if [ -z "$CLOUDFLARE_API_TOKEN" ] || [ -z "$CLOUDFLARE_ACCOUNT_ID" ]; then
+            echo "::warning::Chưa cấu hình CLOUDFLARE_API_TOKEN / CLOUDFLARE_ACCOUNT_ID — bỏ qua deploy."
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Deploy Worker hm-wedding + tên miền temp.vanquang.xyz
+        id: deploy
+        if: steps.check.outputs.ready == 'true'
+        continue-on-error: true
+        run: npx wrangler deploy
+      - name: Dự phòng — deploy chỉ trên workers.dev
+        if: steps.check.outputs.ready == 'true' && steps.deploy.outcome == 'failure'
+        run: |
+          echo "::warning::Không gắn được temp.vanquang.xyz (tên miền chưa có trong tài khoản Cloudflare hoặc API token thiếu quyền Zone). Deploy tạm trên workers.dev."
+          node scripts/workers-dev-config.mjs
+          npx wrangler deploy -c wrangler.workersdev.json
+      - name: Kiểm tra sau deploy
+        if: steps.check.outputs.ready == 'true'
+        run: |
+          for i in 1 2 3 4 5 6; do
+            code=$(curl -s -o /dev/null -w '%{http_code}' https://temp.vanquang.xyz/api/auth/me || true)
+            echo "temp.vanquang.xyz → $code"
+            [ "$code" = "200" ] && exit 0
+            sleep 10
+          done
+          echo "::warning::temp.vanquang.xyz chưa phản hồi 200 (DNS/SSL có thể cần thêm vài phút)."

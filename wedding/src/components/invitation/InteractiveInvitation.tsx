@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { CalendarDays, Clock, Expand, MapPin, Minimize, RotateCcw } from 'lucide-react';
 import type { WeddingEvent } from '../../data/types';
+import type { InvitationDesign } from '../../data/design';
 import { copy, ceremony, reception, wedding } from '../../data/wedding';
 import { cx, dotDate, mapsUrl, parts } from '../../lib/format';
 import { Monogram } from '../ui/Monogram';
@@ -12,7 +13,8 @@ import { Reveal } from '../ui/Reveal';
  * Bước 1: phong bì có tên khách. Bước 2: mở ra và cuộn khám phá nội dung.
  * Dùng chung nguồn dữ liệu với thiệp tĩnh (data/wedding.ts).
  */
-export function InteractiveInvitation({ guestName }: { guestName: string }) {
+export function InteractiveInvitation({ guestName, design }: { guestName: string; design?: InvitationDesign }) {
+  const text = { ...copy, ...(design?.text ?? {}) };
   const [stage, setStage] = useState<'sealed' | 'opening' | 'open'>('sealed');
   const fs = useFullscreen();
 
@@ -38,7 +40,7 @@ export function InteractiveInvitation({ guestName }: { guestName: string }) {
         )}
       </div>
 
-      {stage !== 'open' ? <Envelope guestName={guestName} opening={stage === 'opening'} onOpen={open} /> : <Story guestName={guestName} />}
+      {stage !== 'open' ? <Envelope guestName={guestName} opening={stage === 'opening'} onOpen={open} /> : <Story guestName={guestName} text={text} />}
     </div>
   );
 }
@@ -124,7 +126,7 @@ function Envelope({ guestName, opening, onOpen }: { guestName: string; opening: 
   );
 }
 
-function Story({ guestName }: { guestName: string }) {
+function Story({ guestName, text: copy }: { guestName: string; text: typeof import('../../data/wedding').copy }) {
   const r = parts(reception.date);
   return (
     <main className="paper animate-fade-in text-espresso">

@@ -74,4 +74,12 @@ export interface Guest {
   guest_group: string;
   note: string;
   invitation_status: GuestStatus;
+  /** Mã bí mật trong link thiệp riêng (chỉ có với khách đã lưu trên máy chủ). */
+  token?: string;
+  link_sent_at?: string | null;
+  opened_at?: string | null;
+  last_opened_at?: string | null;
+  open_count?: number;
+  created_at?: string;
+  updated_at?: string;
 }

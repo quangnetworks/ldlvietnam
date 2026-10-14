@@ -36,6 +36,7 @@ export default function App() {
           <Route path="/" element={<Landing />} />
           <Route path="/xem-truoc" element={<InvitationPreview />} />
           <Route path="/thiep" element={<GuestInvitation />} />
+          <Route path="/t/:token" element={<GuestInvitation />} />
           <Route path="/studio" element={<StudioLayout />}>
             <Route index element={<Overview />} />
             <Route path="thiet-ke" element={<Designer />} />

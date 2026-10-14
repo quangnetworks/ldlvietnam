@@ -1,41 +1,37 @@
 # H&M Wedding Invitation Studio — *The Art of Forever*
 
-Website thiệp cưới cá nhân hoá cho **Trần Minh Huy & Tiểu Bảo Muội**. Dự án độc lập, không phụ thuộc LDL Workspace ở thư mục gốc.
+Website thiệp cưới cá nhân hoá cho **Trần Minh Huy & Tiểu Bảo Muội**, chạy trên Worker Cloudflare riêng **`hm-wedding`** tại **https://temp.vanquang.xyz**.
+Tách biệt hoàn toàn với LDL Workspace (Worker `ldlvietnam-workspace`) — chỉ ở chung repository.
 
-**Trạng thái: Giai đoạn 1 — UI/UX.** Chưa có backend, chưa lưu trữ, chưa xử lý Excel hay xuất ảnh thật.
+## Hai cách gửi thiệp cho từng khách
 
-## Chạy
+1. **Link riêng** — mỗi khách có link dạng `https://temp.vanquang.xyz/t/<mã-bí-mật>`. Mở ra là phong bì có tên khách, rồi thiệp tương tác; khách cũng xem/lưu được ảnh thiệp. Studio ghi nhận đã gửi / đã mở / số lần mở. Link không chứa tên khách; dán vào Zalo/Messenger hiện ảnh xem trước và tiêu đề “Thiệp mời — <tên khách>”.
+2. **Ảnh PNG riêng** — Studio tạo ảnh 1080 × 1920 cho từng khách ngay trên trình duyệt (font nhúng sẵn, kiểm tra tên trước khi chụp), tải từng ảnh, chia sẻ thẳng (trên điện thoại) hoặc tải ZIP. Tên file chứa mã khách: `HM-0001_anh-nguyen-van-a.png`.
+
+## Đường dẫn
+
+| Đường dẫn | Nội dung |
+|---|---|
+| `/` | Landing page |
+| `/xem-truoc` | Xem trước thiệp (khách mẫu) |
+| `/t/<mã>` | Thiệp riêng của từng khách |
+| `/studio` | Studio (cần mật khẩu): tổng quan, thiết kế, khách mời, nhập Excel, gửi & xuất thiệp, cài đặt |
+
+## Phát triển
 
 ```bash
 cd wedding
 npm install
-npm run dev        # http://localhost:5180
-npm run build      # kiểm tra kiểu + build production
+npm run dev:worker   # build + wrangler dev (Worker + Durable Object) → http://127.0.0.1:8787
+npm run dev          # (tuỳ chọn) Vite hot reload ở :5180, proxy /api sang :8787
+npm run build        # kiểm tra kiểu (app + worker) và build
 ```
 
-## Màn hình
+## Kiến trúc
 
-| Đường dẫn | Màn hình |
-|---|---|
-| `/` | Wedding Landing Page |
-| `/xem-truoc` | Invitation Preview (thiệp tĩnh / tương tác, chọn tên khách) |
-| `/thiep?khach=HM-0001` | Thiệp cho người nhận — Chế độ A (phong bì tương tác) |
-| `/thiep?khach=HM-0001&che-do=tinh` | Thiệp cho người nhận — Chế độ B (thiệp tĩnh 9:16) |
-| `/studio` | Dashboard tổng quan |
-| `/studio/thiet-ke` | Invitation Designer |
-| `/studio/khach-moi` | Guest Management |
-| `/studio/nhap-excel` | Nhập Excel (giao diện các bước) |
-| `/studio/xuat-thiep` | Bulk Export (mô phỏng trạng thái) |
-| `/studio/cai-dat` | Hồ sơ cưới, đối chiếu dữ liệu, lưu trữ |
+- `src/` — React + TypeScript + Tailwind. `src/data/wedding.ts` là nguồn dữ liệu chuẩn theo thiệp tham chiếu.
+- `worker/` — Worker: API `/api/*`, trang `/t/<mã>` (gắn thẻ OG theo tên khách), phục vụ file tĩnh.
+- Lưu trữ: một **Durable Object SQLite** (`WeddingStore`) chứa khách mời, link, lượt mở, thiết kế, mật khẩu. Không cần tạo D1/KV.
+- Ảnh PNG: `html-to-image` trên trình duyệt; ZIP: `fflate`. Excel: `read-excel-file` / `write-excel-file`.
 
-## Dữ liệu
-
-- `src/data/wedding.ts` — **nguồn dữ liệu chuẩn** (chép từ thiệp tham chiếu) và danh sách điểm cần xác nhận.
-- `src/data/demo.ts` — khách mời và chỉ số **minh hoạ**.
-- `src/data/design.ts` — cấu hình mẫu thiệp (bảng màu, thành phần, lời mời).
-
-## Thiết kế
-
-- Màu: Burgundy, Ivory, Champagne Gold, Warm Beige, Espresso, Soft Rose (`src/styles/index.css`).
-- Font (tự host qua @fontsource, đủ tiếng Việt, giấy phép SIL OFL): Cormorant Garamond (serif), Be Vietnam Pro (sans), Great Vibes (thư pháp).
-- Thiệp tĩnh dựng ở 540 × 960 và thu phóng; xuất ở hệ số 2 → 1080 × 1920.
+Deploy: xem [DEPLOY.md](DEPLOY.md).
