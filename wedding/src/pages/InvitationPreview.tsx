@@ -12,7 +12,7 @@ import { cx } from '../lib/format';
 const zones = [
   { id: 'monogram', n: '01', title: 'Monogram H&M', text: 'Dấu ép kim mở đầu, khẳng định bản sắc của hai bạn.' },
   { id: 'announce', n: '02', title: 'Tiêu đề lời mời', text: 'Trân trọng báo tin lễ tân hôn của con chúng tôi.' },
-  { id: 'couple', n: '03', title: 'Tên cô dâu & chú rể', text: 'Trọng tâm thị giác — Trần Minh Huy & Tiểu Bảo Muội.' },
+  { id: 'couple', n: '03', title: 'Tên cô dâu & chú rể', text: 'Trọng tâm thị giác — Trần Minh Huy & Tiêu Bảo Muội.' },
   { id: 'guest', n: '04', title: 'Tên khách mời', text: 'Vùng riêng, tự co chữ & xuống dòng với tên dài.' },
   { id: 'families', n: '05', title: 'Gia đình hai bên', text: 'Nhà trai và nhà gái, kèm địa chỉ.' },
   { id: 'ceremony', n: '06', title: 'Lễ tân hôn', text: '14:00 · Thứ Bảy 07.11.2026 · tại tư gia.' },

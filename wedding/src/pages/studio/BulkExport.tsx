@@ -27,7 +27,7 @@ import { copyText, relTime } from '../../lib/clipboard';
 import { downloadGuestList } from '../../lib/excel';
 import { downloadBlob, EXPORT_H, EXPORT_W, fileNameFor, renderInvitationPng, shareFile, warmUp, zipBlobs } from '../../lib/exporter';
 import { cx } from '../../lib/format';
-import { defaultMessage, fillTemplate, messageVariables, variablesFor } from '../../lib/template';
+import { defaultMessage, fillTemplate, MESSAGE_STORAGE_KEY, messageVariables, variablesFor } from '../../lib/template';
 
 type Tab = 'link' | 'png';
 
@@ -169,14 +169,14 @@ function LinkTab({ chosen }: { chosen: Guest[] }) {
   const toast = useToast();
   const [tpl, setTpl] = useState(() => {
     try {
-      return localStorage.getItem('hm.messageTemplate') || defaultMessage;
+      return localStorage.getItem(MESSAGE_STORAGE_KEY) || defaultMessage;
     } catch {
       return defaultMessage;
     }
   });
   useEffect(() => {
     try {
-      localStorage.setItem('hm.messageTemplate', tpl);
+      localStorage.setItem(MESSAGE_STORAGE_KEY, tpl);
     } catch {
       /* bỏ qua */
     }

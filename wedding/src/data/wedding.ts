@@ -10,7 +10,7 @@ export const wedding: WeddingProfile = {
   conceptTagline: 'H&M Wedding',
   monogram: { left: 'H', right: 'M' },
   groom: { fullName: 'Trần Minh Huy', initial: 'H', role: 'Trưởng Nam' },
-  bride: { fullName: 'Tiểu Bảo Muội', initial: 'M', role: 'Trưởng Nữ' },
+  bride: { fullName: 'Tiêu Bảo Muội', initial: 'M', role: 'Trưởng Nữ' },
   families: {
     groom: {
       side: 'groom',

@@ -1,6 +1,6 @@
 # H&M Wedding Invitation Studio — *The Art of Forever*
 
-Website thiệp cưới cá nhân hoá cho **Trần Minh Huy & Tiểu Bảo Muội**, chạy trên Worker Cloudflare riêng **`hm-wedding`** tại **https://temp.vanquang.xyz**.
+Website thiệp cưới cá nhân hoá cho **Trần Minh Huy & Tiêu Bảo Muội**, chạy trên Worker Cloudflare riêng **`hm-wedding`** tại **https://temp.vanquang.xyz**.
 Tách biệt hoàn toàn với LDL Workspace (Worker `ldlvietnam-workspace`) — chỉ ở chung repository.
 
 ## Hai cách gửi thiệp cho từng khách

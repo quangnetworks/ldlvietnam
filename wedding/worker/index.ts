@@ -177,7 +177,7 @@ async function invitePage(req: Request, env: Env, token: string) {
   const inv = /^[A-Za-z0-9]{6,32}$/.test(token) ? await store(env).peekInvite(token) : null;
   const origin = new URL(req.url).origin;
   const title = inv ? `Thiệp mời — ${inv.display_name}` : 'Thiệp cưới H&M';
-  const desc = 'Trần Minh Huy & Tiểu Bảo Muội trân trọng kính mời — Tiệc cưới 18:00 Thứ Bảy 14.11.2026, Adora Luxury.';
+  const desc = 'Trần Minh Huy & Tiêu Bảo Muội trân trọng kính mời — Tiệc cưới 18:00 Thứ Bảy 14.11.2026, Adora Luxury.';
   const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
   const tags = [
     `<meta property="og:type" content="website">`,
