@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Link, useNavigate, useParams } from 'react-router-dom';
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import {
   Search, ArrowLeft, Cake, FileWarning, UserPlus, Hourglass, Download, Upload, Plus, Trash2, Users2, BarChart3, FileSignature, BadgeCheck,
   PauseCircle, Building2, PieChart, CheckCircle2, Briefcase, IdCard, LogOut, StickyNote, Phone, Mail, CalendarDays, UserCog, MapPin, Clock3,
@@ -71,9 +71,9 @@ export function HrmHome() {
       {adding && <AddEmployeeModal cat={cat} onClose={() => setAdding(false)} onCreated={reloadStats} />}
       <div className="hr-kpis">
         <Kpi i={0} icon={Users2} tone="aqua" label="Đang làm việc" value={stats.total} sub="Không gồm đã nghỉ việc" to="/hrm/employees" />
-        <Kpi i={1} icon={BadgeCheck} tone="blue" label="Chính thức" value={count('working')} sub={stats.total ? `${Math.round((count('working') / stats.total) * 100)}% nhân sự` : ''} to="/hrm/employees" />
-        <Kpi i={2} icon={Hourglass} tone="amber" label="Thử việc" value={count('probation')} sub={`${stats.probation_ending.length} sắp hết thử việc`} to="/hrm/employees" />
-        <Kpi i={3} icon={PauseCircle} tone="violet" label="Tạm nghỉ" value={count('leave')} to="/hrm/employees" />
+        <Kpi i={1} icon={BadgeCheck} tone="blue" label="Chính thức" value={count('working')} sub={stats.total ? `${Math.round((count('working') / stats.total) * 100)}% nhân sự` : ''} to="/hrm/employees?view=working" />
+        <Kpi i={2} icon={Hourglass} tone="amber" label="Thử việc" value={count('probation')} sub={`${stats.probation_ending.length} sắp hết thử việc`} to="/hrm/employees?view=probation" />
+        <Kpi i={3} icon={PauseCircle} tone="violet" label="Tạm nghỉ" value={count('leave')} to="/hrm/employees?view=leave" />
         <Kpi i={4} icon={Handshake} tone="green" label="Cộng tác viên" value={stats.collaborators || 0} sub="Hưởng % theo thỏa thuận" to="/hrm/employees?view=collaborator" />
         <Kpi i={5} icon={FileWarning} tone="red" label="HĐ sắp hết hạn" value={stats.contracts_expiring.length} sub="Trong 30 ngày" to="/hrm/contracts" />
       </div>
@@ -87,7 +87,7 @@ export function HrmHome() {
         </HrCard>
         <div className="hr-span-6"><PeopleCard i={7} title="Hợp đồng sắp hết hạn" icon={FileWarning} tone="red" to="/hrm/contracts" empty="Không có hợp đồng hết hạn trong 30 ngày"
           items={stats.contracts_expiring.map((x) => ({ ...x, sub: x.contract_type }))} chip={(x) => `${fmtDate(x.contract_end)} · ${leftLabel(x.contract_end)}`} /></div>
-        <div className="hr-span-6"><PeopleCard i={8} title="Sắp hết thử việc" icon={Hourglass} tone="amber" empty="Không có ai sắp hết thử việc"
+        <div className="hr-span-6"><PeopleCard i={8} title="Sắp hết thử việc" icon={Hourglass} tone="amber" to="/hrm/employees?view=probation" empty="Không có ai sắp hết thử việc"
           items={stats.probation_ending} chip={(x) => `${fmtDate(x.probation_end)} · ${leftLabel(x.probation_end)}`} /></div>
         <div className="hr-span-6"><PeopleCard i={9} title="Sinh nhật trong tháng" icon={Cake} tone="pink" empty="Không có sinh nhật trong tháng này"
           items={stats.birthdays} chip={(x) => fmtDate(x.birthday).slice(0, 5)} /></div>
@@ -111,7 +111,7 @@ export function seniority(from, to) {
 }
 
 const VIEWS = [
-  { value: '', label: 'Đang làm việc', tone: 'aqua' }, { value: 'all', label: 'Tất cả nhân sự', tone: 'gray' }, { value: 'mine', label: 'Tôi quản lý', tone: 'blue' },
+  { value: '', label: 'Đang làm việc', tone: 'aqua' }, { value: 'all', label: 'Tất cả nhân sự', tone: 'gray' }, { value: 'working', label: 'Chính thức', tone: 'blue' }, { value: 'mine', label: 'Tôi quản lý', tone: 'blue' },
   { value: 'probation', label: 'Đang thử việc', tone: 'amber' }, { value: 'leave', label: 'Đang tạm nghỉ', tone: 'violet' }, { value: 'collaborator', label: 'Cộng tác viên', tone: 'green' },
   { value: 'resigned', label: 'Nghỉ việc', tone: 'gray' },
 ];
@@ -141,7 +141,11 @@ export function HrmEmployees() {
   const navigate = useNavigate();
   const [cat] = useHrCatalog();
   const [q, setQ] = useState('');
-  const [view, setViewRaw] = useState(() => (VIEWS.some((v) => v.value && v.value === new URLSearchParams(window.location.search).get('view')) ? new URLSearchParams(window.location.search).get('view') : ''));
+  // bộ lọc theo ?view=… (VD bấm ô "Thử việc" ở Tổng quan), đồng bộ hai chiều với địa chỉ trang
+  const [search, setSearch] = useSearchParams();
+  const urlView = VIEWS.some((v) => v.value && v.value === search.get('view')) ? search.get('view') : '';
+  const [view, setViewRaw] = useState(urlView);
+  useEffect(() => { setViewRaw(urlView); if (urlView === 'collaborator') setColSet('collab'); }, [urlView]);
   const [adding, setAdding] = useState(false);
   const [dep, setDep] = useState('');
   const [office, setOffice] = useState('');
@@ -152,7 +156,7 @@ export function HrmEmployees() {
   const [industry, setIndustry] = useState('');
   const [sales] = useFetch(() => api.get('/sales/structure'), []);
   const [colSet, setColSet] = useState(view === 'collaborator' ? 'collab' : 'overview');
-  const setView = (v) => { setViewRaw(v); if (v === 'collaborator') setColSet('collab'); else if (colSet === 'collab') setColSet('overview'); };
+  const setView = (v) => { setViewRaw(v); setSearch(v ? { view: v } : {}, { replace: true }); if (v === 'collaborator') setColSet('collab'); else if (colSet === 'collab') setColSet('overview'); };
   const [importing, setImporting] = useState(false);
   const dq = useDebounced(q);
   const params = { q: dq, view, department_id: dep, office, employee_type: type, contract, sales_role: salesRole, territory_id: territory, industry };
