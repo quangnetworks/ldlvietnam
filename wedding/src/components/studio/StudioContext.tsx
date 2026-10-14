@@ -30,6 +30,8 @@ export function normalizeDesign(d: Partial<InvitationDesign> | null | undefined)
   return {
     ...defaultDesign,
     ...d,
+    // Thiết kế lưu trước phiên bản 2 chuyển sang tên thư pháp.
+    ...((d.version ?? 1) < 2 ? { version: 2, nameStyle: 'script' as const } : {}),
     sections: { ...defaultDesign.sections, ...(d.sections ?? {}) },
     text: { ...defaultDesign.text, ...(d.text ?? {}) },
   };

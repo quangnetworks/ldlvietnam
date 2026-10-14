@@ -23,14 +23,14 @@ export default function Landing() {
       <section className="relative mx-auto grid min-h-[100svh] max-w-7xl items-center gap-10 px-4 pt-24 pb-14 sm:px-8 lg:grid-cols-12 lg:gap-6 lg:pt-20">
         <div className="lg:col-span-7">
           <p className="eyebrow animate-fade-up text-champagne-deep">The Art of Forever — H&amp;M Wedding</p>
-          <h1 className="mt-6 font-serif leading-[0.95] font-medium text-burgundy-800">
-            <span className="animate-fade-up block text-[clamp(46px,7vw,100px)]" style={{ animationDelay: '120ms' }}>
+          <h1 className="mt-6 font-script leading-[1.15] text-burgundy-800">
+            <span className="animate-fade-up block text-[clamp(38px,10.5vw,76px)] whitespace-nowrap lg:text-[clamp(40px,5.2vw,76px)]" style={{ animationDelay: '120ms' }}>
               {wedding.groom.fullName}
             </span>
-            <span className="animate-fade-up my-1 block pl-[8%] font-script text-[clamp(44px,7vw,88px)] leading-none text-champagne-deep" style={{ animationDelay: '260ms' }}>
+            <span className="animate-fade-up my-0 block pl-[6%] font-serif text-[clamp(36px,4vw,56px)] leading-none italic text-champagne-deep" style={{ animationDelay: '260ms' }}>
               &amp;
             </span>
-            <span className="animate-fade-up block pl-[10%] text-[clamp(46px,7vw,100px)] lg:whitespace-nowrap" style={{ animationDelay: '380ms' }}>
+            <span className="animate-fade-up block pl-[10%] text-[clamp(38px,10.5vw,76px)] whitespace-nowrap lg:text-[clamp(40px,5.2vw,76px)]" style={{ animationDelay: '380ms' }}>
               {wedding.bride.fullName}
             </span>
           </h1>
@@ -111,7 +111,7 @@ export default function Landing() {
                     </p>
                     <div className="mt-10 border-t border-champagne/40 pt-6">
                       <p className="eyebrow text-espresso-soft">{child.role}</p>
-                      <p className="mt-2 font-serif text-[34px] leading-tight font-medium text-burgundy-700">{child.fullName}</p>
+                      <p className="mt-2 font-script text-[34px] leading-[1.3] whitespace-nowrap text-burgundy-700 sm:text-[40px]">{child.fullName}</p>
                     </div>
                   </Reveal>
                 );

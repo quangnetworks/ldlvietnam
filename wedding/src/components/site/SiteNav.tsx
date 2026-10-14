@@ -3,6 +3,7 @@ import { Link, NavLink } from 'react-router-dom';
 import { Menu, X } from 'lucide-react';
 import { cx } from '../../lib/format';
 import { Monogram } from '../ui/Monogram';
+import { wedding } from '../../data/wedding';
 
 const links = [
   { to: '/#gia-dinh', label: 'Gia đình' },
@@ -71,7 +72,10 @@ export function SiteFooter() {
   return (
     <footer className="border-t border-champagne/40 bg-ivory px-4 py-12 text-center sm:px-8">
       <Monogram className="mx-auto size-14 text-[56px]" tone="burgundy" />
-      <p className="mt-4 font-serif text-[20px] text-burgundy-800">Trần Minh Huy &amp; Tiêu Bảo Muội</p>
+      <p className="mt-4 font-script text-[30px] leading-[1.35] text-burgundy-800">
+        <span className="whitespace-nowrap">{wedding.groom.fullName}</span> <span className="font-serif text-[22px] text-champagne-deep italic">&amp;</span>{' '}
+        <span className="whitespace-nowrap">{wedding.bride.fullName}</span>
+      </p>
       <p className="eyebrow mt-2 text-espresso-soft">14 · 11 · 2026 — The Art of Forever</p>
       <div className="mt-6 flex justify-center gap-6 text-[13px] text-espresso-soft">
         <Link to="/xem-truoc" className="hover:text-burgundy-700">Thiệp mời</Link>

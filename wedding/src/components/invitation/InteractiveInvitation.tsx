@@ -140,12 +140,12 @@ function Story({ guestName, text: copy }: { guestName: string; text: typeof impo
         <p className="animate-fade-up mt-1 font-sans text-[13px] font-semibold tracking-[0.16em] text-burgundy-700 uppercase" style={{ animationDelay: '200ms' }}>
           {copy.announceEvent}
         </p>
-        <h1 className="animate-fade-up mt-8 font-serif text-[44px] leading-[1.05] font-medium text-burgundy-700 sm:text-[56px]" style={{ animationDelay: '300ms' }}>
+        <h1 className="animate-fade-up mt-8 font-script text-[clamp(36px,11vw,60px)] leading-[1.25] whitespace-nowrap text-burgundy-700" style={{ animationDelay: '300ms' }}>
           {wedding.groom.fullName}
         </h1>
         <p className="eyebrow mt-2 text-espresso-soft">{wedding.groom.role}</p>
-        <p className="my-3 font-script text-[44px] leading-none text-champagne-deep">&amp;</p>
-        <h1 className="animate-fade-up font-serif text-[44px] leading-[1.05] font-medium text-burgundy-700 sm:text-[56px]" style={{ animationDelay: '420ms' }}>
+        <p className="my-1 font-serif text-[34px] leading-none text-champagne-deep italic">&amp;</p>
+        <h1 className="animate-fade-up font-script text-[clamp(36px,11vw,60px)] leading-[1.25] whitespace-nowrap text-burgundy-700" style={{ animationDelay: '420ms' }}>
           {wedding.bride.fullName}
         </h1>
         <p className="eyebrow mt-2 text-espresso-soft">{wedding.bride.role}</p>

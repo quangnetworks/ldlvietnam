@@ -230,8 +230,8 @@ function Properties({
               value={design.nameStyle}
               onChange={(v) => update({ nameStyle: v })}
               options={[
+                { value: 'script', label: 'Thư pháp bay lượn' },
                 { value: 'serif', label: 'Serif cổ điển' },
-                { value: 'script', label: 'Thư pháp' },
               ]}
             />
           </div>

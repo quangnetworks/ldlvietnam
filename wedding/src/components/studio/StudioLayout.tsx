@@ -82,10 +82,10 @@ function StudioShell() {
       <LogoutButton />
       <div className="m-4 mt-0 rounded-2xl velvet p-5 text-ivory">
         <p className="eyebrow text-champagne-light/75">Tiệc cưới</p>
-        <p className="mt-2 font-serif text-[18px] leading-tight">
+        <p className="mt-2 font-script text-[24px] leading-[1.3]">
           {wedding.groom.fullName}
           <br />
-          <span className="font-script text-[22px] text-champagne-light">&amp;</span> {wedding.bride.fullName}
+          <span className="font-serif text-[18px] text-champagne-light italic">&amp;</span> {wedding.bride.fullName}
         </p>
         {days >= 0 && <p className="mt-3 text-[12px] text-ivory/70">Còn {days} ngày · 14.11.2026</p>}
         <Link to="/" className="mt-4 inline-flex items-center gap-1.5 text-[12px] font-medium text-champagne-light hover:text-ivory">

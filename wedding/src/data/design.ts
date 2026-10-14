@@ -5,6 +5,8 @@ export type Palette = 'burgundy' | 'champagne' | 'espresso';
 export type NameStyle = 'serif' | 'script';
 
 export interface InvitationDesign {
+  /** 2: tên cô dâu chú rể mặc định dùng thư pháp Ballet. */
+  version?: number;
   templateName: string;
   palette: Palette;
   nameStyle: NameStyle;
@@ -37,9 +39,10 @@ export const palettes: Array<{ id: Palette; name: string; swatch: [string, strin
 ];
 
 export const defaultDesign: InvitationDesign = {
+  version: 2,
   templateName: 'Forever Burgundy',
   palette: 'burgundy',
-  nameStyle: 'serif',
+  nameStyle: 'script',
   guestNameScale: 1,
   sections: { monogram: true, announce: true, couple: true, families: true, ceremony: true, guest: true, reception: true, thanks: true },
   text: { ...copy },

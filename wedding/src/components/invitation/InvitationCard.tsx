@@ -104,18 +104,18 @@ export function InvitationCard({
           </div>
         )}
 
-        <div className={cx('mt-[14px] w-full', hl('couple'))}>
+        <div className={cx('mt-[16px] w-full', hl('couple'))}>
           <CoupleName name={wedding.groom.fullName} role={wedding.groom.role} style={design.nameStyle} />
-          <div className="my-[2px] flex items-center justify-center gap-4 text-[color:var(--line)]">
+          <div className="my-0 flex items-center justify-center gap-4 text-[color:var(--line)]">
             <span className="h-px w-16 bg-current opacity-60" />
-            <span className="font-script text-[30px] leading-none text-[color:var(--accent)]">&amp;</span>
+            <span className="font-serif text-[26px] leading-none text-[color:var(--accent)] italic">&amp;</span>
             <span className="h-px w-16 bg-current opacity-60" />
           </div>
           <CoupleName name={wedding.bride.fullName} role={wedding.bride.role} style={design.nameStyle} />
         </div>
 
         {s.families && (
-          <div className={cx('mt-[16px] grid w-full grid-cols-2 gap-x-6', hl('families'))}>
+          <div className={cx('mt-[12px] grid w-full grid-cols-2 gap-x-6', hl('families'))}>
             {[wedding.families.groom, wedding.families.bride].map((f) => (
               <div key={f.side} className="text-center">
                 <p className="font-sans text-[9.5px] font-semibold tracking-[0.34em] text-[color:var(--accent)] uppercase">{f.label}</p>
@@ -137,7 +137,7 @@ export function InvitationCard({
         )}
 
         {s.ceremony && (
-          <div className={cx('mt-[14px] w-full', hl('ceremony'))}>
+          <div className={cx('mt-[10px] w-full', hl('ceremony'))}>
             <div className="flex items-center gap-3 text-[color:var(--line)]">
               <span className="h-px flex-1 bg-current opacity-60" />
               <span className="font-sans text-[9.5px] font-semibold tracking-[0.34em] text-[color:var(--accent)] uppercase">{ceremony.title}</span>
@@ -234,7 +234,7 @@ function CoupleName({ name, role, style }: { name: string; role: string; style: 
       {style === 'serif' ? (
         <p className="font-serif text-[44px] leading-[1.1] font-medium text-[color:var(--accent)]">{name}</p>
       ) : (
-        <p className="font-script text-[50px] leading-[1.15] text-[color:var(--accent)]">{name}</p>
+        <p className="font-script text-[46px] leading-[1.02] whitespace-nowrap text-[color:var(--accent)]">{name}</p>
       )}
       <p className="font-sans text-[9.5px] font-medium tracking-[0.36em] text-[color:var(--ink-soft)] uppercase">{role}</p>
     </div>

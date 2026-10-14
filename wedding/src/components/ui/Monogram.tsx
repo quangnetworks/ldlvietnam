@@ -20,7 +20,7 @@ export function Monogram({ className, tone = 'foil', ring = true }: { className?
         <span className={cx('font-serif font-medium', text)} style={{ fontSize: '1em' }}>
           {wedding.monogram.left}
         </span>
-        <span className={cx('font-script -mx-[0.04em] translate-y-[0.06em]', text)} style={{ fontSize: '0.62em' }}>
+        <span className={cx('font-serif italic -mx-[0.02em] translate-y-[0.02em]', text)} style={{ fontSize: '0.62em' }}>
           &amp;
         </span>
         <span className={cx('font-serif font-medium', text)} style={{ fontSize: '1em' }}>

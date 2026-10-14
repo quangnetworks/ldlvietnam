@@ -10,7 +10,7 @@ export const EXPORT_SCALE = 2;
 export const EXPORT_W = CARD_W * EXPORT_SCALE;
 export const EXPORT_H = CARD_H * EXPORT_SCALE;
 
-const FAMILIES = ['Cormorant Garamond', 'Be Vietnam Pro', 'Great Vibes'];
+const FAMILIES = ['Cormorant Garamond', 'Be Vietnam Pro', 'Ballet'];
 
 export function slugify(s: string) {
   return s
@@ -85,7 +85,7 @@ async function ensureFontsLoaded() {
     '400 12px "Be Vietnam Pro"',
     '500 12px "Be Vietnam Pro"',
     '600 12px "Be Vietnam Pro"',
-    '400 30px "Great Vibes"',
+    '400 48px "Ballet"',
   ];
   await Promise.all(samples.map((f) => document.fonts.load(f, 'Trần Ước Đặng ỹ')));
   await document.fonts.ready;
