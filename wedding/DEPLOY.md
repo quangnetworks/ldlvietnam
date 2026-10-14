@@ -29,7 +29,7 @@ npm run deploy
 
 ## Mật khẩu Studio
 
-`wrangler.jsonc` chỉ chứa **bản băm PBKDF2** của mật khẩu ban đầu (không phải mật khẩu). Sau lần đăng nhập đầu, đổi mật khẩu trong **Studio → Cài đặt**; mật khẩu mới lưu trong Durable Object và mọi thiết bị khác bị đăng xuất. Đăng nhập sai 8 lần sẽ bị khoá 15 phút.
+Mật khẩu mặc định do chủ tiệc chọn; `wrangler.jsonc` chỉ chứa **bản băm PBKDF2** của nó. Có thể đổi trong **Studio → Cài đặt** (lưu trong Durable Object, đăng xuất mọi thiết bị khác). Khi `ADMIN_PASSWORD_HASH` trong cấu hình thay đổi và được deploy, mật khẩu mặc định mới có hiệu lực trở lại và thay cho mật khẩu đã đổi trong Studio. Đăng nhập sai 8 lần sẽ bị khoá 15 phút.
 
 ## Sao lưu
 

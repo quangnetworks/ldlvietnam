@@ -39,6 +39,18 @@ async function isAdmin(req: Request, s: DurableObjectStub<WeddingStore>) {
   return verifySession(secret, readCookie(req, COOKIE), ver);
 }
 
+/**
+ * Mật khẩu hiện hành: bản đã đổi trong Studio, trừ khi mật khẩu mặc định trong cấu hình
+ * vừa được thay — khi đó mật khẩu mặc định mới có hiệu lực trở lại.
+ */
+async function currentPasswordHash(env: Env, s: DurableObjectStub<WeddingStore>) {
+  if ((await s.getValue('env_password_hash')) !== env.ADMIN_PASSWORD_HASH) {
+    await s.setValue('env_password_hash', env.ADMIN_PASSWORD_HASH);
+    await s.setValue('password_hash', '');
+  }
+  return (await s.getValue('password_hash')) || env.ADMIN_PASSWORD_HASH;
+}
+
 function sessionCookie(value: string, maxAge: number) {
   return `${COOKIE}=${encodeURIComponent(value)}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=${maxAge}`;
 }
@@ -80,7 +92,7 @@ async function api(req: Request, env: Env, url: URL): Promise<Response> {
     const gate = await s.loginAllowed();
     if (!gate.ok) return fail(`Nhập sai quá nhiều lần. Thử lại sau ${Math.ceil(gate.retryAfter / 60)} phút.`, 429);
     const { password } = await body<{ password?: string }>(req);
-    const stored = (await s.getValue('password_hash')) ?? env.ADMIN_PASSWORD_HASH;
+    const stored = await currentPasswordHash(env, s);
     const ok = !!password && !!stored && (await verifyPassword(password, stored));
     await s.recordLogin(ok);
     if (!ok) return fail('Mật khẩu không đúng', 401);
@@ -97,7 +109,7 @@ async function api(req: Request, env: Env, url: URL): Promise<Response> {
 
   if (m === 'POST' && path === '/auth/password') {
     const { current, next } = await body<{ current?: string; next?: string }>(req);
-    const stored = (await s.getValue('password_hash')) ?? env.ADMIN_PASSWORD_HASH;
+    const stored = await currentPasswordHash(env, s);
     if (!current || !(await verifyPassword(current, stored))) return fail('Mật khẩu hiện tại không đúng', 400);
     if (!next || next.length < 10) return fail('Mật khẩu mới cần ít nhất 10 ký tự');
     await s.setValue('password_hash', await hashPassword(next));

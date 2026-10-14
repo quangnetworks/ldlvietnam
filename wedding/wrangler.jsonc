@@ -19,7 +19,7 @@
   "vars": {
     // Băm PBKDF2 của mật khẩu quản trị ban đầu (không phải mật khẩu thật).
     // Sau khi đăng nhập, đổi mật khẩu trong Studio → Cài đặt; bản băm mới lưu trong Durable Object.
-    "ADMIN_PASSWORD_HASH": "pbkdf2$100000$L7cXcQG03F4rbJ9oq4X/9w==$bRsA1+3ESqevy83zK7IGGlbtoNDzf2soiCQGBHzrIpM="
+    "ADMIN_PASSWORD_HASH": "pbkdf2$100000$7z9OldoLoX/c6BHPr5RjFQ==$aRP8H+zPoi8luIzmMYRbBHVeFTWVYbX9/FJN1JZTIbs="
   },
   "routes": [{ "pattern": "temp.vanquang.xyz", "custom_domain": true }],
   "workers_dev": true,

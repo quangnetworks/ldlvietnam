@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { CalendarDays, Clock, Expand, MapPin, Minimize, RotateCcw } from 'lucide-react';
+import { Expand, MapPin, Minimize, RotateCcw } from 'lucide-react';
 import type { WeddingEvent } from '../../data/types';
 import type { InvitationDesign } from '../../data/design';
 import { copy, ceremony, reception, wedding } from '../../data/wedding';
@@ -127,7 +127,6 @@ function Envelope({ guestName, opening, onOpen }: { guestName: string; opening: 
 }
 
 function Story({ guestName, text: copy }: { guestName: string; text: typeof import('../../data/wedding').copy }) {
-  const r = parts(reception.date);
   return (
     <main className="paper animate-fade-in text-espresso">
       {/* Cover */}
@@ -188,26 +187,20 @@ function Story({ guestName, text: copy }: { guestName: string; text: typeof impo
         </div>
       </section>
 
-      {/* Sự kiện */}
+      {/* Lịch trình */}
       <section className="bg-ivory-deep/70 px-5 py-20">
         <Reveal className="text-center">
           <p className="eyebrow text-champagne-deep">Lịch trình</p>
-          <h2 className="mt-2 font-serif text-[34px] font-medium text-burgundy-800">Ngày vui của chúng tôi</h2>
+          <h2 className="mx-auto mt-2 max-w-[13em] font-serif text-[30px] leading-tight font-medium text-burgundy-800 [text-wrap:balance] sm:text-[36px]">Ngày vui của con chúng tôi</h2>
+          <Divider className="mx-auto mt-5 max-w-[140px] text-champagne" />
         </Reveal>
-        <div className="mx-auto mt-10 grid max-w-3xl gap-5 md:grid-cols-2">
-          <Reveal>
-            <EventCard e={ceremony} />
-          </Reveal>
-          <Reveal delay={120}>
-            <EventCard e={reception} featured />
-          </Reveal>
-        </div>
-        <Reveal className="mx-auto mt-12 max-w-xs text-center">
-          <p className="font-serif text-[64px] leading-none font-semibold text-burgundy-700">{r.day}</p>
-          <p className="eyebrow mt-2 text-espresso-soft">
-            Tháng {r.month} · {r.year}
-          </p>
-        </Reveal>
+        <ol className="mx-auto mt-12 max-w-xl">
+          {[ceremony, reception].map((e, i, all) => (
+            <Reveal as="li" key={e.id} delay={i * 120}>
+              <ScheduleDay e={e} last={i === all.length - 1} />
+            </Reveal>
+          ))}
+        </ol>
       </section>
 
       {/* Lời cảm ơn */}
@@ -222,51 +215,63 @@ function Story({ guestName, text: copy }: { guestName: string; text: typeof impo
   );
 }
 
-export function EventCard({ e, featured }: { e: WeddingEvent; featured?: boolean }) {
+/** Một ngày trong lịch trình: cột ngày bên trái, các mốc giờ và địa điểm bên phải. */
+function ScheduleDay({ e, last }: { e: WeddingEvent; last: boolean }) {
+  const d = parts(e.date);
+  const featured = e.id === 'reception';
   return (
-    <article
-      className={cx(
-        'relative h-full overflow-hidden rounded-[2px] border p-7 text-center',
-        featured ? 'velvet border-burgundy-900 text-ivory' : 'border-champagne/50 bg-ivory text-espresso',
-      )}
-    >
-      <p className={cx('eyebrow', featured ? 'text-champagne-light' : 'text-champagne-deep')}>{e.title}</p>
-      <p className={cx('mt-3 font-serif text-[40px] leading-none font-medium', featured ? 'text-ivory' : 'text-burgundy-700')}>{dotDate(e.date)}</p>
-      <p className={cx('mt-2 text-[14px]', featured ? 'text-ivory/80' : 'text-espresso-soft')}>
-        <CalendarDays className="mr-1.5 inline size-3.5 -translate-y-px" />
-        {e.weekday} · <Clock className="mr-1 ml-1 inline size-3.5 -translate-y-px" />
-        {e.time}
-      </p>
-      <p className={cx('mt-1 font-serif text-[15px] italic', featured ? 'text-ivory/70' : 'text-espresso-soft')}>({e.lunarText})</p>
-      <Divider className={cx('mx-auto my-5 max-w-[140px]', featured ? 'text-champagne-light/60' : 'text-champagne')} />
-      <p className={cx('text-[12px] tracking-[0.18em] uppercase', featured ? 'text-ivory/70' : 'text-espresso-soft')}>{e.venueKind}</p>
-      <p className={cx('mt-1 font-serif text-[26px] font-semibold tracking-[0.04em]', featured ? 'foil uppercase' : 'text-burgundy-800')}>{e.venueName}</p>
-      {e.venueHall && <p className="mt-0.5 text-[13px] font-semibold tracking-[0.14em] text-champagne-light uppercase">{e.venueHall}</p>}
-      {e.venueAddressLines.length > 0 && <p className={cx('mt-2 text-[14px] leading-relaxed', featured ? 'text-ivory/80' : 'text-espresso-soft')}>{e.venueAddressLines.join(' ')}</p>}
-      {e.schedule.length > 1 && (
-        <div className="mt-5 flex justify-center gap-8">
-          {e.schedule.map((s) => (
-            <div key={s.label}>
-              <p className="text-[11px] tracking-[0.2em] text-ivory/65 uppercase">{s.label}</p>
-              <p className="font-serif text-[26px] font-semibold text-champagne-light">{s.time}</p>
-            </div>
-          ))}
+    <div className="grid grid-cols-[76px_1fr] gap-x-5 sm:grid-cols-[96px_1fr] sm:gap-x-8">
+      {/* Cột ngày */}
+      <div className="relative flex flex-col items-center text-center">
+        <p className="eyebrow text-[10px] text-espresso-soft">{e.weekday}</p>
+        <p className={cx('mt-1 font-serif text-[52px] leading-none font-semibold sm:text-[60px]', featured ? 'text-burgundy-700' : 'text-burgundy-600')}>{d.day}</p>
+        <p className="mt-1.5 font-sans text-[12px] font-medium tracking-[0.12em] text-espresso uppercase">Tháng {d.month}</p>
+        <p className="font-sans text-[11px] tracking-[0.2em] text-espresso-soft">{d.year}</p>
+        {!last && <span className="mt-4 w-px flex-1 bg-gradient-to-b from-champagne to-champagne/0" aria-hidden />}
+      </div>
+
+      {/* Nội dung */}
+      <div className={cx('pb-12', last && 'pb-0')}>
+        <div className={cx('rounded-[2px] border p-5 sm:p-6', featured ? 'velvet border-burgundy-900 text-ivory' : 'border-champagne/50 bg-ivory text-espresso')}>
+          <p className={cx('eyebrow', featured ? 'text-champagne-light' : 'text-burgundy-600')}>{e.title}</p>
+          <p className={cx('mt-1 font-serif text-[15px] italic', featured ? 'text-ivory/70' : 'text-espresso-soft')}>({e.lunarText})</p>
+
+          <ul className={cx('mt-4 space-y-2 border-t pt-4', featured ? 'border-champagne-light/25' : 'border-champagne/40')}>
+            {e.schedule.map((s) => (
+              <li key={s.label} className="flex items-baseline gap-4">
+                <span className={cx('w-[62px] shrink-0 font-serif text-[26px] leading-none font-semibold', featured ? 'text-champagne-light' : 'text-burgundy-700')}>{s.time}</span>
+                <span className={cx('text-[15px]', featured ? 'text-ivory/90' : 'text-espresso')}>{s.label}</span>
+              </li>
+            ))}
+          </ul>
+
+          <div className={cx('mt-4 border-t pt-4', featured ? 'border-champagne-light/25' : 'border-champagne/40')}>
+            <p className={cx('flex items-start gap-2 text-[13px]', featured ? 'text-ivory/70' : 'text-espresso-soft')}>
+              <MapPin className="mt-0.5 size-3.5 shrink-0" />
+              <span>
+                {e.venueKind}{' '}
+                <b className={cx('font-semibold', featured ? 'text-ivory' : 'text-espresso')}>{featured ? e.venueName : e.venueName.toLowerCase()}</b>
+                {e.venueHall && <span className={cx('block font-semibold tracking-[0.06em]', featured && 'text-champagne-light')}>{e.venueHall}</span>}
+                {e.venueAddressLines.length > 0 && <span className="block">{e.venueAddressLines.join(' ')}</span>}
+              </span>
+            </p>
+            {e.venueAddressLines.length > 0 && (
+              <a
+                href={mapsUrl(e)}
+                target="_blank"
+                rel="noreferrer"
+                className={cx(
+                  'mt-4 inline-flex items-center gap-2 rounded-full border px-4 py-2 text-[13px] font-medium transition-colors',
+                  featured ? 'border-champagne-light/40 text-ivory hover:bg-ivory hover:text-burgundy-800' : 'border-burgundy-600/30 text-burgundy-700 hover:bg-burgundy-700 hover:text-ivory',
+                )}
+              >
+                <MapPin className="size-4" /> Chỉ đường
+              </a>
+            )}
+          </div>
         </div>
-      )}
-      {e.venueAddressLines.length > 0 && (
-        <a
-          href={mapsUrl(e)}
-          target="_blank"
-          rel="noreferrer"
-          className={cx(
-            'mt-6 inline-flex items-center gap-2 rounded-full border px-5 py-2.5 text-[13px] font-medium transition-colors',
-            featured ? 'border-champagne-light/40 text-ivory hover:bg-ivory hover:text-burgundy-800' : 'border-burgundy-600/30 text-burgundy-700 hover:bg-burgundy-700 hover:text-ivory',
-          )}
-        >
-          <MapPin className="size-4" /> Chỉ đường
-        </a>
-      )}
-    </article>
+      </div>
+    </div>
   );
 }
 
