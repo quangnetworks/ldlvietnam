@@ -444,7 +444,8 @@ r.post('/hrm/employees', async (c) => {
 });
 
 /**
- * Nhân sự đã nghỉ việc quay lại làm cộng tác viên cho một khu vực công ty quy định:
+ * Chuyển sang cộng tác viên cho một khu vực công ty quy định — cho cả nhân viên đang làm (thử việc / chính thức / tạm nghỉ)
+ * và nhân sự đã nghỉ việc quay lại:
  * mở lại tài khoản, hồ sơ chuyển sang "Cộng tác viên – đang làm việc", thêm thỏa thuận hợp tác hưởng % (kèm khu vực),
  * ghi "Quay lại làm việc" vào lịch sử công tác. Hồ sơ, hợp đồng, lịch sử cũ được giữ nguyên.
  */
@@ -455,7 +456,8 @@ r.post('/hrm/employees/:id/rejoin', async (c) => {
   const u = await get(`SELECT u.id, u.name, u.username, u.role, u.active, h.work_status, h.hire_date, h.resign_date, h.engagement
     FROM users u LEFT JOIN hr_profiles h ON h.user_id = u.id WHERE u.id = ?`, id);
   if (!u) throw notFound('Nhân sự không tồn tại');
-  if (u.work_status !== 'resigned' && u.active) throw badRequest(`${u.name} đang làm việc — chỉ nhân sự đã nghỉ việc mới quay lại theo hình thức cộng tác viên`);
+  const returning = u.work_status === 'resigned' || !u.active;
+  if (!returning && u.engagement === 'collaborator') throw badRequest(`${u.name} đang là cộng tác viên — thêm / sửa thỏa thuận ở tab Thỏa thuận hợp tác`);
   if (u.role === 'admin' && actor.role !== 'admin') throw forbidden('Chỉ quản trị viên mới mở lại tài khoản quản trị');
   const b = await jsonBody(c);
   const start = isoDate(b.start_date) || vnDate();
@@ -466,6 +468,7 @@ r.post('/hrm/employees/:id/rejoin', async (c) => {
   if (mgrId && (mgrId === id || !(await get('SELECT 1 FROM users WHERE id = ?', mgrId)))) throw badRequest('Người phụ trách không hợp lệ');
   const territory = (await get('SELECT name FROM territories WHERE id = ?', k.territory_id)).name;
   const before = [u.hire_date && `từ ${u.hire_date}`, u.resign_date && `nghỉ việc ${u.resign_date}`].filter(Boolean).join(', ');
+  const was = returning ? 'Nhân sự cũ' : `Nhân viên – ${STATUS_TEXT[u.work_status || 'working'] || 'Chính thức'}`;
   await batch([
     ['UPDATE users SET active = 1 WHERE id = ?', [id]],
     ...(mgrId !== undefined ? [['UPDATE users SET manager_id = ? WHERE id = ?', [mgrId, id]]] : []),
@@ -473,14 +476,15 @@ r.post('/hrm/employees/:id/rejoin', async (c) => {
     [`INSERT INTO hr_profiles(user_id, work_status, engagement, employee_type, hire_date, updated_at) VALUES (?, 'working', 'collaborator', 'Cộng tác viên', ?, datetime('now'))
       ON CONFLICT(user_id) DO UPDATE SET work_status = 'working', engagement = 'collaborator', employee_type = 'Cộng tác viên', hire_date = excluded.hire_date,
         probation_end = NULL, official_date = NULL, resign_date = NULL, resign_reason = NULL, updated_at = datetime('now')`, [id, start]],
-    // hợp đồng lao động cũ còn ghi "đang hiệu lực" thì kết thúc
-    ["UPDATE hr_contracts SET status = 'ended', updated_at = datetime('now') WHERE user_id = ? AND status = 'active'", [id]],
+    // hợp đồng lao động / thỏa thuận cũ còn hiệu lực: kết thúc trước ngày bắt đầu hợp tác
+    [`UPDATE hr_contracts SET status = 'ended', end_date = CASE WHEN end_date IS NOT NULL AND end_date < ? THEN end_date ELSE date(?, '-1 day') END,
+      updated_at = datetime('now') WHERE user_id = ? AND status = 'active'`, [start, start, id]],
     ['INSERT INTO hr_careers(user_id, type, effective_date, from_value, to_value, decision_no, note, created_by) VALUES (?,?,?,?,?,?,?,?)',
-      [id, 'rejoin', start, before ? `Nhân sự cũ (${before})` : 'Nhân sự cũ', `Cộng tác viên – ${territory} (${k.commission_rate}%)`, k.code, clean(b.note).slice(0, 2000) || null, actor.id]],
+      [id, returning ? 'rejoin' : 'transfer', start, before ? `${was} (${before})` : was, `Cộng tác viên – ${territory} (${k.commission_rate}%)`, k.code, clean(b.note).slice(0, 2000) || null, actor.id]],
   ]);
   await insertContract(id, k, null, actor.id, false);
   await syncProfileContract(id);
-  await audit(actor.id, 'hrm.rejoin', `${u.name} (@${u.username}) quay lại làm cộng tác viên khu vực ${territory}, hưởng ${k.commission_rate}%`);
+  await audit(actor.id, 'hrm.rejoin', `${u.name} (@${u.username}) ${returning ? 'quay lại làm' : 'chuyển sang'} cộng tác viên khu vực ${territory}, hưởng ${k.commission_rate}%`);
   return c.json(empView(await get(`${EMP_SELECT} WHERE u.id = ?`, id)));
 });
 

@@ -246,25 +246,28 @@ export function RejoinModal({ person, cat, onClose, onDone }) {
   const [busy, setBusy] = useState(false);
   const set = (k) => (e) => setF((x) => ({ ...x, [k]: e?.target ? e.target.value : e }));
   const ok = f.territory_id && Number(String(f.commission_rate).replace(',', '.')) > 0;
+  // returning = nhân sự đã nghỉ việc quay lại; còn lại = nhân viên đang làm chuyển hình thức sang cộng tác viên
+  const returning = person.work_status === 'resigned' || person.active === 0;
   const save = async () => {
     setBusy(true);
     try {
       const r = await api.post(`/hrm/employees/${person.id}/rejoin`, f);
-      toast(`${person.name} đã quay lại làm cộng tác viên khu vực ${r.collab_territory} — tài khoản đã được mở lại`);
+      toast(returning ? `${person.name} đã quay lại làm cộng tác viên khu vực ${r.collab_territory} — tài khoản đã được mở lại`
+        : `${person.name} đã chuyển sang cộng tác viên khu vực ${r.collab_territory}`);
       onDone(r);
     } catch (e) { toast(e.message, 'error'); } finally { setBusy(false); }
   };
   return (
-    <Modal title="Quay lại làm cộng tác viên" onClose={onClose} width={640}
-      footer={<><button className="btn" onClick={onClose}>Huỷ</button><button className="btn btn-primary" disabled={busy || !ok} onClick={save}><RotateCcw size={15} /> Xác nhận quay lại</button></>}>
+    <Modal title={returning ? 'Quay lại làm cộng tác viên' : 'Chuyển sang cộng tác viên'} onClose={onClose} width={640}
+      footer={<><button className="btn" onClick={onClose}>Huỷ</button><button className="btn btn-primary" disabled={busy || !ok} onClick={save}>{returning ? <RotateCcw size={15} /> : <Handshake size={15} />} {returning ? 'Xác nhận quay lại' : 'Xác nhận chuyển'}</button></>}>
       <div className="hr-rejoin-head">
         <span className="hr-engage-icon"><Handshake size={18} /></span>
-        <span><b>{person.name}</b><small className="muted block">Nhân sự cũ{person.resign_date ? ` · nghỉ việc từ ${new Date(`${person.resign_date}T00:00:00`).toLocaleDateString('vi-VN')}` : ''}</small></span>
+        <span><b>{person.name}</b><small className="muted block">{returning ? 'Nhân sự cũ' : `Nhân viên · ${({ working: 'Chính thức', probation: 'Thử việc', leave: 'Tạm nghỉ' })[person.work_status] || ''}`}{person.resign_date ? ` · nghỉ việc từ ${new Date(`${person.resign_date}T00:00:00`).toLocaleDateString('vi-VN')}` : ''}</small></span>
       </div>
       <ul className="hr-rejoin-notes muted small">
-        <li>Tài khoản LDL được mở lại, đăng nhập bằng mật khẩu cũ.</li>
-        <li>Hồ sơ chuyển sang <b>Cộng tác viên</b>; hợp đồng, giấy tờ và lịch sử công tác trước đây được giữ nguyên.</li>
-        <li>Lịch sử công tác ghi nhận "Quay lại làm việc".</li>
+        {returning ? <li>Tài khoản LDL được mở lại, đăng nhập bằng mật khẩu cũ.</li> : <li>Tài khoản LDL giữ nguyên, vẫn đăng nhập như hiện tại.</li>}
+        <li>Hồ sơ chuyển sang <b>Cộng tác viên</b>; hợp đồng lao động đang hiệu lực kết thúc trước ngày bắt đầu hợp tác. Giấy tờ, lịch sử công tác được giữ nguyên.</li>
+        <li>Lịch sử công tác ghi nhận {returning ? '"Quay lại làm việc"' : '"Điều chuyển: Nhân viên → Cộng tác viên"'}.</li>
       </ul>
       <div className="form-grid">
         <Field label="Ngày bắt đầu hợp tác" required><input className="input" type="date" value={f.start_date} onChange={set('start_date')} /></Field>

@@ -157,7 +157,17 @@ test('HRM: add people directly; collaborators work under a % agreement instead o
 
   // nhân sự cũ quay lại làm cộng tác viên cho một khu vực công ty quy định
   const region = (await hr.get('/sales/structure')).data.territories.find((t) => t.level === 'region');
-  assert.equal((await hr.post(`/hrm/employees/${emp.data.id}/rejoin`, { commission_rate: 5, territory_id: region.id })).status, 400); // đang làm việc
+  assert.equal((await hr.post(`/hrm/employees/${res.data.id}/rejoin`, { commission_rate: 5, territory_id: region.id })).status, 400); // đã là cộng tác viên
+  // nhân viên đang thử việc (có ghi ngày nghỉ) chuyển thẳng sang cộng tác viên: hợp đồng lao động kết thúc trước ngày hợp tác
+  const tv = await hr.post('/hrm/employees', { name: 'Đoàn Thử Việc', username: 'tv.doan', password: 'abc12345', work_status: 'probation',
+    hire_date: '2026-08-01', agreement: { contract_type: 'Thử việc', start_date: '2026-08-01' } });
+  await hr.put(`/hrm/employees/${tv.data.id}`, { work_status: 'probation', hire_date: '2026-08-01', resign_date: '2026-10-01' });
+  const conv = await hr.post(`/hrm/employees/${tv.data.id}/rejoin`, { start_date: '2026-10-02', commission_rate: 4, territory_id: region.id });
+  assert.equal(conv.status, 200);
+  assert.deepEqual([conv.data.engagement, conv.data.work_status, conv.data.resign_date, conv.data.commission_rate], ['collaborator', 'working', null, 4]);
+  const tvk = (await hr.get(`/hrm/employees/${tv.data.id}/contracts`)).data;
+  assert.deepEqual(tvk.map((k) => [k.kind, k.status, k.end_date]), [['collab', 'active', null], ['labor', 'ended', '2026-10-01']]);
+  assert.ok((await hr.get(`/hrm/employees/${tv.data.id}/careers`)).data.some((k) => k.type === 'transfer' && /Nhân viên – Thử việc/.test(k.from_value)));
   await hr.put(`/hrm/employees/${emp.data.id}`, { work_status: 'resigned', resign_date: '2026-11-30', resign_reason: 'Nghỉ theo nguyện vọng cá nhân' });
   assert.equal((await raw('/auth/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username: 'nv.le', password: 'abc12345' }) })).status, 401); // tài khoản bị khoá
   assert.equal((await hr.post(`/hrm/employees/${emp.data.id}/rejoin`, { commission_rate: 5 })).status, 400); // thiếu khu vực

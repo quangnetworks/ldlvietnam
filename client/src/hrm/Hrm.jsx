@@ -368,6 +368,9 @@ export function HrmEmployee({ selfId }) {
             <Link className="btn btn-sm" to={`/checkin?user_id=${id}`}><CalendarDays size={14} /> Bảng công</Link>
             <Link className="btn btn-sm" to={`/timeoff?user_id=${id}`}><CalendarHeart size={14} /> Nghỉ phép</Link>
             <Link className="btn btn-sm" to={`/account/u/${id}`}>Tài khoản</Link>
+            {edit && e.engagement !== 'collaborator' && e.work_status !== 'resigned' && (
+              <button className="btn btn-sm" onClick={() => setRejoining(true)}><Handshake size={14} /> Chuyển sang cộng tác viên</button>
+            )}
           </div>
         </div>
         <nav className="hr-profile-tabs" role="tablist">
