@@ -21,7 +21,7 @@ export const demoGuestPreview = demoGuests[0];
 
 export const guestGroups = ['Họ hàng nhà trai', 'Họ hàng nhà gái', 'Bạn chú rể', 'Bạn cô dâu', 'Đồng nghiệp', 'Đối tác'];
 
-export const salutations = ['Anh', 'Chị', 'Bạn', 'Ông', 'Bà', 'Cô', 'Chú', 'Gia đình', 'Quý khách'];
+export { salutations } from './salutations';
 
 export const statusMeta: Record<GuestStatus, { label: string; tone: 'neutral' | 'gold' | 'success' | 'danger' }> = {
   draft: { label: 'Chưa tạo', tone: 'neutral' },

@@ -9,7 +9,8 @@ import { SearchInput, SelectField, TextField } from '../../components/ui/Field';
 import { ScaledFrame } from '../../components/ui/ScaledFrame';
 import { StatusBadge } from '../../components/ui/StatusBadge';
 import { useToast } from '../../components/ui/Toast';
-import { guestGroups, salutations, statusMeta } from '../../data/demo';
+import { guestGroups, statusMeta } from '../../data/demo';
+import { salutationGroups, salutations } from '../../data/salutations';
 import type { Guest } from '../../data/types';
 import { api, inviteUrl } from '../../lib/api';
 import { copyText, relTime } from '../../lib/clipboard';
@@ -370,7 +371,7 @@ function GuestDialog({
           hint={dup ? <span className="text-burgundy-600">Mã này đã tồn tại</span> : guest ? 'Mã khách không đổi được sau khi tạo.' : 'Duy nhất cho mỗi khách, dùng trong tên file ảnh.'}
         />
         <TextField label="Tên khách mời" placeholder="Ví dụ: Nguyễn Văn A" value={f.guest_name} onChange={(e) => set({ guest_name: e.target.value })} />
-        <SelectField label="Cách xưng hô" value={f.salutation} onChange={(e) => set({ salutation: e.target.value })} options={['', ...salutations].map((s) => ({ value: s, label: s || '— Không dùng —' }))} />
+        <SalutationField value={f.salutation} onChange={(v) => set({ salutation: v })} />
         <div className="space-y-1.5">
           <TextField label="Nhóm khách" list="guest-groups" value={f.guest_group} onChange={(e) => set({ guest_group: e.target.value })} />
           <datalist id="guest-groups">
@@ -414,5 +415,55 @@ function GuestDialog({
         </p>
       )}
     </Dialog>
+  );
+}
+
+const CUSTOM = '__custom__';
+
+/** Chọn cách xưng hô theo nhóm, hoặc tự nhập (ví dụ: “Anh Hai”, “Cô Út”, “Bác Ba”). */
+function SalutationField({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  const [custom, setCustom] = useState(() => !!value && !salutations.includes(value));
+  return (
+    <div className="space-y-1.5">
+      <label htmlFor="salutation" className="block text-[12px] font-medium text-espresso-soft">
+        Cách xưng hô
+      </label>
+      <select
+        id="salutation"
+        value={custom ? CUSTOM : value}
+        onChange={(e) => {
+          if (e.target.value === CUSTOM) {
+            setCustom(true);
+            return;
+          }
+          setCustom(false);
+          onChange(e.target.value);
+        }}
+        className="w-full rounded-xl border border-espresso/12 bg-white/70 px-3.5 py-2.5 text-sm text-espresso focus:border-burgundy-600/50 focus:outline-none"
+      >
+        <option value="">— Không dùng —</option>
+        {salutationGroups.map((g) => (
+          <optgroup key={g.label} label={g.label}>
+            {g.items.map((s) => (
+              <option key={g.label + s} value={s}>
+                {s}
+              </option>
+            ))}
+          </optgroup>
+        ))}
+        <option value={CUSTOM}>Tự nhập cách gọi khác…</option>
+      </select>
+      {custom && (
+        <input
+          autoFocus
+          aria-label="Cách xưng hô tự nhập"
+          placeholder="Ví dụ: Anh Hai, Cô Út, Bác Ba"
+          value={value}
+          maxLength={40}
+          onChange={(e) => onChange(e.target.value)}
+          className="w-full rounded-xl border border-espresso/12 bg-white px-3.5 py-2.5 text-sm text-espresso focus:border-burgundy-600/50 focus:outline-none"
+        />
+      )}
+    </div>
   );
 }
