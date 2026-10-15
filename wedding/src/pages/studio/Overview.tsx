@@ -107,7 +107,7 @@ export default function Overview() {
           <Panel className="flex gap-5 p-6 xl:col-span-5">
             <div className="w-[120px] shrink-0 self-start overflow-hidden rounded-md shadow-[0_18px_30px_-18px_rgba(48,9,16,0.55)] sm:w-[150px]">
               <ScaledFrame>
-                <InvitationCard guestName={guests[0]?.display_name ?? 'Tên khách mời'} design={design} />
+                <InvitationCard guestName={guests[0]?.display_name ?? 'Tên khách mời'} salutation={guests[0]?.salutation} design={design} />
               </ScaledFrame>
             </div>
             <div className="flex min-w-0 flex-col">

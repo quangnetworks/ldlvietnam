@@ -85,7 +85,7 @@ async function api(req: Request, env: Env, url: URL): Promise<Response> {
     const track = url.searchParams.get('preview') !== '1' && !(await isAdmin(req, s));
     const inv = await s.openInvite(token, track);
     if (!inv) return fail('Không tìm thấy thiệp', 404);
-    return json({ display_name: inv.display_name, design: inv.design ? JSON.parse(inv.design) : null });
+    return json({ display_name: inv.display_name, salutation: inv.salutation, design: inv.design ? JSON.parse(inv.design) : null });
   }
 
   if (m === 'POST' && path === '/auth/login') {

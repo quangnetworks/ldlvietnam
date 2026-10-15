@@ -220,7 +220,7 @@ export default function Landing() {
             <div className="absolute inset-x-[10%] top-[8%] bottom-[2%] rotate-[-5deg] rounded-[2px] bg-beige" />
             <div className="relative mx-auto w-full max-w-[360px] rotate-[2deg] shadow-[0_50px_80px_-40px_rgba(48,9,16,0.6)]">
               <ScaledFrame>
-                <InvitationCard guestName={demoGuestPreview.display_name} />
+                <InvitationCard guestName={demoGuestPreview.display_name} salutation={demoGuestPreview.salutation} />
               </ScaledFrame>
             </div>
             <p className="relative mt-10 text-center text-[12px] text-espresso-soft">Tên khách “{demoGuestPreview.display_name}” là dữ liệu minh họa.</p>

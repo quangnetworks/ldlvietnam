@@ -1,5 +1,7 @@
 import type { Guest } from '../data/types';
-import { reception, wedding } from '../data/wedding';
+import { copy, reception, wedding } from '../data/wedding';
+import type { InvitationDesign } from '../data/design';
+import { thanksFor } from './salutation';
 import { slashDate } from './format';
 import { inviteUrl } from './api';
 
@@ -14,6 +16,7 @@ export const messageVariables = [
   { key: 'venue_name', label: 'Nơi tổ chức' },
   { key: 'venue_address', label: 'Địa chỉ' },
   { key: 'invite_link', label: 'Link thiệp riêng' },
+  { key: 'thanks_line', label: 'Lời cảm ơn theo xưng hô' },
 ] as const;
 
 export const defaultMessage = [
@@ -28,13 +31,13 @@ export const defaultMessage = [
   '',
   'Thiệp mời: {{invite_link}}',
   '',
-  'Sự hiện diện của Quý khách là niềm vinh hạnh cho gia đình chúng tôi.',
+  '{{thanks_line}}.',
 ].join('\n');
 
 /** Đổi khi mẫu mặc định thay đổi, để mẫu cũ lưu trên trình duyệt không che mẫu mới. */
-export const MESSAGE_STORAGE_KEY = 'hm.messageTemplate.v2';
+export const MESSAGE_STORAGE_KEY = 'hm.messageTemplate.v3';
 
-export function variablesFor(g: Guest): Record<string, string> {
+export function variablesFor(g: Guest, text: InvitationDesign['text'] = copy): Record<string, string> {
   return {
     guest_display_name: g.display_name,
     groom_name: wedding.groom.fullName,
@@ -46,6 +49,7 @@ export function variablesFor(g: Guest): Record<string, string> {
     venue_name: `${reception.venueKind} ${reception.venueName} — ${reception.venueHall}`,
     venue_address: reception.venueAddressLines.join(' '),
     invite_link: inviteUrl(g),
+    thanks_line: thanksFor(text, g.salutation),
   };
 }
 

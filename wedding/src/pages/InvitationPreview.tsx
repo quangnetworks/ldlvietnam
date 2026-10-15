@@ -20,7 +20,7 @@ const zones = [
   { id: 'families', n: '05', title: 'Gia đình hai bên', text: 'Nhà trai và nhà gái, kèm địa chỉ.' },
   { id: 'ceremony', n: '06', title: 'Lễ tân hôn', text: '14:00 · Thứ Bảy 07.11.2026 · tại tư gia.' },
   { id: 'reception', n: '07', title: 'Tiệc cưới & địa điểm', text: 'Adora Luxury · Sảnh Diamond · 14.11.2026.' },
-  { id: 'thanks', n: '08', title: 'Lời cảm ơn', text: 'Lời kết trân trọng gửi Quý Khách.' },
+  { id: 'thanks', n: '08', title: 'Lời cảm ơn', text: 'Lời kết theo xưng hô của từng khách.' },
 ];
 
 export default function InvitationPreview() {
@@ -42,7 +42,7 @@ export default function InvitationPreview() {
               {mode === 'static' ? (
                 <div className="mx-auto w-full max-w-[min(440px,calc((100dvh-140px)*0.5625))] shadow-[0_50px_90px_-45px_rgba(48,9,16,0.7)]">
                   <ScaledFrame>
-                    <InvitationCard guestName={guest.display_name} design={design} highlight={focus} />
+                    <InvitationCard guestName={guest.display_name} salutation={guest.salutation} design={design} highlight={focus} />
                   </ScaledFrame>
                 </div>
               ) : (

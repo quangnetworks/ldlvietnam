@@ -165,7 +165,7 @@ function GuestPicker({ guests, selected, setSelected }: { guests: Guest[]; selec
 /* ——————————————— PHƯƠNG ÁN 1: LINK ——————————————— */
 
 function LinkTab({ chosen }: { chosen: Guest[] }) {
-  const { upsertGuests, guests } = useStudio();
+  const { upsertGuests, guests, savedDesign } = useStudio();
   const toast = useToast();
   const [tpl, setTpl] = useState(() => {
     try {
@@ -183,7 +183,7 @@ function LinkTab({ chosen }: { chosen: Guest[] }) {
   }, [tpl]);
   const area = useRef<HTMLTextAreaElement>(null);
   const sample = chosen[0];
-  const preview = sample ? fillTemplate(tpl, variablesFor(sample)) : null;
+  const preview = sample ? fillTemplate(tpl, variablesFor(sample, savedDesign.text)) : null;
   const canShare = typeof navigator !== 'undefined' && !!navigator.share;
 
   const markSent = (ids: string[]) => {
@@ -191,7 +191,7 @@ function LinkTab({ chosen }: { chosen: Guest[] }) {
     if (fresh.length) api.markSent(fresh).then(upsertGuests).catch(() => undefined);
   };
 
-  const message = (g: Guest) => fillTemplate(tpl, variablesFor(g));
+  const message = (g: Guest) => fillTemplate(tpl, variablesFor(g, savedDesign.text));
 
   const copyMsg = async (g: Guest) => {
     const m = message(g);
@@ -390,7 +390,7 @@ function PngTab({ chosen }: { chosen: Guest[] }) {
         if (cancel.current) break;
         setResults((cur) => cur.map((r) => (r.guest.guest_id === g.guest_id ? { ...r, status: 'running' } : r)));
         try {
-          const blob = await renderInvitationPng(g.display_name, savedDesign);
+          const blob = await renderInvitationPng(g.display_name, savedDesign, g.salutation);
           const url = URL.createObjectURL(blob);
           ok.push(g.guest_id);
           setResults((cur) => cur.map((r) => (r.guest.guest_id === g.guest_id ? { ...r, status: 'done', blob, url } : r)));

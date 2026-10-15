@@ -180,7 +180,7 @@ export class WeddingStore extends DurableObject {
       const t = now();
       this.sql.exec('UPDATE guests SET opened_at = COALESCE(opened_at, ?), last_opened_at = ?, open_count = open_count + 1 WHERE token = ?', t, t, token);
     }
-    return { guest_id: g.guest_id, display_name: g.display_name, design: this.getValue('design') };
+    return { guest_id: g.guest_id, display_name: g.display_name, salutation: g.salutation, design: this.getValue('design') };
   }
 
   peekInvite(token: string) {

@@ -96,7 +96,7 @@ const frame = () => new Promise<void>((r) => requestAnimationFrame(() => r()));
 export class ExportCheckError extends Error {}
 
 /** Dựng một thiệp ngoài màn hình rồi chụp thành PNG. Có kiểm tra tên khách trước khi chụp. */
-export async function renderInvitationPng(displayName: string, design: InvitationDesign): Promise<Blob> {
+export async function renderInvitationPng(displayName: string, design: InvitationDesign, salutation = ''): Promise<Blob> {
   const name = displayName.trim();
   if (!name || /\{\{|\}\}|undefined|null/.test(name)) throw new ExportCheckError('Tên hiển thị trống hoặc còn biến chưa thay');
 
@@ -107,7 +107,7 @@ export async function renderInvitationPng(displayName: string, design: Invitatio
   document.body.appendChild(host);
   const root = createRoot(host);
   try {
-    flushSync(() => root.render(<InvitationCard guestName={name} design={design} />));
+    flushSync(() => root.render(<InvitationCard guestName={name} salutation={salutation} design={design} />));
     await frame();
     await frame();
     const card = host.firstElementChild as HTMLElement;

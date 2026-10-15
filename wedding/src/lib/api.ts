@@ -48,7 +48,7 @@ export const api = {
   setStatus: (ids: string[], status: GuestStatus) => post<Guest[]>('/guests/status', { ids, status }),
   markSent: (ids: string[]) => post<Guest[]>('/guests/sent', { ids }),
   rotateToken: (id: string) => post<Guest>(`/guests/${encodeURIComponent(id)}/rotate`),
-  invite: (token: string, preview = false) => call<{ display_name: string; design: InvitationDesign | null }>(`/invite/${token}${preview ? '?preview=1' : ''}`),
+  invite: (token: string, preview = false) => call<{ display_name: string; salutation?: string; design: InvitationDesign | null }>(`/invite/${token}${preview ? '?preview=1' : ''}`),
 };
 
 export function inviteUrl(g: Pick<Guest, 'token'>) {

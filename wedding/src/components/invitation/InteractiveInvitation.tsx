@@ -3,6 +3,7 @@ import { Expand, MapPin, Minimize, RotateCcw } from 'lucide-react';
 import type { WeddingEvent } from '../../data/types';
 import type { InvitationDesign } from '../../data/design';
 import { themeStyle } from '../../data/themes';
+import { thanksFor } from '../../lib/salutation';
 import { copy, ceremony, reception, wedding } from '../../data/wedding';
 import { cx, dotDate, mapsUrl, parts } from '../../lib/format';
 import { Monogram } from '../ui/Monogram';
@@ -14,8 +15,9 @@ import { Reveal } from '../ui/Reveal';
  * Bước 1: phong bì có tên khách. Bước 2: mở ra và cuộn khám phá nội dung.
  * Dùng chung nguồn dữ liệu với thiệp tĩnh (data/wedding.ts).
  */
-export function InteractiveInvitation({ guestName, design }: { guestName: string; design?: InvitationDesign }) {
+export function InteractiveInvitation({ guestName, salutation, design }: { guestName: string; salutation?: string; design?: InvitationDesign }) {
   const text = { ...copy, ...(design?.text ?? {}) };
+  const thanks = thanksFor(text, salutation);
   const [stage, setStage] = useState<'sealed' | 'opening' | 'open'>('sealed');
   const fs = useFullscreen();
 
@@ -41,7 +43,7 @@ export function InteractiveInvitation({ guestName, design }: { guestName: string
         )}
       </div>
 
-      {stage !== 'open' ? <Envelope guestName={guestName} opening={stage === 'opening'} onOpen={open} /> : <Story guestName={guestName} text={text} />}
+      {stage !== 'open' ? <Envelope guestName={guestName} opening={stage === 'opening'} onOpen={open} /> : <Story guestName={guestName} text={text} thanks={thanks} />}
     </div>
   );
 }
@@ -127,7 +129,7 @@ function Envelope({ guestName, opening, onOpen }: { guestName: string; opening: 
   );
 }
 
-function Story({ guestName, text: copy }: { guestName: string; text: typeof import('../../data/wedding').copy }) {
+function Story({ guestName, text: copy, thanks }: { guestName: string; text: typeof import('../../data/wedding').copy; thanks: string }) {
   return (
     <main className="paper animate-fade-in text-espresso">
       {/* Cover */}
@@ -208,7 +210,7 @@ function Story({ guestName, text: copy }: { guestName: string; text: typeof impo
       <section className="px-6 pt-20 pb-24 text-center">
         <Reveal>
           <Sprig className="mx-auto h-8 w-40 text-champagne" />
-          <p className="mx-auto mt-6 max-w-md font-serif text-[24px] leading-snug text-espresso italic">{copy.thanks}</p>
+          <p className="mx-auto mt-6 max-w-md font-serif text-[24px] leading-snug text-espresso italic">{thanks}</p>
           <Monogram className="mx-auto mt-10 size-16 text-[64px]" tone="burgundy" />
         </Reveal>
       </section>

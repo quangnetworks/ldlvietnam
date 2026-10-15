@@ -35,7 +35,9 @@ export default function Designer() {
   const [guestId, setGuestId] = useState(guests[0]?.guest_id ?? '');
   const [nameDraft, setNameDraft] = useState(design.templateName);
   useEffect(() => setNameDraft(design.templateName), [design.templateName]);
-  const guestName = guests.find((g) => g.guest_id === guestId)?.display_name ?? 'Nguyễn Văn A';
+  const previewGuest = guests.find((g) => g.guest_id === guestId);
+  const guestName = previewGuest?.display_name ?? 'Nguyễn Văn A';
+  const guestSalutation = previewGuest?.salutation ?? 'Anh';
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -169,7 +171,7 @@ export default function Designer() {
           <div className={cx('w-full rounded-[38px] bg-espresso p-[9px] shadow-[0_50px_90px_-45px_rgba(48,9,16,0.75)]', previewOnly ? 'max-w-[460px]' : 'max-w-[380px]')}>
             <div className="overflow-hidden rounded-[30px]">
               <ScaledFrame>
-                <InvitationCard guestName={guestName} design={design} highlight={previewOnly ? null : selected} />
+                <InvitationCard guestName={guestName} salutation={guestSalutation} design={design} highlight={previewOnly ? null : selected} />
               </ScaledFrame>
             </div>
           </div>
@@ -291,7 +293,16 @@ function Properties({
         </>
       );
     case 'thanks':
-      return <DraftField label="Lời cảm ơn" value={design.text.thanks} onCommit={(v) => updateText('thanks', v)} multiline />;
+      return (
+        <>
+          <DraftField label="Lời cảm ơn" value={design.text.thanks} onCommit={(v) => updateText('thanks', v)} multiline />
+          <DraftField label="Lời cảm ơn cho người nhỏ tuổi hơn (Em, Cháu, Con…)" value={design.text.thanksYoung} onCommit={(v) => updateText('thanksYoung', v)} multiline />
+          <Note>
+            <b className="font-medium text-espresso">{'{{xung_ho}}'}</b> được thay bằng cách xưng hô của từng khách: “Sự hiện diện của <i>Ông Bà</i>…”, “…của <i>Gia đình Anh Chị</i>…”. Khách không có xưng hô
+            hiển thị “Quý Khách”.
+          </Note>
+        </>
+      );
   }
 }
 

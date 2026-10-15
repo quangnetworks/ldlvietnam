@@ -23,6 +23,8 @@ interface StudioState {
   logout: () => Promise<void>;
 }
 
+const LEGACY_THANKS = 'Sự hiện diện của Quý Khách là niềm vinh hạnh cho gia đình chúng tôi';
+
 const Ctx = createContext<StudioState | null>(null);
 
 /** Bổ sung trường còn thiếu khi thiết kế đã lưu từ phiên bản cũ. */
@@ -35,7 +37,12 @@ export function normalizeDesign(d: Partial<InvitationDesign> | null | undefined)
     ...((d.version ?? 1) < 2 ? { version: 2, nameStyle: 'script' as const } : {}),
     palette: resolveTheme(d.palette).id,
     sections: { ...defaultDesign.sections, ...(d.sections ?? {}) },
-    text: { ...defaultDesign.text, ...(d.text ?? {}) },
+    text: {
+      ...defaultDesign.text,
+      ...(d.text ?? {}),
+      // Lời cảm ơn cũ (cố định “Quý Khách”) chuyển sang mẫu theo xưng hô.
+      ...(d.text?.thanks === LEGACY_THANKS ? { thanks: defaultDesign.text.thanks } : {}),
+    },
   };
 }
 

@@ -68,7 +68,10 @@ export const copy = {
   announceEvent: 'Lễ tân hôn của con chúng tôi',
   inviteHeading: 'Trân trọng kính mời',
   inviteLine: 'Đến dự buổi tiệc chung vui cùng gia đình chúng tôi tại',
-  thanks: 'Sự hiện diện của Quý Khách là niềm vinh hạnh cho gia đình chúng tôi',
+  /** {{xung_ho}} được thay bằng cách xưng hô của từng khách (Anh, Ông Bà, Gia đình Anh Chị…). */
+  thanks: 'Sự hiện diện của {{xung_ho}} là niềm vinh hạnh cho gia đình chúng tôi',
+  /** Dùng cho khách nhỏ tuổi hơn: Em, Cháu, Con… */
+  thanksYoung: 'Sự có mặt của {{xung_ho}} là niềm vui của gia đình chúng tôi',
 };
 
 /**

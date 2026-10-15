@@ -19,6 +19,7 @@ export interface InvitationDesign {
     inviteHeading: string;
     inviteLine: string;
     thanks: string;
+    thanksYoung: string;
   };
 }
 

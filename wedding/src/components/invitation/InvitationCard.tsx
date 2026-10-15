@@ -4,6 +4,7 @@ import { resolveTheme, themeStyle } from '../../data/themes';
 import { defaultDesign } from '../../data/design';
 import { ceremony, reception, wedding } from '../../data/wedding';
 import { cx, dotDate, parts } from '../../lib/format';
+import { thanksFor } from '../../lib/salutation';
 import { Monogram } from '../ui/Monogram';
 import { CornerFlourish, Sprig } from '../ui/Ornament';
 
@@ -42,11 +43,14 @@ export function guestNameSize(name: string, scale = 1) {
  */
 export function InvitationCard({
   guestName,
+  salutation,
   design = defaultDesign,
   highlight,
   className,
 }: {
   guestName: string;
+  /** Xưng hô của khách — quyết định lời cảm ơn cuối thiệp. */
+  salutation?: string;
   design?: InvitationDesign;
   highlight?: string | null;
   className?: string;
@@ -201,7 +205,7 @@ export function InvitationCard({
             <div className={cx('mt-[10px] w-full', hl('thanks'))}>
               <Sprig className="mx-auto h-[16px] w-[110px] text-[color:var(--panel-accent)] opacity-70" />
               <p className="mx-auto mt-[4px] max-w-[360px] font-serif text-[14px] leading-[1.35] text-[color:var(--panel-soft)] italic">
-                {design.text.thanks}
+                {thanksFor(design.text, salutation)}
               </p>
             </div>
           )}

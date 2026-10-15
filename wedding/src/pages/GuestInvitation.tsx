@@ -22,10 +22,10 @@ import { cx } from '../lib/format';
 export default function GuestInvitation() {
   const { token } = useParams();
   const [params] = useSearchParams();
-  const [state, setState] = useState<{ name: string; design: InvitationDesign; id: string } | 'loading' | 'missing'>(() => {
+  const [state, setState] = useState<{ name: string; salutation: string; design: InvitationDesign; id: string } | 'loading' | 'missing'>(() => {
     if (token) return 'loading';
     const demo = demoGuests.find((g) => g.guest_id === params.get('khach'));
-    return { name: demo?.display_name ?? 'Quý Khách', design: { ...defaultDesign, palette: resolveTheme(params.get('chu-de') ?? undefined).id }, id: demo?.guest_id ?? 'HM-DEMO' };
+    return { name: demo?.display_name ?? 'Quý Khách', salutation: demo?.salutation ?? '', design: { ...defaultDesign, palette: resolveTheme(params.get('chu-de') ?? undefined).id }, id: demo?.guest_id ?? 'HM-DEMO' };
   });
   const [mode, setMode] = useState<'interactive' | 'static'>(params.get('che-do') === 'tinh' ? 'static' : 'interactive');
 
@@ -33,7 +33,7 @@ export default function GuestInvitation() {
     if (!token) return;
     api
       .invite(token, params.get('xem-thu') === '1')
-      .then((r) => setState({ name: r.display_name, design: normalizeDesign(r.design), id: token }))
+      .then((r) => setState({ name: r.display_name, salutation: r.salutation ?? '', design: normalizeDesign(r.design), id: token }))
       .catch(() => setState('missing'));
   }, [token, params]);
 
@@ -63,7 +63,7 @@ export default function GuestInvitation() {
 
   return (
     <div style={themeStyle(state.design.palette)}>
-      {mode === 'interactive' ? <InteractiveInvitation guestName={state.name} design={state.design} /> : <StaticView name={state.name} design={state.design} id={state.id} />}
+      {mode === 'interactive' ? <InteractiveInvitation guestName={state.name} salutation={state.salutation} design={state.design} /> : <StaticView name={state.name} salutation={state.salutation} design={state.design} id={state.id} />}
       <div className="fixed bottom-[max(14px,env(safe-area-inset-bottom))] left-1/2 z-40 -translate-x-1/2">
         <div className="flex rounded-full border border-champagne-light/30 bg-burgundy-900/70 p-1 text-[12.5px] text-ivory shadow-lg backdrop-blur">
           {(
@@ -89,7 +89,7 @@ export default function GuestInvitation() {
   );
 }
 
-function StaticView({ name, design, id }: { name: string; design: InvitationDesign; id: string }) {
+function StaticView({ name, salutation, design, id }: { name: string; salutation: string; design: InvitationDesign; id: string }) {
   const [w, setW] = useState(0);
   const [busy, setBusy] = useState(false);
   useEffect(() => {
@@ -101,7 +101,7 @@ function StaticView({ name, design, id }: { name: string; design: InvitationDesi
   const save = async () => {
     setBusy(true);
     try {
-      const blob = await renderInvitationPng(name, design);
+      const blob = await renderInvitationPng(name, design, salutation);
       const file = fileNameFor({ guest_id: id.startsWith('HM') ? id : 'thiep', display_name: name });
       if (!(await shareFile(blob, file).catch(() => false))) downloadBlob(blob, file);
     } finally {
@@ -113,7 +113,7 @@ function StaticView({ name, design, id }: { name: string; design: InvitationDesi
       <div style={{ width: w }} className="shadow-[0_40px_80px_-30px_rgba(0,0,0,0.6)]">
         {w > 0 && (
           <ScaledFrame>
-            <InvitationCard guestName={name} design={design} />
+            <InvitationCard guestName={name} salutation={salutation} design={design} />
           </ScaledFrame>
         )}
       </div>

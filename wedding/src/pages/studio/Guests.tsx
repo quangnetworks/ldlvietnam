@@ -209,7 +209,7 @@ export default function Guests() {
           <>
             <div className="mx-auto w-full max-w-[300px] overflow-hidden rounded-md shadow-[0_30px_60px_-30px_rgba(48,9,16,0.6)]">
               <ScaledFrame>
-                <InvitationCard guestName={preview.display_name} design={design} />
+                <InvitationCard guestName={preview.display_name} salutation={preview.salutation} design={design} />
               </ScaledFrame>
             </div>
             <div className="mt-5 flex flex-wrap justify-center gap-2">
