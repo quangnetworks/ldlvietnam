@@ -8,6 +8,7 @@ import { Button, IconButton } from '../../components/ui/Button';
 import { Segmented, SelectField, TextArea, TextField } from '../../components/ui/Field';
 import { ScaledFrame } from '../../components/ui/ScaledFrame';
 import { palettes, sectionMeta, type InvitationDesign, type SectionId } from '../../data/design';
+import { ThemeSwatch } from '../../components/ui/ThemeSwatch';
 import { ceremony, reception, wedding } from '../../data/wedding';
 import { cx, dotDate } from '../../lib/format';
 import { useHistory } from '../../lib/useHistory';
@@ -130,23 +131,24 @@ export default function Designer() {
               })}
             </ul>
 
-            <PanelTitle className="mt-8">Bảng màu</PanelTitle>
+            <PanelTitle className="mt-8">Chủ đề màu</PanelTitle>
+            <p className="mt-1 text-[11.5px] leading-relaxed text-espresso-soft">Theo màu cưới truyền thống — áp dụng cho thiệp tĩnh, thiệp động và ảnh PNG.</p>
             <div className="mt-3 space-y-2">
               {palettes.map((p) => (
                 <button
                   key={p.id}
                   onClick={() => update({ palette: p.id, templateName: p.name })}
+                  aria-pressed={design.palette === p.id}
                   className={cx(
-                    'flex w-full items-center gap-3 rounded-xl border px-3 py-2.5 text-left transition-colors',
-                    design.palette === p.id ? 'border-burgundy-600/40 bg-white' : 'border-transparent hover:bg-white/50',
+                    'flex w-full items-start gap-3 rounded-xl border px-3 py-2.5 text-left transition-colors',
+                    design.palette === p.id ? 'border-burgundy-600/40 bg-white shadow-[0_6px_18px_-12px_rgba(59,42,34,0.4)]' : 'border-transparent hover:bg-white/50',
                   )}
                 >
-                  <span className="flex -space-x-1.5">
-                    {p.swatch.map((c) => (
-                      <span key={c} className="size-5 rounded-full ring-2 ring-ivory" style={{ background: c }} />
-                    ))}
+                  <ThemeSwatch t={p} />
+                  <span className="min-w-0">
+                    <span className="block text-[13px] font-medium text-espresso">{p.name}</span>
+                    <span className="block text-[11.5px] leading-snug text-espresso-soft">{p.meaning}</span>
                   </span>
-                  <span className="text-[13px] font-medium text-espresso">{p.name}</span>
                 </button>
               ))}
             </div>
@@ -329,4 +331,5 @@ function Note({ children, tone = 'info' }: { children: ReactNode; tone?: 'info' 
 function PanelTitle({ children, className }: { children: ReactNode; className?: string }) {
   return <p className={cx('eyebrow text-espresso-soft', className)}>{children}</p>;
 }
+
 

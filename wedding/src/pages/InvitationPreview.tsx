@@ -7,6 +7,9 @@ import { Segmented, SelectField } from '../components/ui/Field';
 import { PhoneFrame, ScaledFrame } from '../components/ui/ScaledFrame';
 import { DemoTag } from '../components/ui/StatusBadge';
 import { demoGuests } from '../data/demo';
+import { defaultDesign } from '../data/design';
+import { themes, type ThemeId } from '../data/themes';
+import { ThemeSwatch } from '../components/ui/ThemeSwatch';
 import { cx } from '../lib/format';
 
 const zones = [
@@ -24,6 +27,8 @@ export default function InvitationPreview() {
   const [guestId, setGuestId] = useState(demoGuests[0].guest_id);
   const [mode, setMode] = useState<'static' | 'interactive'>('static');
   const [focus, setFocus] = useState<string | null>(null);
+  const [theme, setTheme] = useState<ThemeId>('burgundy');
+  const design = { ...defaultDesign, palette: theme };
   const guest = demoGuests.find((g) => g.guest_id === guestId)!;
 
   return (
@@ -37,15 +42,15 @@ export default function InvitationPreview() {
               {mode === 'static' ? (
                 <div className="mx-auto w-full max-w-[min(440px,calc((100dvh-140px)*0.5625))] shadow-[0_50px_90px_-45px_rgba(48,9,16,0.7)]">
                   <ScaledFrame>
-                    <InvitationCard guestName={guest.display_name} highlight={focus} />
+                    <InvitationCard guestName={guest.display_name} design={design} highlight={focus} />
                   </ScaledFrame>
                 </div>
               ) : (
                 <PhoneFrame className="mx-auto w-full max-w-[340px]">
                   <iframe
-                    key={guestId}
+                    key={guestId + theme}
                     title="Thiệp tương tác"
-                    src={`/thiep?khach=${guestId}`}
+                    src={`/thiep?khach=${guestId}&chu-de=${theme}`}
                     className="block aspect-[9/19.5] w-full bg-burgundy-800"
                   />
                 </PhoneFrame>
@@ -81,6 +86,27 @@ export default function InvitationPreview() {
                   { value: 'interactive', label: 'Tương tác' },
                 ]}
               />
+              <div className="sm:col-span-2">
+                <p className="text-[12px] font-medium text-espresso-soft">Chủ đề màu</p>
+                <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-3">
+                  {themes.map((t) => (
+                    <button
+                      key={t.id}
+                      onClick={() => setTheme(t.id)}
+                      aria-pressed={theme === t.id}
+                      title={t.meaning}
+                      className={cx(
+                        'flex items-center gap-2.5 rounded-xl border px-2.5 py-2 text-left transition-colors',
+                        theme === t.id ? 'border-burgundy-600/40 bg-white shadow-[0_6px_18px_-12px_rgba(59,42,34,0.4)]' : 'border-espresso/8 bg-white/40 hover:bg-white/70',
+                      )}
+                    >
+                      <ThemeSwatch t={t} className="mt-0 h-9 w-7" />
+                      <span className="text-[12.5px] leading-tight font-medium text-espresso">{t.name}</span>
+                    </button>
+                  ))}
+                </div>
+                <p className="mt-2 text-[12px] leading-relaxed text-espresso-soft">{themes.find((t) => t.id === theme)?.meaning}</p>
+              </div>
               <div className="flex items-center gap-2 sm:col-span-2">
                 <DemoTag>Tên khách là dữ liệu minh họa</DemoTag>
               </div>
@@ -108,10 +134,10 @@ export default function InvitationPreview() {
             </ol>
 
             <div className="mt-10 flex flex-wrap gap-3">
-              <ButtonLink to={`/thiep?khach=${guestId}`} variant="primary" icon={<MailOpen className="size-4" />}>
+              <ButtonLink to={`/thiep?khach=${guestId}&chu-de=${theme}`} variant="primary" icon={<MailOpen className="size-4" />}>
                 Mở thiệp tương tác
               </ButtonLink>
-              <ButtonLink to={`/thiep?khach=${guestId}&che-do=tinh`} variant="secondary" icon={<Expand className="size-4" />}>
+              <ButtonLink to={`/thiep?khach=${guestId}&che-do=tinh&chu-de=${theme}`} variant="secondary" icon={<Expand className="size-4" />}>
                 Thiệp tĩnh toàn màn hình
               </ButtonLink>
               <ButtonLink to="/studio/thiet-ke" variant="ghost" icon={<Smartphone className="size-4" />}>

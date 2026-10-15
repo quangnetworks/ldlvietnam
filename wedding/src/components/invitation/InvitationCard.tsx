@@ -1,5 +1,6 @@
 import type { CSSProperties } from 'react';
-import type { InvitationDesign, Palette } from '../../data/design';
+import type { InvitationDesign } from '../../data/design';
+import { resolveTheme, themeStyle } from '../../data/themes';
 import { defaultDesign } from '../../data/design';
 import { ceremony, reception, wedding } from '../../data/wedding';
 import { cx, dotDate, parts } from '../../lib/format';
@@ -10,41 +11,23 @@ import { CornerFlourish, Sprig } from '../ui/Ornament';
 export const CARD_W = 540;
 export const CARD_H = 960;
 
-const paletteVars: Record<Palette, CSSProperties> = {
-  burgundy: {
-    ['--paper' as string]: '#fbf7f0',
+/** Biến màu riêng của thiệp tĩnh, suy ra từ chủ đề. */
+function cardVars(palette: string): CSSProperties {
+  const t = resolveTheme(palette);
+  const rich = t.panel.kind === 'rich';
+  return {
+    ...themeStyle(palette),
+    ['--paper' as string]: t.paper,
     ['--ink' as string]: '#3b2a22',
     ['--ink-soft' as string]: '#6b5548',
-    ['--accent' as string]: '#6e1423',
-    ['--line' as string]: '#c9a96e',
-    ['--panel' as string]: '#4a0e18',
-    ['--panel-ink' as string]: '#fbf7f0',
-    ['--panel-soft' as string]: 'rgba(251,247,240,0.78)',
-    ['--panel-accent' as string]: '#e6d3a8',
-  },
-  champagne: {
-    ['--paper' as string]: '#fbf7f0',
-    ['--ink' as string]: '#3b2a22',
-    ['--ink-soft' as string]: '#6b5548',
-    ['--accent' as string]: '#6e1423',
-    ['--line' as string]: '#c9a96e',
-    ['--panel' as string]: '#efe4d3',
-    ['--panel-ink' as string]: '#3b2a22',
-    ['--panel-soft' as string]: '#6b5548',
-    ['--panel-accent' as string]: '#6e1423',
-  },
-  espresso: {
-    ['--paper' as string]: '#f5eee2',
-    ['--ink' as string]: '#2c1f19',
-    ['--ink-soft' as string]: '#5f4a3e',
-    ['--accent' as string]: '#5a1020',
-    ['--line' as string]: '#b08d52',
-    ['--panel' as string]: '#2c1f19',
-    ['--panel-ink' as string]: '#f5eee2',
-    ['--panel-soft' as string]: 'rgba(245,238,226,0.75)',
-    ['--panel-accent' as string]: '#e6d3a8',
-  },
-};
+    ['--accent' as string]: t.scale[700],
+    ['--line' as string]: t.gold.base,
+    ['--panel' as string]: t.panel.kind === 'light' ? t.panel.bg : t.scale[800],
+    ['--panel-ink' as string]: rich ? t.paper : '#3b2a22',
+    ['--panel-soft' as string]: rich ? 'color-mix(in srgb, ' + t.paper + ' 82%, transparent)' : '#6b5548',
+    ['--panel-accent' as string]: rich ? t.gold.light : t.scale[700],
+  };
+}
 
 /** Cỡ chữ tên khách tự giảm theo độ dài để không tràn, tối đa 2 dòng. */
 export function guestNameSize(name: string, scale = 1) {
@@ -71,13 +54,13 @@ export function InvitationCard({
   const s = design.sections;
   const r = parts(reception.date);
   const hl = (id: string) =>
-    highlight === id ? 'outline outline-[1.5px] outline-offset-[6px] outline-[#c9a96e] rounded-[6px] [box-shadow:0_0_0_9999px_rgba(251,247,240,0)]' : '';
-  const isLight = design.palette === 'champagne';
+    highlight === id ? 'outline outline-[1.5px] outline-offset-[6px] outline-[var(--color-champagne)] rounded-[6px] [box-shadow:0_0_0_9999px_rgba(251,247,240,0)]' : '';
+  const isLight = resolveTheme(design.palette).panel.kind === 'light';
 
   return (
     <div
       className={cx('paper relative flex flex-col overflow-hidden text-[color:var(--ink)]', className)}
-      style={{ width: CARD_W, height: CARD_H, background: 'var(--paper)', ...paletteVars[design.palette] }}
+      style={{ width: CARD_W, height: CARD_H, background: 'var(--paper)', ...cardVars(design.palette) }}
     >
       {/* Khung viền mảnh */}
       <div className="pointer-events-none absolute inset-[14px] border border-[color:var(--line)]/60" />
@@ -160,7 +143,7 @@ export function InvitationCard({
         className="relative mx-[14px] mb-[14px] flex flex-col items-center px-[30px] pt-[30px] pb-[22px] text-center text-[color:var(--panel-ink)]"
         style={{ background: 'var(--panel)', borderTopLeftRadius: '50% 64px', borderTopRightRadius: '50% 64px' }}
       >
-        {design.palette === 'burgundy' && <div className="velvet pointer-events-none absolute inset-0" style={{ borderRadius: 'inherit' }} />}
+        {!isLight && <div className="velvet pointer-events-none absolute inset-0" style={{ borderRadius: 'inherit' }} />}
         <div className="relative flex w-full flex-col items-center">
           {s.guest && (
             <div className={cx('w-full', hl('guest'))}>

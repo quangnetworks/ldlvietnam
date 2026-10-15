@@ -54,19 +54,19 @@
   .foil {
     background: linear-gradient(
       115deg,
-      #9c7c45 0%,
-      #e6d3a8 28%,
-      #c9a96e 46%,
-      #f3e6c6 58%,
-      #b08d52 78%,
-      #e2cc9b 100%
+      var(--color-champagne-deep) 0%,
+      var(--color-champagne-light) 28%,
+      var(--color-champagne) 46%,
+      #fbf1d8 58%,
+      var(--color-champagne-deep) 78%,
+      var(--color-champagne-light) 100%
     );
     -webkit-background-clip: text;
     background-clip: text;
     color: transparent;
   }
   .foil-burgundy {
-    background: linear-gradient(120deg, #4a0e18 0%, #8a2236 45%, #5a1020 70%, #6e1423 100%);
+    background: linear-gradient(120deg, var(--color-burgundy-800) 0%, var(--color-burgundy-500) 45%, var(--color-burgundy-700) 70%, var(--color-burgundy-600) 100%);
     -webkit-background-clip: text;
     background-clip: text;
     color: transparent;
@@ -84,8 +84,8 @@
   .velvet {
     background-color: var(--color-burgundy-800);
     background-image:
-      radial-gradient(120% 80% at 20% 0%, rgba(138, 34, 54, 0.55) 0%, transparent 60%),
-      radial-gradient(90% 70% at 100% 100%, rgba(48, 9, 16, 0.8) 0%, transparent 70%),
+      radial-gradient(120% 80% at 20% 0%, color-mix(in srgb, var(--color-burgundy-500) 55%, transparent) 0%, transparent 60%),
+      radial-gradient(90% 70% at 100% 100%, color-mix(in srgb, var(--color-burgundy-900) 55%, transparent) 0%, transparent 70%),
       url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 1 0 0 0 0 .9 0 0 0 0 .8 0 0 0 .05 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
   }
 }

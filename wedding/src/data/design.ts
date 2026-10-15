@@ -1,7 +1,8 @@
+import type { ThemeId } from './themes';
 import { copy } from './wedding';
 
 export type SectionId = 'monogram' | 'announce' | 'couple' | 'families' | 'ceremony' | 'guest' | 'reception' | 'thanks';
-export type Palette = 'burgundy' | 'champagne' | 'espresso';
+export type Palette = ThemeId;
 export type NameStyle = 'serif' | 'script';
 
 export interface InvitationDesign {
@@ -32,15 +33,11 @@ export const sectionMeta: Array<{ id: SectionId; label: string; hint: string; lo
   { id: 'thanks', label: 'Lời cảm ơn', hint: 'Lời kết cuối thiệp' },
 ];
 
-export const palettes: Array<{ id: Palette; name: string; swatch: [string, string, string] }> = [
-  { id: 'burgundy', name: 'Forever Burgundy', swatch: ['#fbf7f0', '#4a0e18', '#c9a96e'] },
-  { id: 'champagne', name: 'Champagne Ivory', swatch: ['#fbf7f0', '#ede2d0', '#6e1423'] },
-  { id: 'espresso', name: 'Espresso Noir', swatch: ['#f5eee2', '#2c1f19', '#e6d3a8'] },
-];
+export { themes as palettes } from './themes';
 
 export const defaultDesign: InvitationDesign = {
   version: 2,
-  templateName: 'Forever Burgundy',
+  templateName: 'Đỏ Rượu Vang',
   palette: 'burgundy',
   nameStyle: 'script',
   guestNameScale: 1,

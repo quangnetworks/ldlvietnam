@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Expand, MapPin, Minimize, RotateCcw } from 'lucide-react';
 import type { WeddingEvent } from '../../data/types';
 import type { InvitationDesign } from '../../data/design';
+import { themeStyle } from '../../data/themes';
 import { copy, ceremony, reception, wedding } from '../../data/wedding';
 import { cx, dotDate, mapsUrl, parts } from '../../lib/format';
 import { Monogram } from '../ui/Monogram';
@@ -26,7 +27,7 @@ export function InteractiveInvitation({ guestName, design }: { guestName: string
   };
 
   return (
-    <div className="relative min-h-dvh">
+    <div className="relative min-h-dvh" style={themeStyle(design?.palette)}>
       <div className="fixed top-[max(12px,env(safe-area-inset-top))] right-3 z-40 flex gap-2">
         {stage === 'open' && (
           <RoundBtn label="Xem lại phong bì" onClick={() => { setStage('sealed'); window.scrollTo({ top: 0 }); }}>
@@ -110,7 +111,7 @@ function Envelope({ guestName, opening, onOpen }: { guestName: string; opening: 
           {/* Dấu sáp */}
           <div
             className={cx(
-              'absolute top-[50%] left-1/2 z-[4] grid size-[68px] -translate-x-1/2 -translate-y-1/2 place-items-center rounded-full bg-[radial-gradient(circle_at_35%_30%,#8a2236,#4a0e18_70%)] shadow-[0_6px_16px_-4px_rgba(0,0,0,0.5),inset_0_0_0_3px_rgba(0,0,0,0.12)] transition-all duration-500',
+              'absolute top-[50%] left-1/2 z-[4] grid size-[68px] -translate-x-1/2 -translate-y-1/2 place-items-center rounded-full bg-[radial-gradient(circle_at_35%_30%,var(--color-burgundy-500),var(--color-burgundy-800)_70%)] shadow-[0_6px_16px_-4px_rgba(0,0,0,0.5),inset_0_0_0_3px_rgba(0,0,0,0.12)] transition-all duration-500',
               opening ? 'scale-75 opacity-0' : 'group-hover:scale-105',
             )}
           >

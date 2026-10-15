@@ -7,6 +7,7 @@ import { normalizeDesign } from '../components/studio/StudioContext';
 import { Monogram } from '../components/ui/Monogram';
 import { ScaledFrame } from '../components/ui/ScaledFrame';
 import { defaultDesign, type InvitationDesign } from '../data/design';
+import { resolveTheme, themeStyle } from '../data/themes';
 import { demoGuests } from '../data/demo';
 import { api } from '../lib/api';
 import { downloadBlob, fileNameFor, renderInvitationPng, shareFile } from '../lib/exporter';
@@ -24,7 +25,7 @@ export default function GuestInvitation() {
   const [state, setState] = useState<{ name: string; design: InvitationDesign; id: string } | 'loading' | 'missing'>(() => {
     if (token) return 'loading';
     const demo = demoGuests.find((g) => g.guest_id === params.get('khach'));
-    return { name: demo?.display_name ?? 'Quý Khách', design: defaultDesign, id: demo?.guest_id ?? 'HM-DEMO' };
+    return { name: demo?.display_name ?? 'Quý Khách', design: { ...defaultDesign, palette: resolveTheme(params.get('chu-de') ?? undefined).id }, id: demo?.guest_id ?? 'HM-DEMO' };
   });
   const [mode, setMode] = useState<'interactive' | 'static'>(params.get('che-do') === 'tinh' ? 'static' : 'interactive');
 
@@ -61,7 +62,7 @@ export default function GuestInvitation() {
     );
 
   return (
-    <>
+    <div style={themeStyle(state.design.palette)}>
       {mode === 'interactive' ? <InteractiveInvitation guestName={state.name} design={state.design} /> : <StaticView name={state.name} design={state.design} id={state.id} />}
       <div className="fixed bottom-[max(14px,env(safe-area-inset-bottom))] left-1/2 z-40 -translate-x-1/2">
         <div className="flex rounded-full border border-champagne-light/30 bg-burgundy-900/70 p-1 text-[12.5px] text-ivory shadow-lg backdrop-blur">
@@ -84,7 +85,7 @@ export default function GuestInvitation() {
           ))}
         </div>
       </div>
-    </>
+    </div>
   );
 }
 

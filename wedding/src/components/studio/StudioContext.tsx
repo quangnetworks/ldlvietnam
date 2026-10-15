@@ -1,5 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from 'react';
 import { defaultDesign, type InvitationDesign } from '../../data/design';
+import { resolveTheme } from '../../data/themes';
 import type { Guest } from '../../data/types';
 import { api } from '../../lib/api';
 
@@ -32,6 +33,7 @@ export function normalizeDesign(d: Partial<InvitationDesign> | null | undefined)
     ...d,
     // Thiết kế lưu trước phiên bản 2 chuyển sang tên thư pháp.
     ...((d.version ?? 1) < 2 ? { version: 2, nameStyle: 'script' as const } : {}),
+    palette: resolveTheme(d.palette).id,
     sections: { ...defaultDesign.sections, ...(d.sections ?? {}) },
     text: { ...defaultDesign.text, ...(d.text ?? {}) },
   };
