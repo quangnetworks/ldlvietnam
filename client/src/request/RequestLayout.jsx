@@ -1,5 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
-import { Link, NavLink, Outlet, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
+import { Link, NavLink, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
+import { PageOutlet } from '../components/Boundary.jsx';
 import {
   Home, Bell, BarChart3, Settings, PlusCircle, PlayCircle, LayoutGrid, Inbox, Send, Eye, Star, ChevronLeft, Search, ChevronDown,
   FolderCog, History, ListChecks, Copy, PlusSquare, Webhook, Menu,
@@ -138,7 +139,7 @@ export default function RequestLayout() {
           <button className="rq-collapse" onClick={() => setCollapsed(!collapsed)} aria-label="Thu gọn"><ChevronLeft size={14} /></button>
           {settings ? <SettingsSidebar /> : <MainSidebar groups={groups} toggleStar={toggleStar} />}
         </aside>
-        <main className="rq-main"><Outlet /></main>
+        <main className="rq-main"><PageOutlet /></main>
       </div>
     </RequestCtx.Provider>
   );

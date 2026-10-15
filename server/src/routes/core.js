@@ -2,7 +2,7 @@ import { Hono } from 'hono';
 import { setCookie, deleteCookie } from 'hono/cookie';
 import { all, get, run, batch, getSetting, setSetting } from '../db.js';
 import {
-  COOKIE, TOKEN_TTL, signToken, loadUser, requireAdmin, assertCanManage, PUBLIC_USER_FIELDS, hashPassword, verifyPassword, inDeptSql,
+  COOKIE, TOKEN_TTL, signToken, loadUser, requireAdmin, assertCanManage, hashPassword, verifyPassword, inDeptSql,
 } from '../auth.js';
 import { badRequest, forbidden, notFound, toInt, idList, jsonBody } from '../util.js';
 import { searchClause } from '../search.js';
@@ -105,6 +105,14 @@ r.put('/settings', requireAdmin, async (c) => {
 });
 
 // ---------- Users ----------
+/**
+ * Danh bạ dùng chung (tải một lần khi mở ứng dụng): chỉ các cột giao diện cần để chọn người, hiện tên, ảnh, phòng ban.
+ * Hồ sơ chi tiết (giới thiệu, địa chỉ, quá trình làm việc…) lấy riêng khi mở trang cá nhân — danh bạ nhẹ dù đông nhân sự.
+ */
+const DIRECTORY_FIELDS =
+  'u.id, u.username, u.name, u.email, u.phone, u.title, u.department_id, u.manager_id, u.sales_role, u.role, u.color, u.active, u.birthday, u.expires_at, u.avatar_version, u.is_owner, '
+  + '(SELECT GROUP_CONCAT(ud.department_id) FROM user_departments ud WHERE ud.user_id = u.id) AS extra_departments';
+
 r.get('/users', async (c) => {
   const qs = c.req.query();
   // Tài khoản khách chỉ thấy thông tin tối thiểu (tên) để chọn người nhận / người duyệt
@@ -114,7 +122,7 @@ r.get('/users', async (c) => {
   const us = qs.q ? await searchClause('user', qs.q, 'u.id') : null;
   const includeInactive = qs.all === '1' && c.get('user').role === 'admin';
   return c.json(await all(
-    `SELECT ${PUBLIC_USER_FIELDS}, d.name AS department_name, m.name AS manager_name
+    `SELECT ${DIRECTORY_FIELDS}, d.name AS department_name, m.name AS manager_name
      FROM users u LEFT JOIN departments d ON d.id = u.department_id
      LEFT JOIN users m ON m.id = u.manager_id
      WHERE ${us ? us.sql : '1=1'}

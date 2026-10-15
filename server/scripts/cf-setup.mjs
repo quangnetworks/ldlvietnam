@@ -80,6 +80,48 @@ if (!reuse && (existingDb || workerExists)) {
 }
 console.log(reuse ? `Chế độ cập nhật (--reuse): Worker "${WORKER}"` : `Tạo mới hoàn toàn: Worker "${WORKER}", D1 "${DB_NAME}", R2 "${BUCKET}"`);
 
+// ------------------------------------------------------------------ safety: never roll production back
+// Mỗi lần deploy ghi mã commit vào Worker. Lần sau chỉ cho deploy khi mã nguồn hiện tại đã chứa commit đang chạy,
+// để một nhánh cũ (hoặc thư mục làm việc khác) không vô tình đè lên phiên bản mới hơn. --force để bỏ qua.
+const git = (...args) => spawnSync('git', args, { cwd: root, encoding: 'utf8' });
+const head = git('rev-parse', 'HEAD').stdout.trim();
+const dirty = !!git('status', '--porcelain', '--', '.', '../client').stdout.trim();
+if (reuse && head) {
+  step('Kiểm tra phiên bản đang chạy');
+  const live = deployedCommit();
+  const known = (sha) => git('cat-file', '-e', `${sha}^{commit}`).status === 0;
+  if (!live) console.log('Phiên bản đang chạy chưa ghi mã commit — bỏ qua kiểm tra');
+  else if (live === head) console.log(`Đang chạy đúng commit ${head.slice(0, 7)}`);
+  else {
+    if (!known(live)) git('fetch', '--quiet', 'origin');
+    const ok = known(live) && git('merge-base', '--is-ancestor', live, head).status === 0;
+    if (!ok && !process.argv.includes('--force')) {
+      const branch = git('branch', '--contains', live, '--all', '--format=%(refname:short)').stdout.trim().split('\n').filter(Boolean);
+      fail([
+        `Máy chủ đang chạy commit ${live.slice(0, 7)} — mã nguồn ở đây (${head.slice(0, 7)}) chưa có commit đó.`,
+        'Deploy lúc này sẽ đưa hệ thống về phiên bản cũ hơn và làm mất tính năng đang chạy.',
+        branch.length ? `  • Commit đó nằm ở: ${branch.join(', ')} — merge vào nhánh này rồi deploy lại.` : '  • Lấy mã mới nhất (git pull / merge) rồi deploy lại.',
+        '  • Chắc chắn muốn quay về phiên bản này: chạy lại với --force.',
+      ].join('\n'));
+    }
+    console.log(ok ? `Cập nhật từ ${live.slice(0, 7)} lên ${head.slice(0, 7)}` : `--force: thay ${live.slice(0, 7)} bằng ${head.slice(0, 7)}`);
+  }
+}
+
+/** Mã commit ghi trong lần deploy đang phục vụ 100% lưu lượng (null nếu không đọc được). */
+function deployedCommit() {
+  const d = wrangler(['deployments', 'list', '--name', WORKER, '--json'], { capture: true, allowFail: true });
+  if (!d.ok) return null;
+  try {
+    const vid = parseJson(d.stdout).at(-1)?.versions?.find((v) => v.percentage === 100)?.version_id;
+    if (!vid) return null;
+    const v = wrangler(['versions', 'view', vid, '--name', WORKER, '--json'], { capture: true, allowFail: true });
+    return v.ok ? JSON.stringify(parseJson(v.stdout)).match(/git:([0-9a-f]{40})/)?.[1] || null : null;
+  } catch {
+    return null;
+  }
+}
+
 // ------------------------------------------------------------------ D1
 step(`D1 database: ${DB_NAME}`);
 let db = existingDb;
@@ -131,7 +173,7 @@ for (const args of [['ci'], ['run', 'build']]) {
 }
 
 step('Deploy Worker');
-const dep = wrangler(['deploy'], { capture: true });
+const dep = wrangler(['deploy', ...(head ? ['--message', `git:${head}${dirty ? ' +local' : ''}`] : [])], { capture: true });
 process.stdout.write(dep.out);
 const url = dep.out.match(/https:\/\/[^\s]+\.workers\.dev/)?.[0];
 console.log(`\n✔ Hoàn tất${url ? `: ${url}` : ''}`);

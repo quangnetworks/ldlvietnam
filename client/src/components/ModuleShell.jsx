@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
-import { Link, NavLink, Outlet, useLocation } from 'react-router-dom';
+import { Link, NavLink, useLocation } from 'react-router-dom';
+import { PageOutlet } from './Boundary.jsx';
 import {
   LayoutDashboard, Users2, Settings, Fingerprint, UsersRound, Plane, CalendarDays, Scale, FolderOpen, Building2, Share2, Clock3,
   Trash2, Menu, FileSignature, TrendingUp, BarChart3, Package, Boxes, UserCheck, Users, UserCog, Network,
@@ -80,7 +81,7 @@ export default function ModuleShell({ app }) {
             </NavLink>
           ))}
         </aside>
-        <main className="office-main"><Outlet /></main>
+        <main className="office-main"><PageOutlet /></main>
       </div>
     </div>
   );

@@ -1,5 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
-import { Link, NavLink, Outlet, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
+import { Link, NavLink, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
+import { PageOutlet } from '../components/Boundary.jsx';
 import {
   Home, CheckSquare, FolderKanban, Building2, Users, BarChart3, PlusSquare, Copy, ListChecks, Settings, PlayCircle,
   Search, ChevronDown, Menu, FileText, Target, SlidersHorizontal,
@@ -184,7 +185,7 @@ export default function WeworkLayout() {
             <AppSwitcher dark />
             <UserMenu dark showName={false} />
           </header>
-          <Outlet />
+          <PageOutlet />
         </div>
       </div>
       {taskId && <TaskDrawer id={taskId} onClose={() => setTaskId(null)} onChanged={bump} />}

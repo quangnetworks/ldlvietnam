@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Link, NavLink, Outlet, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
+import { Link, NavLink, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
+import { PageOutlet } from '../components/Boundary.jsx';
 import {
   LayoutGrid, Eye, FileCheck2, Settings2, Star, FilePen, Hash, Server, FileText, Folder, FolderOpen, ChevronDown,
   Search, Save, CalendarX, XCircle, Archive, Trash2, Plus, Building2, Send, Menu, Replace, X } from 'lucide-react';
@@ -160,7 +161,7 @@ export default function OfficeLayout() {
           </Section>
         </aside>
         <main className="office-main">
-          <Outlet context={{ meta, reloadMeta: loadMeta }} />
+          <PageOutlet context={{ meta, reloadMeta: loadMeta }} />
         </main>
       </div>
     </div>

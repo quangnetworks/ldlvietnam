@@ -107,7 +107,7 @@ export function ProbationPanel({ userId, onChanged }) {
           {info.extensions.map((x) => (
             <div key={x.id} className="hr-prob-ext-row">
               <div className="grow">
-                <div><b>{fmtDate(x.old_end)} → {fmtDate(x.new_end)}</b> <Pill tone={EXT_STATUS[x.status][0]}>{EXT_STATUS[x.status][1]}</Pill></div>
+                <div><b>{fmtDate(x.old_end)} → {fmtDate(x.new_end)}</b> <Pill tone={(EXT_STATUS[x.status] || ['gray'])[0]}>{(EXT_STATUS[x.status] || ['gray', x.status])[1]}</Pill></div>
                 <small className="muted block">{x.requested_by_name} đề xuất {fmtDate(x.created_at)}: {x.reason}</small>
                 {x.decided_by_name && <small className="muted block">{x.decided_by_name}{x.decision_note ? `: ${x.decision_note}` : ''}</small>}
               </div>

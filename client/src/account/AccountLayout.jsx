@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
-import { NavLink, Outlet, Link, useLocation } from 'react-router-dom';
+import { NavLink, Link, useLocation } from 'react-router-dom';
+import { PageOutlet } from '../components/Boundary.jsx';
 import {
   UserCircle2, Bell, Users, Network, LayoutGrid, Power, Settings, Pencil, KeyRound, Palette, History, Building2, AppWindow,
   ScrollText, FileText, GitPullRequestArrow, Home, LockKeyhole, ShieldCheck, Shield, Webhook, Menu, Grid3x3,
@@ -52,7 +53,7 @@ export default function AccountLayout() {
         <Link to="/" className="acc-rail-link"><Home size={22} /><span>Trang chủ</span></Link>
         <button className="acc-rail-link" onClick={logout}><Power size={22} /><span>Đăng xuất</span></button>
       </nav>
-      <main className="acc-main"><Outlet /></main>
+      <main className="acc-main"><PageOutlet /></main>
       {side && <div className="side-backdrop" onClick={() => setSide(false)} />}
       <aside className={cx('acc-side', side && 'open')}>
         <div className="acc-side-head">

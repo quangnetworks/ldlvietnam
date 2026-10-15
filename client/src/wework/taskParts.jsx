@@ -35,7 +35,7 @@ export function TaskTags({ t, showProject = true }) {
       {t.status === 'review' && <span className="tag tag-orange-outline">Chờ đánh giá</span>}
       {t.status === 'failed' && <span className="tag tag-red-outline">Thất bại</span>}
       {t.status === 'doing' && <span className="tag tag-blue">Đang làm</span>}
-      {t.priority !== 'normal' && <span className={cx('tag', PRIORITY[t.priority].cls)}>{PRIORITY[t.priority].label}</span>}
+      {PRIORITY[t.priority] && t.priority !== 'normal' && <span className={cx('tag', PRIORITY[t.priority].cls)}>{PRIORITY[t.priority].label}</span>}
       {t.recurring && <span className="tag tag-gray"><Repeat size={10} /> {RECURRING[t.recurring]}</span>}
       {t.start_date && <span className="tag tag-gray">▸ bắt đầu {fmtDate(t.start_date)}</span>}
     </>

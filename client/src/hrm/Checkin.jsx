@@ -60,7 +60,7 @@ function Timesheet({ userId }) {
             {['T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'CN'].map((d) => <div key={d} className="cal-head">{d}</div>)}
             {Array.from({ length: pad }).map((_, i) => <div key={`p${i}`} className="cal-cell empty" />)}
             {data.days.map((d) => {
-              const [label, cls] = DAY_STATUS[d.status];
+              const [label, cls] = DAY_STATUS[d.status] || [d.status, ''];
               return (
                 <div key={d.date} className={cx('cal-cell', cls)} title={d.leave?.kind || label}>
                   <span className="cal-day">{Number(d.date.slice(8))}</span>
