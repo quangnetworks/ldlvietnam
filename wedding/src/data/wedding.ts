@@ -89,9 +89,8 @@ export const dataFlags: DataFlag[] = [
   },
   {
     field: 'Địa điểm lễ tân hôn',
-    status: 'needs-confirmation',
-    message:
-      'Thiệp chỉ ghi "Hôn lễ được cử hành tại tư gia", không nêu tư gia nhà trai hay nhà gái. Website đang giữ nguyên cách ghi "Tư gia".',
+    status: 'verified',
+    message: 'Giữ nguyên cách ghi trên thiệp: "Hôn lễ được cử hành tại tư gia".',
   },
   {
     field: 'Giờ trên thiệp tiệc cưới',

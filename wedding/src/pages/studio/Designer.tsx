@@ -258,7 +258,6 @@ function Properties({
           <ReadOnly label="Thời gian" value={`${ceremony.time} · ${ceremony.weekday} ${dotDate(ceremony.date)}`} />
           <ReadOnly label="Âm lịch" value={ceremony.lunarText} />
           <ReadOnly label="Địa điểm" value={`${ceremony.venueKind} ${ceremony.venueName.toLowerCase()}`} />
-          <Note tone="warn">Thiệp gốc không nêu rõ tư gia nhà trai hay nhà gái — cần chủ tiệc xác nhận.</Note>
         </>
       );
     case 'guest':

@@ -1,11 +1,11 @@
-import { ArrowUpRight, CheckCircle2, Download, FileSpreadsheet, Palette, TriangleAlert, Users } from 'lucide-react';
+import { CheckCircle2, Download, FileSpreadsheet, Palette, Users } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { InvitationCard } from '../../components/invitation/InvitationCard';
 import { PageHeader, Panel } from '../../components/studio/StudioLayout';
 import { useStudio } from '../../components/studio/StudioContext';
 import { ButtonLink } from '../../components/ui/Button';
 import { ScaledFrame } from '../../components/ui/ScaledFrame';
-import { ceremony, dataFlags, reception } from '../../data/wedding';
+import { ceremony, reception } from '../../data/wedding';
 import { cx, daysUntil, dotDate } from '../../lib/format';
 import { relTime } from '../../lib/clipboard';
 
@@ -28,7 +28,6 @@ export default function Overview() {
     .filter((g) => g.last_opened_at)
     .sort((a, b) => (b.last_opened_at ?? '').localeCompare(a.last_opened_at ?? ''))
     .slice(0, 5);
-  const flagsToConfirm = dataFlags.filter((f) => f.status === 'needs-confirmation');
 
   return (
     <>
@@ -102,21 +101,6 @@ export default function Overview() {
               })}
             </ol>
 
-            {flagsToConfirm.length > 0 && (
-              <div className="mt-6 rounded-2xl border border-burgundy-600/15 bg-rose-soft/60 p-4">
-                <p className="flex items-center gap-2 text-[13px] font-semibold text-burgundy-700">
-                  <TriangleAlert className="size-4" /> Cần chủ tiệc xác nhận
-                </p>
-                {flagsToConfirm.map((f) => (
-                  <p key={f.field} className="mt-1.5 text-[13px] leading-relaxed text-espresso">
-                    <b className="font-medium">{f.field}:</b> {f.message}
-                  </p>
-                ))}
-                <Link to="/studio/cai-dat" className="mt-2 inline-flex items-center gap-1 text-[12.5px] font-medium text-burgundy-700 hover:underline">
-                  Xem toàn bộ đối chiếu dữ liệu <ArrowUpRight className="size-3.5" />
-                </Link>
-              </div>
-            )}
           </Panel>
 
           {/* Mẫu đang dùng */}
