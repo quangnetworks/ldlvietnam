@@ -11,12 +11,25 @@
  */
 import { execFileSync, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const tomlPath = path.join(root, 'wrangler.toml');
 const reuse = process.argv.includes('--reuse');
+
+// Chỉ máy quản trị được deploy: máy đó có tệp server/.deploy-machine (không đưa lên git) ghi đúng tên máy.
+// GitHub Actions, phiên làm việc trên cloud hay máy khác không có tệp này → dừng ngay, không đụng tới Cloudflare.
+const lockFile = path.join(root, '.deploy-machine');
+const lockHost = fs.existsSync(lockFile) ? fs.readFileSync(lockFile, 'utf8').trim() : '';
+if (process.env.CI || lockHost.toLowerCase() !== os.hostname().toLowerCase()) {
+  console.error([
+    `✖ Máy này (${os.hostname()}) không được phép deploy LDL Workspace.`,
+    '  Hệ thống chỉ deploy từ máy quản trị. Đẩy mã lên git rồi deploy từ máy đó.',
+  ].join('\n'));
+  process.exit(1);
+}
 const isWin = process.platform === 'win32';
 // Run wrangler's JS entry with this Node binary: no shell, so arguments with spaces are safe on Windows.
 // WRANGLER lets tests substitute a fake wrangler script.

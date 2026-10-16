@@ -11,3 +11,4 @@ release/
 backups/
 data/
 server/.wrangler-import.toml
+server/.deploy-machine

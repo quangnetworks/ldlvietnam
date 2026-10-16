@@ -179,8 +179,7 @@ Webapp nội bộ gồm 2 phân hệ, giao diện và chức năng mô phỏng *
 
 ## Deploy lên Cloudflare
 
-Xem **[DEPLOY.md](DEPLOY.md)** — chỉ cần thêm 2 secret (`CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`) vào GitHub,
-workflow sẽ tự tạo D1, R2, dữ liệu ban đầu và deploy.
+Xem **[DEPLOY.md](DEPLOY.md)** — chỉ deploy thủ công từ máy quản trị (`node server/scripts/cf-setup.mjs --reuse`); GitHub không tự deploy.
 
 ## Chạy trên máy chủ riêng của công ty
 
