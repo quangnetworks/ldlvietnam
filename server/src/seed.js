@@ -228,7 +228,7 @@ export async function buildSeed() {
 
   // ---------- Account: quyền ứng dụng, nhóm người dùng, hồ sơ
   add("INSERT OR IGNORE INTO apps(key, enabled) VALUES ('office', 1), ('wework', 1), ('request', 1)");
-  add("INSERT OR IGNORE INTO app_access(app_key, user_id) SELECT a.key, u.id FROM apps a CROSS JOIN users u WHERE u.role <> 'guest'");
+  add("INSERT OR IGNORE INTO app_access(app_key, user_id) SELECT a.key, u.id FROM apps a CROSS JOIN users u WHERE u.role <> 'guest' AND a.key <> 'npp'");
   add("INSERT INTO user_groups(id, name, description) VALUES (1, 'Ban lãnh đạo', 'Giám đốc và các trưởng phòng'), (2, 'Văn thư - Hành chính', 'Tiếp nhận, cấp số và lưu trữ văn bản')");
   for (const k of ['gd', 'hr', 'kd', 'mkt', 'kt']) add('INSERT INTO user_group_members(group_id, user_id) VALUES (1, ?)', users[k]);
   for (const k of ['hr', 'nv4']) add('INSERT INTO user_group_members(group_id, user_id) VALUES (2, ?)', users[k]);

@@ -26,7 +26,7 @@ function UserModal({ user: editing, guest = false, ownersCount, onClose, onSaved
   const { user: me } = useApp();
   const [f, setF] = useState(editing ? { ...editing, role: editing.is_owner ? 'owner' : editing.role, password: '', department_id: editing.department_id || '', extra_department_ids: extraOf(editing) } : {
     username: '', password: '', name: '', email: '', phone: '', title: '', department_id: '', manager_id: null, role: guest ? 'guest' : 'member',
-    birthday: '', apps: guest ? [] : MODULE_APPS.map((a) => a.module), expires_at: '', extra_department_ids: [],
+    birthday: '', apps: guest ? [] : MODULE_APPS.filter((a) => !a.optIn).map((a) => a.module), expires_at: '', extra_department_ids: [],
   });
   const [err, setErr] = useState('');
   const set = (k) => (e) => setF({ ...f, [k]: e?.target ? e.target.value : e });

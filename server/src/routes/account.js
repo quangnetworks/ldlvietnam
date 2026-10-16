@@ -4,7 +4,7 @@ import { requireAdmin, assertCanManage, hashPassword, verifyPassword, loadUser, 
 import { randomBase32, otpauthUrl, verifyTotp, securitySettings, validIpRule, clientIp, ipMatches } from '../security.js';
 import { badRequest, notFound, forbidden, toInt, idList, jsonBody, paginate, formBody, storeFiles, removeFile, sendFile } from '../util.js';
 import { searchClause } from '../search.js';
-import { MODULES, userApps, audit } from '../platform.js';
+import { MODULES, userApps, audit, DEFAULT_GRANT_SQL } from '../platform.js';
 import { departmentChannel } from './chat.js';
 
 const r = new Hono();
@@ -144,7 +144,7 @@ r.post('/account/members/import', requireAdmin, async (c) => {
       const id = ++nextUser;
       S.push([`INSERT INTO users(id, username, password_hash, name, email, phone, title, department_id, role, birthday)
         VALUES (?,?,?,?,?,?,?,?,?,?)`, [id, username, hash, name, v('email') || null, v('phone') || null, v('title') || null, depId, role, v('birthday') || null]]);
-      S.push(['INSERT OR IGNORE INTO app_access(app_key, user_id) SELECT key, ? FROM apps WHERE enabled = 1', [id]]);
+      S.push([DEFAULT_GRANT_SQL, [id]]);
       byName.set(username.toLowerCase(), { id, username });
       result.created++;
     }

@@ -5,7 +5,7 @@ import { requireAdmin, underSql, isSubordinate, hashPassword } from '../auth.js'
 import { badRequest, notFound, forbidden, toInt, idList, jsonBody, formBody, storeFiles, removeFile, sendFile } from '../util.js';
 import { publicFileLink } from '../files.js';
 import { searchClause } from '../search.js';
-import { audit } from '../platform.js';
+import { audit, DEFAULT_GRANT_SQL } from '../platform.js';
 import { assignStmt, fillVacancyStmts, industryOf, refreshSalesRoleStmt, salesSettings, vacateStmts, vacateUser } from './territory.js';
 import { clientIp, ipMatches, validIpRule } from '../security.js';
 
@@ -315,7 +315,7 @@ async function importProfiles(c, body) {
       S.push([`INSERT INTO users(id, username, password_hash, name, email, phone, title, department_id, role, birthday, active, color)
         VALUES (?,?,?,?,?,?,?,?, 'member', ?, ?, ?)`, [u.id, username, hash, name.slice(0, 120), clean(row.email) || null, clean(row.phone) || null,
         title.slice(0, 120) || null, depId(clean(row.department)), birthday || null, resigned ? 0 : 1, AVATAR_COLORS[u.id % AVATAR_COLORS.length]]]);
-      S.push(['INSERT OR IGNORE INTO app_access(app_key, user_id) SELECT key, ? FROM apps WHERE enabled = 1', [u.id]]);
+      S.push([DEFAULT_GRANT_SQL, [u.id]]);
       byUser.set(username, u);
       res.created++;
       res.new_accounts.push(username);
@@ -509,7 +509,7 @@ r.post('/hrm/employees', async (c) => {
   title || null, depId || null, mgrId || null, isoDate(b.birthday) || null, clean(b.address).slice(0, 300) || null,
   AVATAR_COLORS[[...username].reduce((s, ch) => s + ch.charCodeAt(0), 0) % AVATAR_COLORS.length]);
   await batch([
-    ['INSERT OR IGNORE INTO app_access(app_key, user_id) SELECT key, ? FROM apps WHERE enabled = 1', [id]],
+    [DEFAULT_GRANT_SQL, [id]],
     [`INSERT INTO hr_profiles(user_id, ${keys.join(', ')}, updated_at) VALUES (?, ${keys.map(() => '?').join(', ')}, datetime('now'))`, [id, ...keys.map((x) => hr[x])]],
   ]);
   if (k) {

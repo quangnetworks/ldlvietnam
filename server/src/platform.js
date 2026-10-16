@@ -14,7 +14,17 @@ export const MODULES = {
   drive: 'LDL Drive',
   message: 'LDL Message',
   asset: 'LDL Asset',
+  npp: 'NPP Control Tower',
 };
+
+/**
+ * Apps granted one by one, never by default (new accounts, imports, "grant all"):
+ * NPP Control Tower shows sales data by territory, so access is opt-in.
+ */
+export const OPT_IN_MODULES = ['npp'];
+/** "Grant every default app to user ?" -- used when an account is created. */
+export const DEFAULT_GRANT_SQL = `INSERT OR IGNORE INTO app_access(app_key, user_id) SELECT key, ? FROM apps
+  WHERE enabled = 1 AND key NOT IN (${OPT_IN_MODULES.map((k) => `'${k}'`).join(',')})`;
 
 /** API path prefixes owned by each module (used to enforce app access). */
 const PREFIXES = [
@@ -24,6 +34,7 @@ const PREFIXES = [
   ['/api/requests', 'request'], ['/api/request-groups', 'request'], ['/api/request', 'request'], ['/api/webhooks', 'request'],
   ['/api/checkin', 'checkin'], ['/api/timeoff', 'timeoff'], ['/api/hrm', 'hrm'], ['/api/drive', 'drive'], ['/api/chat', 'message'],
   ['/api/assets', 'asset'], ['/api/asset', 'asset'],
+  ['/api/sso/npp', 'npp'],
 ];
 
 export function moduleForPath(path) {
@@ -54,7 +65,7 @@ export async function requireModule(c, next) {
 
 /** Grant the given modules (default: every enabled module) to a user. */
 export async function grantApps(userId, keys = null) {
-  const list = keys ?? (await all('SELECT key FROM apps WHERE enabled = 1')).map((a) => a.key);
+  const list = keys ?? (await all('SELECT key FROM apps WHERE enabled = 1')).map((a) => a.key).filter((k) => !OPT_IN_MODULES.includes(k));
   await batch([
     ['DELETE FROM app_access WHERE user_id = ?', [userId]],
     ...list.filter((k) => MODULES[k]).map((k) => ['INSERT OR IGNORE INTO app_access(app_key, user_id) VALUES (?,?)', [k, userId]]),

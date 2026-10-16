@@ -68,6 +68,7 @@ const MyAssets = lazyPage(() => import('./asset/AssetPages.jsx'), 'MyAssets');
 const AssetOverview = lazyPage(() => import('./asset/AssetPages.jsx'), 'AssetOverview');
 const AssetList = lazyPage(() => import('./asset/AssetPages.jsx'), 'AssetList');
 const AssetDetail = lazyPage(() => import('./asset/AssetPages.jsx'), 'AssetDetail');
+const SsoNpp = lazyPage(() => import('./pages/SsoNpp.jsx'));
 const AssetPeople = lazyPage(() => import('./asset/AssetPages.jsx'), 'AssetPeople');
 const AssetPerson = lazyPage(() => import('./asset/AssetPages.jsx'), 'AssetPerson');
 const HandoverList = lazyPage(() => import('./asset/AssetFlows.jsx'), 'HandoverList');
@@ -142,6 +143,7 @@ export default function App() {
     <Routes>
       <Route path="/login" element={<Navigate to={location.state?.from || '/'} replace />} />
       <Route path="/" element={<Home />} />
+      <Route path="/sso/npp" element={<RequireApp app="npp"><SsoNpp /></RequireApp>} />
       <Route path="/office" element={<RequireApp app="office"><OfficeLayout /></RequireApp>}>
         <Route index element={<DocList />} />
         <Route path="new" element={<DocForm />} />

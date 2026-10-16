@@ -14,6 +14,7 @@ import assetRoutes from './routes/asset.js';
 import territoryRoutes from './routes/territory.js';
 import { requireModule } from './platform.js';
 import pushRoutes from './routes/push.js';
+import ssoRoutes from './routes/sso.js';
 import { backgroundContext } from './push.js';
 
 const PUBLIC_API = new Set(['/api/health', '/api/auth/login', '/api/auth/logout']);
@@ -41,6 +42,7 @@ export function createApp() {
   app.route('/api', assetRoutes);
   app.route('/api', territoryRoutes);
   app.route('/api', pushRoutes);
+  app.route('/api', ssoRoutes);
   app.all('/api/*', (c) => c.json({ error: 'API không tồn tại' }, 404));
 
   app.onError((err, c) => {
