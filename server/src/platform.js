@@ -14,7 +14,7 @@ export const MODULES = {
   drive: 'LDL Drive',
   message: 'LDL Message',
   asset: 'LDL Asset',
-  npp: 'NPP Control Tower',
+  npp: 'Distribution Control Tower',
 };
 
 /**

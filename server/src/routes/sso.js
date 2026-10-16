@@ -26,7 +26,7 @@ const b64url = (bytes) => btoa(String.fromCharCode(...bytes)).replace(/\+/g, '-'
 
 r.post('/sso/npp', async (c) => {
   const secret = env(c, 'NPP_SSO_SECRET');
-  if (!secret) throw new HttpError(503, 'Chưa cấu hình đăng nhập NPP Control Tower (NPP_SSO_SECRET).');
+  if (!secret) throw new HttpError(503, 'Chưa cấu hình đăng nhập Distribution Control Tower (NPP_SSO_SECRET).');
   const b = await jsonBody(c);
   const state = typeof b.state === 'string' ? b.state.trim() : '';
   // Started from the app tile: let NPP create its state first.
@@ -39,7 +39,7 @@ r.post('/sso/npp', async (c) => {
     secret,
     'HS256'
   );
-  await audit(user.id, 'sso', 'Đăng nhập NPP Control Tower');
+  await audit(user.id, 'sso', 'Đăng nhập Distribution Control Tower');
   return c.json({ url: `${nppUrl(c)}/api/auth/workspace/callback?ticket=${encodeURIComponent(ticket)}&state=${encodeURIComponent(state)}` });
 });
 
