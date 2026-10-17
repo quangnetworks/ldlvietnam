@@ -2650,3 +2650,6 @@ button.stat-tile.active { border-color: var(--blue); box-shadow: 0 0 0 3px var(-
   .ww-side, .office-side, .rq-side, .acc-side, .nav-label, .side-tip, .side-area a svg, .side-area button svg,
   .ww-link, .side-link, .rq-link, .acc-side-link, .rq-back, .rq-group, .mod-title { transition: none !important; animation: none !important; }
 }
+.rq-choose b { display: flex; align-items: center; gap: 8px; }
+.rq-choose.used { background: var(--bg-2); }
+.rq-used-tag { font-size: 11px; font-weight: 500; color: #2b8a3e; background: color-mix(in srgb, #40c057 14%, transparent); border-radius: 10px; padding: 1px 8px; }

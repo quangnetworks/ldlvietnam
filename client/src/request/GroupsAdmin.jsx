@@ -13,6 +13,7 @@ import { fmtDateTime, cx } from '../utils.js';
 import { useRequestApp, groupByCategory } from './RequestLayout.jsx';
 import { FIELD_TYPES, FieldInput, FLOWS, flowLabel } from './fields.jsx';
 import { GroupTools } from './GroupTools.jsx';
+import { TEMPLATES, TEMPLATE_CATEGORIES } from './templates.js';
 
 const FLOW_ICON = { any: User, sequential: ListOrdered, parallel: Users, blocks: Boxes };
 const FlowLabel = ({ flow }) => {
@@ -131,44 +132,29 @@ export function GroupsAdmin({ bulk = false }) {
   );
 }
 
-const TEMPLATES = [
-  { name: 'Đề xuất nghỉ phép', category: 'Hành chính - Nhân sự', flow: 'sequential', sla_hours: 24, fields: [
-    { label: 'Nghỉ từ ngày', type: 'date', required: true }, { label: 'Đến ngày', type: 'date', required: true },
-    { label: 'Loại nghỉ', type: 'select', options: ['Nghỉ phép năm', 'Nghỉ không lương', 'Nghỉ ốm'], required: true }, { label: 'Lý do', type: 'textarea', required: true }] },
-  { name: 'Đề xuất làm thêm giờ', category: 'Hành chính - Nhân sự', flow: 'sequential', sla_hours: 12, fields: [
-    { label: 'Ngày làm thêm', type: 'date', required: true }, { label: 'Số giờ', type: 'number', required: true }, { label: 'Nội dung công việc', type: 'textarea', required: true }] },
-  { name: 'Đề xuất đi công tác', category: 'Hành chính - Nhân sự', flow: 'sequential', sla_hours: 24, fields: [
-    { label: 'Nơi công tác', type: 'text', required: true }, { label: 'Từ ngày', type: 'date', required: true }, { label: 'Đến ngày', type: 'date', required: true },
-    { label: 'Dự trù chi phí', type: 'money' }] },
-  { name: 'Đề nghị tạm ứng', category: 'Tài chính - Kế toán', flow: 'sequential', sla_hours: 48, fields: [
-    { label: 'Số tiền', type: 'money', required: true }, { label: 'Mục đích', type: 'textarea', required: true }, { label: 'Ngày hoàn ứng', type: 'date' }] },
-  { name: 'Đề nghị thanh toán', category: 'Tài chính - Kế toán', flow: 'sequential', sla_hours: 48, fields: [
-    { label: 'Số tiền', type: 'money', required: true }, { label: 'Người thụ hưởng', type: 'text', required: true },
-    { label: 'Hình thức', type: 'select', options: ['Chuyển khoản', 'Tiền mặt'] }, { label: 'Diễn giải', type: 'textarea' }] },
-  { name: 'Đề xuất mua hàng', category: 'Mua hàng', flow: 'any', sla_hours: 24, fields: [
-    { label: 'Danh sách hàng hoá', type: 'textarea', required: true }, { label: 'Tổng giá trị dự kiến', type: 'money', required: true }, { label: 'Nhà cung cấp', type: 'text' }] },
-  { name: 'Đề xuất chính sách bán hàng cho NPP', category: 'Kinh doanh', flow: 'sequential', sla_hours: 48, fields: [
-    { label: 'Nhà phân phối', type: 'text', required: true }, { label: 'Khu vực', type: 'select', options: ['Miền Bắc', 'Miền Trung', 'Miền Nam'], required: true },
-    { label: 'Mức chiết khấu đề xuất (%)', type: 'number', required: true }, { label: 'Doanh số cam kết', type: 'money' }, { label: 'Lý do', type: 'textarea' }] },
-  { name: 'Đề xuất cấp tài khoản / thiết bị IT', category: 'IT', flow: 'any', sla_hours: 8, fields: [
-    { label: 'Người sử dụng', type: 'user', required: true }, { label: 'Hạng mục', type: 'select', options: ['Tài khoản phần mềm', 'Máy tính', 'Điện thoại', 'Khác'], required: true },
-    { label: 'Mô tả chi tiết', type: 'textarea' }] },
-];
 
 export function TemplatesPage() {
   const navigate = useNavigate();
+  const { groups } = useRequestApp();
+  const have = new Set((groups || []).map((g) => foldVi(g.name)));
   return (
     <div className="rq-page">
-      <div className="rq-head"><div className="grow"><h1>Tạo nhóm từ mẫu</h1><p className="muted">Chọn một mẫu có sẵn biểu mẫu, sau đó chỉnh người duyệt và lưu.</p></div></div>
-      <div className="rq-choose-grid">
-        {TEMPLATES.map((t) => (
-          <button key={t.name} className="rq-choose" onClick={() => navigate('/request/settings/group/new', { state: { template: t } })}>
-            <b>{t.name}</b>
-            <small className="muted">{t.category} · {t.fields.length} trường · {flowLabel(t.flow)}</small>
-            <small className="muted">{t.fields.map((f) => f.label).join(', ')}</small>
-          </button>
-        ))}
-      </div>
+      <div className="rq-head"><div className="grow"><h1>Tạo nhóm từ mẫu</h1><p className="muted">{TEMPLATES.length} mẫu cho công ty phân phối. Chọn một mẫu, sau đó chọn người duyệt và lưu.</p></div></div>
+      {TEMPLATE_CATEGORIES.map((cat) => (
+        <div key={cat} className="rq-choose-cat">
+          <h4>{cat.toUpperCase()}</h4>
+          <div className="rq-choose-grid">
+            {TEMPLATES.filter((t) => t.category === cat).map((t) => (
+              <button key={t.name} className={cx('rq-choose', have.has(foldVi(t.name)) && 'used')} onClick={() => navigate('/request/settings/group/new', { state: { template: t } })}>
+                <b>{t.name}{have.has(foldVi(t.name)) && <span className="rq-used-tag">Đã có</span>}</b>
+                <small className="muted">{t.fields.length} trường · {flowLabel(t.flow)}{t.sla_hours ? ` · xử lý trong ${t.sla_hours} giờ` : ''}</small>
+                {t.description && <small>{t.description}</small>}
+                <small className="muted">{t.fields.map((x) => x.label).join(', ')}</small>
+              </button>
+            ))}
+          </div>
+        </div>
+      ))}
     </div>
   );
 }
@@ -267,7 +253,7 @@ export function GroupEditor() {
         .catch((e) => setErr(e.message));
     } else {
       const t = location.state?.template;
-      setG({ name: t?.name || '', description: '', category: t?.category || 'Chung', flow: t?.flow || 'sequential', sla_hours: t?.sla_hours || '',
+      setG({ name: t?.name || '', description: t?.description || '', category: t?.category || 'Chung', flow: t?.flow || 'sequential', sla_hours: t?.sla_hours || '',
         custom_approvers: true, active: true, fields: (t?.fields || [{ label: 'Nội dung', type: 'textarea', required: true }]).map((f, i) => ({ key: `f${i + 1}`, ...f })),
         approvers: [], followers: [], blocks: [{ mode: 'all', users: [] }], visibility: 'public', member_departments: [], member_users: [], notify_manager: false, manager_levels: 1 });
     }
