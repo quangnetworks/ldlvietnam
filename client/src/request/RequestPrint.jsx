@@ -29,7 +29,7 @@ export default function RequestPrint() {
   const [q, , , error] = useFetch(() => api.get(`/requests/${id}`), [id]);
   useEffect(() => {
     if (q) document.title = `${q.print?.code ? `${q.print.code} - ` : ''}${q.title} #${q.id}`;
-    return () => { document.title = 'Công ty LDL Việt Nam'; };
+    return () => { document.title = 'LDL Digital Workspace'; };
   }, [q]);
   if (error) return <div className="print-shell"><div className="alert alert-error">{error.message}</div></div>;
   if (!q) return <div className="print-shell"><Spinner /></div>;

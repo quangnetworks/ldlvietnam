@@ -60,7 +60,7 @@ export function HandoverDetail() {
   const [note, setNote] = useState('');
   useEffect(() => {
     if (h) document.title = `${h.code} - Biên bản ${h.kind === 'issue' ? 'bàn giao' : 'thu hồi'} tài sản`;
-    return () => { document.title = 'Công ty LDL Việt Nam'; };
+    return () => { document.title = 'LDL Digital Workspace'; };
   }, [h]);
   if (error) return <div className="print-shell"><div className="alert alert-error">{error.message}</div></div>;
   if (!h) return <div className="print-shell"><Spinner /></div>;
