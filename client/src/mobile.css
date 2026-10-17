@@ -219,10 +219,9 @@ html.standalone .tb-item { padding: 5px 0 2px; }
   .rq-rail-logo { margin: 0 6px; width: auto; height: 26px; }
   .rq-rail-sep { width: 1px; height: 22px; margin: 0 4px; background: rgba(255, 255, 255, 0.2); }
   .rq-rail .grow { flex: 1 0 4px; }
-  .rq-side, .rq.collapsed .rq-side { display: block; position: fixed; top: 0; left: 0; bottom: 0; z-index: 95; width: min(84vw, 300px); padding-top: var(--safe-top);
+  .rq-side { display: block; position: fixed; top: 0; left: 0; bottom: 0; z-index: 95; width: min(84vw, 300px); padding-top: var(--safe-top);
     transform: translateX(-105%); transition: transform 0.22s var(--ease, ease-out); background: var(--bg); box-shadow: var(--shadow); overflow-y: auto; }
   .rq-side.open { transform: none; }
-  .rq-collapse { display: none; }
   .rq-main { flex: 1; min-height: 0; overflow-y: auto; }
   .rq-page { padding: 12px 12px 30px; }
   .rq-head h1 { font-size: 22px; }

@@ -9,6 +9,7 @@ import MobileTabBar from './components/MobileNav.jsx';
 import GlobalSearch from './components/GlobalSearch.jsx';
 import { refreshBadge } from './push.js';
 import { lazyPage, RootBoundary } from './components/Boundary.jsx';
+import { SideTooltip } from './components/Sidebar.jsx';
 
 // Mỗi phân hệ là một tệp JS riêng, chỉ tải khi mở tới → trang chủ mở nhanh dù hệ thống có thêm nhiều phân hệ
 const OfficeLayout = lazyPage(() => import('./office/OfficeLayout.jsx'));
@@ -246,6 +247,7 @@ export default function App() {
     </RootBoundary>
     <MobileTabBar />
     <GlobalSearch />
+    <SideTooltip />
     </>
   );
 }

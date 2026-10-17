@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link, NavLink, useLocation } from 'react-router-dom';
 import { PageOutlet } from './Boundary.jsx';
+import { SideToggle, useSideCollapsed } from './Sidebar.jsx';
 import {
   LayoutDashboard, Users2, Settings, Fingerprint, UsersRound, Plane, CalendarDays, Scale, FolderOpen, Building2, Share2, Clock3,
   Trash2, Menu, FileSignature, TrendingUp, BarChart3, Package, Boxes, UserCheck, Users, UserCog, Network,
@@ -55,13 +56,14 @@ export default function ModuleShell({ app }) {
   const { user, company } = useApp();
   const location = useLocation();
   const [open, setOpen] = useState(false);
+  const [collapsed, toggleCollapsed] = useSideCollapsed();
   useEffect(() => setOpen(false), [location.key]);
   const meta = ECOSYSTEM.find((a) => a.key === app);
   // mục chỉ dành cho quản lý nhân sự (HRM)
   const [hrMeta] = useFetch(() => (app === 'hrm' ? api.get('/hrm/meta') : Promise.resolve(null)), [app]);
   const [assetMeta] = useFetch(() => (app === 'asset' ? api.get('/asset/meta') : Promise.resolve(null)), [app]);
   return (
-    <div className="office">
+    <div className={cx('office', collapsed && 'side-collapsed')}>
       <header className="topbar">
         <button className="icon-btn on-dark mobile-only" onClick={() => setOpen(!open)} aria-label="Menu"><Menu size={20} /></button>
         <Link to="/" className="brand"><img className="brand-logo" src="/logo-rect.png" alt="LDL" /><span className="brand-name">{company}</span></Link>
@@ -73,13 +75,14 @@ export default function ModuleShell({ app }) {
       </header>
       <div className="office-body">
         {open && <div className="side-backdrop" onClick={() => setOpen(false)} />}
-        <aside className={cx('office-side', open && 'open')}>
-          <div className="mod-title"><AppIcon app={meta} size={30} /><span><b>{meta.name}</b><small className="muted block">{meta.desc}</small></span></div>
+        <aside className={cx('office-side side-area', open && 'open')}>
+          <div className="mod-title"><AppIcon app={meta} size={30} /><span className="nav-label"><b>{meta.name}</b><small className="muted block">{meta.desc}</small></span></div>
           {NAV[app].filter((n) => (!n.admin || user.role === 'admin') && (!n.hr || hrMeta?.is_manager) && (!n.mgr || assetMeta?.is_manager)).map((n) => (
             <NavLink key={n.to} to={n.to} end={n.end} className={({ isActive }) => cx('side-link', isActive && 'active')}>
-              <n.icon size={15} /> {n.label}
+              <n.icon size={15} /> <span className="nav-label">{n.label}</span>
             </NavLink>
           ))}
+          <SideToggle collapsed={collapsed} onToggle={toggleCollapsed} />
         </aside>
         <main className="office-main"><PageOutlet /></main>
       </div>

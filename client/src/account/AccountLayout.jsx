@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { NavLink, Link, useLocation } from 'react-router-dom';
 import { PageOutlet } from '../components/Boundary.jsx';
+import { SideToggle, useSideCollapsed } from '../components/Sidebar.jsx';
 import {
   UserCircle2, Bell, Users, Network, LayoutGrid, Power, Settings, Pencil, KeyRound, Palette, History, Building2, AppWindow,
   ScrollText, FileText, GitPullRequestArrow, Home, LockKeyhole, ShieldCheck, Shield, Webhook, Menu, Grid3x3,
@@ -22,7 +23,7 @@ function RailLink({ to, icon: Icon, label, end }) {
 function SideLink({ to, icon: Icon, children, end = true }) {
   return (
     <NavLink to={to} end={end} className={({ isActive }) => cx('acc-side-link', isActive && 'active')}>
-      <Icon size={16} /> {children}
+      <Icon size={16} /> <span className="nav-label">{children}</span>
     </NavLink>
   );
 }
@@ -32,9 +33,10 @@ export default function AccountLayout() {
   const admin = user.role === 'admin';
   const location = useLocation();
   const [side, setSide] = useState(false);
+  const [collapsed, toggleCollapsed] = useSideCollapsed();
   useEffect(() => setSide(false), [location.key]);
   return (
-    <div className="acc">
+    <div className={cx('acc', collapsed && 'side-collapsed')}>
       <nav className="acc-rail">
         <button className="acc-rail-link acc-rail-menu" onClick={() => setSide(!side)} aria-label="Menu tài khoản"><Menu size={22} /><span>Menu</span></button>
         <Link to="/" className="rail-logo" title="Về trang chủ"><img src="/logo-rect.png" alt="LDL" /></Link>
@@ -55,7 +57,7 @@ export default function AccountLayout() {
       </nav>
       <main className="acc-main"><PageOutlet /></main>
       {side && <div className="side-backdrop" onClick={() => setSide(false)} />}
-      <aside className={cx('acc-side', side && 'open')}>
+      <aside className={cx('acc-side side-area side-right', side && 'open')}>
         <div className="acc-side-head">
           <h2 className="ellipsis">{user.name}</h2>
           <small className="muted ellipsis block">@{user.username} · {user.email}</small>
@@ -83,6 +85,7 @@ export default function AccountLayout() {
             <SideLink to="/request/settings/webhooks" icon={Webhook}>Webhook LDL Request</SideLink>
           </div>
         )}
+        <SideToggle collapsed={collapsed} onToggle={toggleCollapsed} />
       </aside>
     </div>
   );

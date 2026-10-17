@@ -1,6 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { Link, NavLink, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { PageOutlet } from '../components/Boundary.jsx';
+import { SideToggle, useSideCollapsed } from '../components/Sidebar.jsx';
 import {
   Home, Bell, BarChart3, Settings, PlusCircle, PlayCircle, LayoutGrid, Inbox, Send, Eye, Star, ChevronLeft, Search, ChevronDown,
   FolderCog, History, ListChecks, Copy, PlusSquare, Webhook, Menu,
@@ -46,7 +47,7 @@ function Rail({ onMenu }) {
   );
 }
 
-function MainSidebar({ groups, toggleStar }) {
+function MainSidebar({ groups, toggleStar, collapsed, onExpand }) {
   const [params] = useSearchParams();
   const location = useLocation();
   const [q, setQ] = useState('');
@@ -55,14 +56,15 @@ function MainSidebar({ groups, toggleStar }) {
   const box = params.get('box') || '';
   const gid = params.get('group_id');
   const boxLink = (key, label, Icon) => (
-    <Link to={key ? `/request?box=${key}` : '/request'} className={cx('rq-link', isList && !gid && box === key && 'active')}><Icon size={16} /> {label}</Link>
+    <Link to={key ? `/request?box=${key}` : '/request'} className={cx('rq-link', isList && !gid && box === key && 'active')}><Icon size={16} /> <span className="nav-label">{label}</span></Link>
   );
   const filtered = (groups || []).filter((g) => !q || g.name.toLowerCase().includes(q.toLowerCase()));
   const starred = filtered.filter((g) => g.starred);
   const groupLink = (g) => (
     <div key={g.id} className={cx('rq-group', isList && gid === String(g.id) && 'active')}>
+      <Link to={`/request?group_id=${g.id}`} className="rq-gdot" data-tip={g.name} aria-label={g.name} tabIndex={collapsed ? 0 : -1}>{g.name.trim()[0]?.toUpperCase()}</Link>
       <button className={cx('rq-star', g.starred && 'on')} onClick={() => toggleStar(g)} aria-label="Đánh dấu"><Star size={15} fill={g.starred ? 'currentColor' : 'none'} /></button>
-      <Link to={`/request?group_id=${g.id}`} className="grow ellipsis" title={g.name}>{g.name}</Link>
+      <Link to={`/request?group_id=${g.id}`} className="nav-label grow ellipsis" title={g.name}>{g.name}</Link>
     </div>
   );
   return (
@@ -70,7 +72,7 @@ function MainSidebar({ groups, toggleStar }) {
       <div className="rq-user">
         <UserMenu />
       </div>
-      <div className="rq-search"><input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Tìm kiếm tất cả" /><Search size={15} /></div>
+      <div className="rq-search"><input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Tìm kiếm tất cả" />{collapsed ? <button type="button" className="qs-expand" onClick={onExpand} aria-label="Tìm nhóm đề xuất"><Search size={16} /></button> : <Search size={15} />}</div>
       <div className="rq-nav">
         {boxLink('', 'Tất cả', LayoutGrid)}
         {boxLink('to_me', 'Gửi đến tôi', Inbox)}
@@ -85,7 +87,7 @@ function MainSidebar({ groups, toggleStar }) {
           <button className="rq-cat-title" onClick={() => setClosed({ ...closed, [category]: !closed[category] })}>
             {category.toUpperCase()} <ChevronDown size={13} style={{ transform: closed[category] ? 'rotate(-90deg)' : '' }} />
           </button>
-          {!closed[category] && items.map(groupLink)}
+          {(!closed[category] || collapsed) && items.map(groupLink)}
         </div>
       ))}
     </>
@@ -94,11 +96,11 @@ function MainSidebar({ groups, toggleStar }) {
 
 function SettingsSidebar() {
   const link = (to, Icon, label, end = true) => (
-    <NavLink to={to} end={end} className={({ isActive }) => cx('rq-link', isActive && 'active')}><Icon size={16} /> {label}</NavLink>
+    <NavLink to={to} end={end} className={({ isActive }) => cx('rq-link', isActive && 'active')}><Icon size={16} /> <span className="nav-label">{label}</span></NavLink>
   );
   return (
     <>
-      <Link to="/request" className="rq-back"><ChevronLeft size={16} /> Trang chủ</Link>
+      <Link to="/request" className="rq-back"><ChevronLeft size={16} /> <span className="nav-label">Trang chủ</span></Link>
       <div className="rq-nav">
         {link('/request/settings', LayoutGrid, 'Tất cả nhóm đề xuất')}
         {link('/request/settings/all-requests', FolderCog, 'Tất cả đề xuất hệ thống')}
@@ -115,7 +117,7 @@ function SettingsSidebar() {
 export default function RequestLayout() {
   const location = useLocation();
   const navigate = useNavigate();
-  const [collapsed, setCollapsed] = useState(false);
+  const [collapsed, toggleCollapsed] = useSideCollapsed();
   const [side, setSide] = useState(false);
   useEffect(() => setSide(false), [location.key]);
   const [version, setVersion] = useState(0);
@@ -132,12 +134,12 @@ export default function RequestLayout() {
     [groups, counts, version]);
   return (
     <RequestCtx.Provider value={ctx}>
-      <div className={cx('rq', collapsed && 'collapsed')}>
+      <div className={cx('rq', collapsed && 'side-collapsed')}>
         <Rail onMenu={() => setSide(!side)} />
         {side && <div className="side-backdrop" onClick={() => setSide(false)} />}
-        <aside className={cx('rq-side', side && 'open')}>
-          <button className="rq-collapse" onClick={() => setCollapsed(!collapsed)} aria-label="Thu gọn"><ChevronLeft size={14} /></button>
-          {settings ? <SettingsSidebar /> : <MainSidebar groups={groups} toggleStar={toggleStar} />}
+        <aside className={cx('rq-side side-area', side && 'open')}>
+          {settings ? <SettingsSidebar /> : <MainSidebar groups={groups} toggleStar={toggleStar} collapsed={collapsed} onExpand={toggleCollapsed} />}
+          <SideToggle collapsed={collapsed} onToggle={toggleCollapsed} />
         </aside>
         <main className="rq-main"><PageOutlet /></main>
       </div>

@@ -1,6 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
 import { Link, NavLink, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { PageOutlet } from '../components/Boundary.jsx';
+import { SideToggle, useSideCollapsed } from '../components/Sidebar.jsx';
 import {
   Home, CheckSquare, FolderKanban, Building2, Users, BarChart3, PlusSquare, Copy, ListChecks, Settings, PlayCircle,
   Search, ChevronDown, Menu, FileText, Target, SlidersHorizontal,
@@ -18,7 +19,7 @@ import ProjectFormModal from './ProjectFormModal.jsx';
 const WeworkCtx = createContext(null);
 export const useWework = () => useContext(WeworkCtx);
 
-function QuickSearch() {
+function QuickSearch({ onExpand }) {
   const [q, setQ] = useState('');
   const [res, setRes] = useState(null);
   const [open, setOpen] = useState(false);
@@ -33,7 +34,7 @@ function QuickSearch() {
   }, [dq]);
   return (
     <div className="quick-search" ref={ref}>
-      <Search size={15} />
+      {onExpand ? <button type="button" className="qs-expand" onClick={onExpand} aria-label="Tìm nhanh"><Search size={16} /></button> : <Search size={15} />}
       <input value={q} onChange={(e) => { setQ(e.target.value); setOpen(true); }} onFocus={() => setOpen(true)} placeholder="Tìm nhanh" />
       {open && res && (
         <div className="qs-menu">
@@ -98,15 +99,16 @@ export default function WeworkLayout() {
     openCreate: (defaults = {}) => setCreateDefaults(defaults),
     openProjectForm: (opts) => setProjectForm(opts),
   };
+  const [collapsed, toggleCollapsed] = useSideCollapsed();
   const [sections, setSections] = useState({ sum: true, proj: true, dep: true, custom: true });
   const toggle = (k) => setSections((s) => ({ ...s, [k]: !s[k] }));
   const link = (to, label, Icon, end = true) => (
-    <NavLink to={to} end={end} className={({ isActive }) => cx('ww-link', isActive && 'active')}><Icon size={16} /> {label}</NavLink>
+    <NavLink to={to} end={end} className={({ isActive }) => cx('ww-link', isActive && 'active')}><Icon size={16} /> <span className="nav-label">{label}</span></NavLink>
   );
   const projectLink = (p) => (
     <NavLink key={p.id} to={`/wework/project/${p.id}`} className={({ isActive }) => cx('ww-link', isActive && 'active')}>
       <span className="proj-dot" style={{ background: p.color || '#2d7ff9' }}>{p.name.trim()[0]?.toUpperCase()}</span>
-      <span className="ellipsis">{p.name}</span>
+      <span className="nav-label ellipsis">{p.name}</span>
     </NavLink>
   );
   const onlyProjects = projects.filter((p) => p.kind === 'project');
@@ -114,9 +116,9 @@ export default function WeworkLayout() {
 
   return (
     <WeworkCtx.Provider value={ctx}>
-      <div className="wework">
+      <div className={cx('wework', collapsed && 'side-collapsed')}>
         {mobileNav && <div className="side-backdrop" onClick={() => setMobileNav(false)} />}
-        <aside className={cx('ww-side', mobileNav && 'open')}>
+        <aside className={cx('ww-side side-area', mobileNav && 'open')}>
           <div className="ww-brandrow">
             <Link to="/" className="brand side-brand" title="Về trang chủ">
               <img className="brand-logo" src="/logo-rect.png" alt="LDL" />
@@ -130,11 +132,11 @@ export default function WeworkLayout() {
             <ContactsButton dark />
             <NotificationBell app="wework" dark />
           </div>
-          <QuickSearch />
+          <QuickSearch onExpand={collapsed ? toggleCollapsed : null} />
           <div className="ww-scroll">
             <div className="ww-section">
               <button className="ww-title" onClick={() => toggle('sum')}>TỔNG HỢP <ChevronDown size={13} /></button>
-              {sections.sum && (
+              {(sections.sum || collapsed) && (
                 <>
                   {link('/wework', 'Công việc', Home)}
                   {link('/wework/my', 'Công việc của tôi', CheckSquare)}
@@ -143,35 +145,36 @@ export default function WeworkLayout() {
                   {link('/wework/goals', 'Mục tiêu', Target)}
                   {link('/wework/members', 'Thành viên', Users)}
                   {meta.can_view_reports && link('/wework/reports', 'Báo cáo', BarChart3)}
-                  <Link to="/office" className="ww-link"><FileText size={16} /> Văn bản (Office)</Link>
+                  <Link to="/office" className="ww-link"><FileText size={16} /> <span className="nav-label">Văn bản (Office)</span></Link>
                 </>
               )}
             </div>
             <div className="ww-section">
               <button className="ww-title" onClick={() => toggle('proj')}>DỰ ÁN <ChevronDown size={13} /></button>
-              {sections.proj && onlyProjects.map(projectLink)}
+              {(sections.proj || collapsed) && onlyProjects.map(projectLink)}
             </div>
             {deps.length > 0 && (
               <div className="ww-section">
                 <button className="ww-title" onClick={() => toggle('dep')}>PHÒNG BAN <ChevronDown size={13} /></button>
-                {sections.dep && deps.map(projectLink)}
+                {(sections.dep || collapsed) && deps.map(projectLink)}
               </div>
             )}
             <div className="ww-section">
               <button className="ww-title" onClick={() => toggle('custom')}>TÙY CHỈNH <ChevronDown size={13} /></button>
-              {sections.custom && (
+              {(sections.custom || collapsed) && (
                 <>
-                  <button className="ww-link" onClick={() => setProjectForm({ kind: 'project' })}><PlusSquare size={16} /> Tạo dự án mới</button>
-                  <button className="ww-link" onClick={() => setProjectForm({ kind: 'department' })}><PlusSquare size={16} /> Tạo phòng ban mới</button>
+                  <button className="ww-link" onClick={() => setProjectForm({ kind: 'project' })}><PlusSquare size={16} /> <span className="nav-label">Tạo dự án mới</span></button>
+                  <button className="ww-link" onClick={() => setProjectForm({ kind: 'department' })}><PlusSquare size={16} /> <span className="nav-label">Tạo phòng ban mới</span></button>
                   {link('/wework/templates', 'Tạo từ mẫu', Copy)}
                   {meta.is_admin && link('/wework/bulk', 'Tác vụ hàng loạt', ListChecks)}
                   {user.role === 'admin' && link('/wework/settings', 'Cài đặt Wework', SlidersHorizontal)}
-                  {user.role === 'admin' && <Link to="/admin" className="ww-link"><Settings size={16} /> Cài đặt hệ thống</Link>}
+                  {user.role === 'admin' && <Link to="/admin" className="ww-link"><Settings size={16} /> <span className="nav-label">Cài đặt hệ thống</span></Link>}
                   {link('/wework/guide', 'Video hướng dẫn', PlayCircle)}
                 </>
               )}
             </div>
           </div>
+          <SideToggle collapsed={collapsed} onToggle={toggleCollapsed} dark />
         </aside>
         <div className="ww-content">
           <header className="topbar ww-mobilebar">

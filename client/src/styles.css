@@ -805,10 +805,6 @@ textarea.input { height: auto; resize: vertical; }
 .rq-rail-link.active { color: #fff; background: var(--ww-side-active); }
 .rq-rail-sep { width: 24px; height: 2px; background: var(--bg); margin: 8px 0; }
 .rq-side { width: 220px; flex: none; background: var(--hover); overflow-y: auto; position: relative; padding-bottom: 30px; }
-.rq.collapsed .rq-side { width: 0; overflow: visible; }
-.rq.collapsed .rq-side > :not(.rq-collapse) { display: none; }
-.rq-collapse { position: absolute; right: -12px; top: 18px; width: 24px; height: 24px; border-radius: 50%; background: var(--bg); box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2); display: grid; place-items: center; z-index: 5; }
-.rq.collapsed .rq-collapse { transform: rotate(180deg); right: -26px; }
 .rq-user { display: flex; align-items: center; gap: 10px; padding: 16px 14px 10px; }
 .rq-search { margin: 0 14px 14px; display: flex; align-items: center; background: var(--bg); border-radius: 3px; box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12); padding: 0 10px; height: 32px; color: var(--muted); }
 .rq-search input { border: 0; outline: none; flex: 1; min-width: 0; font-size: 13px; }
@@ -2564,3 +2560,93 @@ button.stat-tile.active { border-color: var(--blue); box-shadow: 0 0 0 3px var(-
 .page-error p { margin: 0; }
 .page-error-msg { display: block; padding: 8px 10px; border-radius: 8px; background: var(--hover); font-size: 12px; white-space: pre-wrap; word-break: break-word; }
 .page-error .row { display: flex; gap: 8px; flex-wrap: wrap; }
+
+/* ================= Thanh bên thu gọn (chỉ biểu tượng) — dùng chung mọi phân hệ ================= */
+.side-area { overflow-x: hidden; padding-bottom: 0; }
+.nav-label { white-space: nowrap; transition: opacity 0.2s ease, transform 0.28s cubic-bezier(0.32, 0.72, 0, 1); }
+.side-area a svg, .side-area button svg, .side-area .proj-dot, .rq-gdot { transition: transform 0.22s cubic-bezier(0.32, 0.72, 0, 1); }
+.rq-gdot { display: none; }
+/* Biểu tượng không bao giờ bị nhãn dài ép nhỏ khi cột hẹp */
+.side-area a > svg, .side-area button > svg, .side-area .proj-dot { flex: none; }
+.side-area .nav-label { min-width: 0; }
+.qs-expand { display: grid; place-items: center; color: inherit; width: 100%; height: 100%; }
+
+.side-toggle-bar { position: sticky; bottom: 0; z-index: 2; margin-top: auto; padding: 8px; background: inherit; border-top: 1px solid var(--line); }
+.side-toggle-bar.dark { border-top-color: rgba(255, 255, 255, 0.08); }
+.side-toggle { display: flex; align-items: center; gap: 12px; width: 100%; height: 36px; padding: 0 15px; border-radius: 8px; color: var(--muted); font-size: 13px; }
+.side-toggle:hover { background: var(--hover); color: var(--text); }
+.side-toggle-bar.dark .side-toggle { color: #8f99a3; }
+.side-toggle-bar.dark .side-toggle:hover { background: var(--ww-side-hover); color: #fff; }
+.side-toggle svg { flex: none; }
+.side-right .side-toggle svg { transform: scaleX(-1); }
+/* Office / phân hệ / Request / Tài khoản: thanh bên là cột flex để nút thu gọn nằm ở đáy */
+@media (min-width: 801px) {
+  .office-side.side-area, .rq-side.side-area { display: flex; flex-direction: column; }
+  .office-side.side-area > *, .rq-side.side-area > * { flex: none; }
+}
+@media (min-width: 1101px) {
+  .acc-side.side-area { display: flex; flex-direction: column; }
+  .acc-side.side-area > * { flex: none; }
+}
+
+.side-tip {
+  position: fixed; z-index: 1000; pointer-events: none; max-width: 260px; padding: 6px 10px; border-radius: 7px;
+  background: #1f2329; color: #fff; font-size: 12.5px; font-weight: 500; line-height: 1.35; box-shadow: 0 6px 20px rgba(0, 0, 0, 0.22);
+  animation: side-tip-in 0.16s cubic-bezier(0.32, 0.72, 0, 1);
+}
+.side-tip::before { content: ''; position: absolute; left: -4px; top: 50%; width: 8px; height: 8px; background: inherit; transform: translateY(-50%) rotate(45deg); border-radius: 1px; }
+@keyframes side-tip-in { from { opacity: 0; transform: translateX(-5px) scale(0.96); } }
+
+@media (min-width: 801px) {
+  .ww-side, .office-side, .rq-side, .acc-side { transition: width 0.32s cubic-bezier(0.32, 0.72, 0, 1); }
+  .side-collapsed .ww-side, .side-collapsed .office-side, .side-collapsed .rq-side, .side-collapsed .acc-side { width: 64px; }
+  .side-collapsed .side-area .nav-label { opacity: 0; transform: translateX(-8px); pointer-events: none; }
+  .side-collapsed .side-area .ww-scroll { overflow-x: hidden; }
+  /* Cột 64px: ẩn thanh cuộn (vẫn cuộn bằng chuột / cảm ứng) */
+  .side-collapsed .side-area, .side-collapsed .side-area .ww-scroll { scrollbar-width: none; }
+  .side-collapsed .side-area::-webkit-scrollbar, .side-collapsed .side-area .ww-scroll::-webkit-scrollbar { display: none; }
+
+  /* Mục điều hướng: biểu tượng nằm giữa cột 64px, nền chọn dạng viên thuốc */
+  .ww-link, .side-link, .rq-link, .acc-side-link, .rq-back, .rq-group, .mod-title { transition: padding 0.32s cubic-bezier(0.32, 0.72, 0, 1), margin 0.32s cubic-bezier(0.32, 0.72, 0, 1), background-color 0.15s; }
+  .side-collapsed .ww-link { padding-left: 24px; }
+  .side-collapsed .side-link { margin-left: 8px; margin-right: 8px; padding-left: 16px !important; border-radius: 8px; position: relative; }
+  .side-collapsed .rq-link, .side-collapsed .acc-side-link { padding-left: 24px; }
+  .side-collapsed .rq-back { padding-left: 16px; }
+  .side-collapsed .mod-title { padding-left: 17px; }
+  .side-collapsed .side-area a:hover > svg, .side-collapsed .side-area button:hover > svg, .side-collapsed .side-area a:hover > .proj-dot { transform: scale(1.14); }
+  .side-collapsed .side-count { position: absolute; top: 2px; left: 33px; min-width: 16px; height: 16px; padding: 0 4px; font-size: 10px; line-height: 16px; text-align: center; box-shadow: 0 0 0 2px var(--bg-2); }
+
+  /* Tiêu đề nhóm → đường phân cách mảnh */
+  .side-collapsed .ww-title, .side-collapsed .side-title, .side-collapsed .rq-cat-title, .side-collapsed .acc-side-title,
+  .side-collapsed .side-company, .side-collapsed .acc-side-head { display: none; }
+  .side-collapsed .ww-section + .ww-section, .side-collapsed .side-section, .side-collapsed .rq-cat, .side-collapsed .acc-side-section + .acc-side-section { border-top: 1px solid var(--line); margin-top: 8px; padding-top: 8px; }
+  .side-collapsed .ww-section + .ww-section { border-top-color: rgba(255, 255, 255, 0.08); }
+  .side-collapsed .side-section { margin-left: 12px; margin-right: 12px; }
+  .side-collapsed .side-section .side-link { margin-left: -4px; margin-right: -4px; }
+
+  /* Wework: logo, người dùng, tìm nhanh xếp dọc */
+  .side-collapsed .ww-brandrow { flex-direction: column; padding: 0; gap: 4px; }
+  .side-collapsed .side-brand { padding: 12px 0 2px; justify-content: center; }
+  .side-collapsed .side-brand .brand-name, .side-collapsed .side-area .user-name, .side-collapsed .ww-user .grow { display: none; }
+  .side-collapsed .ww-brandrow .icon-btn { margin-top: 0; }
+  .side-collapsed .ww-user { flex-direction: column; gap: 6px; padding: 8px 0; }
+  .side-collapsed .quick-search, .side-collapsed .rq-search { width: 40px; height: 34px; margin: 4px auto 12px; padding: 0; justify-content: center; border-radius: 10px; }
+  .side-collapsed .quick-search input, .side-collapsed .rq-search input { width: 0; flex: 0 0 0; padding: 0; }
+  .side-collapsed .quick-search:hover { background: var(--ww-side-hover); color: #fff; }
+
+  /* Request: mỗi nhóm đề xuất là một ô chữ cái */
+  .side-collapsed .rq-user { justify-content: center; padding: 14px 0 10px; }
+  .side-collapsed .rq-group { padding: 4px 0 4px 21px; }
+  .side-collapsed .rq-group .rq-star { display: none; }
+  .side-collapsed .rq-gdot {
+    display: grid; place-items: center; flex: none; width: 22px; height: 22px; border-radius: 7px; font-size: 11px; font-weight: 700;
+    background: var(--bg); color: var(--text-2); box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12);
+  }
+  .side-collapsed .rq-group.active .rq-gdot { background: var(--blue); color: #fff; }
+  .side-collapsed .rq-gdot:hover { transform: scale(1.12); }
+}
+@media (max-width: 800px) { .side-toggle-bar { display: none; } }
+@media (prefers-reduced-motion: reduce) {
+  .ww-side, .office-side, .rq-side, .acc-side, .nav-label, .side-tip, .side-area a svg, .side-area button svg,
+  .ww-link, .side-link, .rq-link, .acc-side-link, .rq-back, .rq-group, .mod-title { transition: none !important; animation: none !important; }
+}

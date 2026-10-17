@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Link, NavLink, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { PageOutlet } from '../components/Boundary.jsx';
+import { SideToggle, useSideCollapsed } from '../components/Sidebar.jsx';
 import {
   LayoutGrid, Eye, FileCheck2, Settings2, Star, FilePen, Hash, Server, FileText, Folder, FolderOpen, ChevronDown,
   Search, Save, CalendarX, XCircle, Archive, Trash2, Plus, Building2, Send, Menu, Replace, X } from 'lucide-react';
@@ -10,8 +11,9 @@ import { AppSwitcher, NotificationBell, UserMenu, QuickCreate, useDebounced } fr
 import { ContactsButton } from '../components/Contact.jsx';
 import { buildTree, cx } from '../utils.js';
 
-function Section({ title, children, defaultOpen = true, action }) {
-  const [open, setOpen] = useState(defaultOpen);
+function Section({ title, children, defaultOpen = true, action, collapsed }) {
+  const [state, setOpen] = useState(defaultOpen);
+  const open = state || collapsed; // thu gọn: chỉ còn biểu tượng, mọi mục đều hiện
   return (
     <div className="side-section">
       <div className="side-title">
@@ -35,7 +37,7 @@ function TreeItems({ nodes, param, current, depth = 0, icon = 'folder' }) {
         <Link to={`/office?${param}=${n.id}`} className={cx('side-link', active && 'active', depth > 0 && 'nested')}
           style={{ paddingLeft: 12 + depth * 16 }}>
           <Icon size={15} />
-          <span className="grow ellipsis">{n.name}</span>
+          <span className="nav-label grow ellipsis">{n.name}</span>
         </Link>
         {n.children.length > 0 && <TreeItems nodes={n.children} param={param} current={current} depth={depth + 1} icon={icon} />}
       </div>
@@ -60,6 +62,7 @@ export default function OfficeLayout() {
     navigate(dq.trim() ? `/office?q=${encodeURIComponent(dq.trim())}` : '/office', { replace: location.pathname === '/office' && !!urlQ });
   }, [dq]); // eslint-disable-line react-hooks/exhaustive-deps
   const [mobileNav, setMobileNav] = useState(false);
+  const [collapsed, toggleCollapsed] = useSideCollapsed();
 
   const loadMeta = useCallback(async () => setMeta(await api.get('/office/meta')), []);
   useEffect(() => { loadMeta(); }, [loadMeta, location.key]);
@@ -69,7 +72,7 @@ export default function OfficeLayout() {
   const box = isList ? params.get('box') || (params.toString() ? '' : 'home') : '';
   const boxLink = (key, label, Icon, count) => (
     <Link to={key === 'home' ? '/office' : `/office?box=${key}`} className={cx('side-link', isList && box === key && 'active')}>
-      <Icon size={15} /> <span className="grow">{label}</span>
+      <Icon size={15} /> <span className="nav-label grow">{label}</span>
       {count ? <span className="side-count">{count}</span> : null}
     </Link>
   );
@@ -81,7 +84,7 @@ export default function OfficeLayout() {
   };
 
   return (
-    <div className="office">
+    <div className={cx('office', collapsed && 'side-collapsed')}>
       <header className="topbar">
         <button className="icon-btn on-dark mobile-only" onClick={() => setMobileNav(!mobileNav)} aria-label="Menu"><Menu size={20} /></button>
         <Link to="/" className="brand" title="Về trang chủ">
@@ -101,57 +104,57 @@ export default function OfficeLayout() {
       </header>
       <div className="office-body">
         {mobileNav && <div className="side-backdrop" onClick={() => setMobileNav(false)} />}
-        <aside className={cx('office-side', mobileNav && 'open')}>
+        <aside className={cx('office-side side-area', mobileNav && 'open')}>
           <div className="side-company ellipsis">{company}</div>
           {boxLink('home', 'Trang chủ', LayoutGrid)}
           {boxLink('following', 'Đang theo dõi', Eye)}
           {boxLink('pending_me', 'Chờ tôi duyệt', FileCheck2, meta?.counts.pending_me)}
           {user.role === 'admin' && (
             <NavLink to="/office/settings" className={({ isActive }) => cx('side-link', isActive && 'active')}>
-              <Settings2 size={15} /> Tùy chỉnh
+              <Settings2 size={15} /> <span className="nav-label">Tùy chỉnh</span>
             </NavLink>
           )}
 
-          <Section title="CÁ NHÂN">
+          <Section collapsed={collapsed} title="CÁ NHÂN">
             {boxLink('starred', 'Yêu thích', Star)}
             {boxLink('mine', 'Tạo bởi tôi', FilePen)}
             {boxLink('numbering', 'Duyệt cấp số văn bản', Hash, meta?.counts.numbering)}
             {boxLink('system', 'Văn bản của hệ thống', Server)}
           </Section>
 
-          <Section title="KHO LƯU TRỮ" action={<button className="side-add" onClick={() => addTaxonomy('folders', 'kho lưu trữ')} title="Thêm kho"><Plus size={13} /></button>}>
+          <Section collapsed={collapsed} title="KHO LƯU TRỮ" action={<button className="side-add" onClick={() => addTaxonomy('folders', 'kho lưu trữ')} title="Thêm kho"><Plus size={13} /></button>}>
             {meta && <TreeItems nodes={buildTree(meta.folders)} param="folder_id" current={isList ? params.get('folder_id') : null} />}
           </Section>
 
-          <Section title="LOẠI VĂN BẢN">
+          <Section collapsed={collapsed} title="LOẠI VĂN BẢN">
             {meta?.types.map((t) => (
               <Link key={t.id} to={`/office?type_id=${t.id}`} className={cx('side-link', isList && params.get('type_id') === String(t.id) && 'active')}>
-                <FileText size={15} /> {t.name}
+                <FileText size={15} /> <span className="nav-label">{t.name}</span>
               </Link>
             ))}
           </Section>
 
-          <Section title="CÂY THƯ MỤC" defaultOpen={false} action={<button className="side-add" onClick={() => addTaxonomy('categories', 'thư mục')} title="Thêm thư mục"><Plus size={13} /></button>}>
+          <Section collapsed={collapsed} title="CÂY THƯ MỤC" defaultOpen={false} action={<button className="side-add" onClick={() => addTaxonomy('categories', 'thư mục')} title="Thêm thư mục"><Plus size={13} /></button>}>
             {meta && <TreeItems nodes={buildTree(meta.categories)} param="category_id" current={isList ? params.get('category_id') : null} />}
           </Section>
 
-          <Section title="ĐẾN NỘI BỘ" defaultOpen={false}>
+          <Section collapsed={collapsed} title="ĐẾN NỘI BỘ" defaultOpen={false}>
             {meta?.departments.map((d) => (
               <Link key={d.id} to={`/office?department_id=${d.id}`} className={cx('side-link', isList && params.get('department_id') === String(d.id) && 'active')}>
-                <Building2 size={15} /> <span className="ellipsis">{d.name}</span>
+                <Building2 size={15} /> <span className="nav-label ellipsis">{d.name}</span>
               </Link>
             ))}
           </Section>
 
-          <Section title="GỬI BỞI" defaultOpen={false}>
+          <Section collapsed={collapsed} title="GỬI BỞI" defaultOpen={false}>
             {meta?.departments.map((d) => (
               <Link key={d.id} to={`/office?sender_department_id=${d.id}`} className={cx('side-link', isList && params.get('sender_department_id') === String(d.id) && 'active')}>
-                <Send size={15} /> <span className="ellipsis">{d.name}</span>
+                <Send size={15} /> <span className="nav-label ellipsis">{d.name}</span>
               </Link>
             ))}
           </Section>
 
-          <Section title="TRẠNG THÁI">
+          <Section collapsed={collapsed} title="TRẠNG THÁI">
             {boxLink('drafts', 'Đã lưu', Save, meta?.counts.drafts)}
             {boxLink('expired', 'Hết hạn', CalendarX)}
             {boxLink('superseded', 'Đã bị thay thế', Replace)}
@@ -159,6 +162,7 @@ export default function OfficeLayout() {
             {boxLink('archived', 'Cất giữ', Archive)}
             {boxLink('trash', 'Đã tạm xóa', Trash2)}
           </Section>
+          <SideToggle collapsed={collapsed} onToggle={toggleCollapsed} />
         </aside>
         <main className="office-main">
           <PageOutlet context={{ meta, reloadMeta: loadMeta }} />
