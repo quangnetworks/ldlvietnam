@@ -1,0 +1,22 @@
+# LDL Workspace trên máy chủ công ty
+#   1. cp .env.example .env   rồi sửa ADMIN_PASSWORD, PORT…
+#   2. docker compose up -d --build
+#   3. Mở http://<IP-máy-chủ>:4000
+# Dữ liệu (CSDL SQLite + tệp đính kèm) nằm ở thư mục ./data cạnh tệp này — sao lưu thư mục này là đủ.
+services:
+  ldl-workspace:
+    build: .
+    image: ldl-workspace:latest
+    container_name: ldl-workspace
+    restart: unless-stopped
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      DATA_DIR: /data
+      PORT: 4000
+      DEMO_DATA: ${DEMO_DATA:-0}
+    ports:
+      - "${PORT:-4000}:4000"
+    volumes:
+      - ./data:/data

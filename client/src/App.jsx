@@ -1,42 +1,90 @@
-import { Navigate, Route, Routes, useLocation } from 'react-router-dom';
+import { useEffect } from 'react';
+import { Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
 import { useApp } from './context.jsx';
 import { Spinner } from './components/ui.jsx';
 import Login from './pages/Login.jsx';
-import OfficeLayout from './office/OfficeLayout.jsx';
-import DocList from './office/DocList.jsx';
-import DocForm from './office/DocForm.jsx';
-import DocDetail from './office/DocDetail.jsx';
-import OfficeSettings from './office/OfficeSettings.jsx';
-import WeworkLayout from './wework/WeworkLayout.jsx';
-import TasksHome from './wework/TasksHome.jsx';
-import ProjectsPage from './wework/ProjectsPage.jsx';
-import ProjectPage from './wework/ProjectPage.jsx';
-import MembersPage from './wework/MembersPage.jsx';
-import ReportsPage from './wework/ReportsPage.jsx';
-import BulkPage from './wework/BulkPage.jsx';
-import TaskPage from './wework/TaskPage.jsx';
-import GuidePage from './wework/GuidePage.jsx';
 import Home from './pages/Home.jsx';
-import AccountLayout from './account/AccountLayout.jsx';
-import { ProfileView, ProfileEdit, PasswordPage, ColorPage, LoginHistory } from './account/ProfilePages.jsx';
-import {
-  MembersPage as AccountMembers, GroupsPage, AppsPage, CompanyPage, AuditPage, NotificationsPage, DepartmentsPage, BulkPasswordPage,
-} from './account/AdminPages.jsx';
-import RequestLayout from './request/RequestLayout.jsx';
-import RequestList from './request/RequestList.jsx';
-import RequestForm from './request/RequestForm.jsx';
-import RequestDetail from './request/RequestDetail.jsx';
-import { GroupsAdmin, GroupEditor, TemplatesPage, GroupHistory, RequestGuide } from './request/GroupsAdmin.jsx';
-import RequestReports from './request/RequestReports.jsx';
 import { useApp as useAppCtx } from './context.jsx';
-import { TwoFactorPage, SecuritySettingsPage } from './account/SecurityPages.jsx';
-import { WebhooksPage } from './request/Webhooks.jsx';
-import ModuleShell from './components/ModuleShell.jsx';
-import { HrmHome, HrmEmployees, HrmEmployee, HrmSettings } from './hrm/Hrm.jsx';
-import { CheckinHome, CheckinTeam, CheckinSettings } from './hrm/Checkin.jsx';
-import { TimeoffHome, TimeoffCalendar, TimeoffBalances } from './hrm/Timeoff.jsx';
-import DrivePage from './drive/Drive.jsx';
-import MessagePage from './message/Message.jsx';
+import MobileTabBar from './components/MobileNav.jsx';
+import GlobalSearch from './components/GlobalSearch.jsx';
+import { refreshBadge } from './push.js';
+import { lazyPage, RootBoundary } from './components/Boundary.jsx';
+import { SideTooltip } from './components/Sidebar.jsx';
+
+// Mỗi phân hệ là một tệp JS riêng, chỉ tải khi mở tới → trang chủ mở nhanh dù hệ thống có thêm nhiều phân hệ
+const OfficeLayout = lazyPage(() => import('./office/OfficeLayout.jsx'));
+const DocList = lazyPage(() => import('./office/DocList.jsx'));
+const DocForm = lazyPage(() => import('./office/DocForm.jsx'));
+const DocDetail = lazyPage(() => import('./office/DocDetail.jsx'));
+const OfficeSettings = lazyPage(() => import('./office/OfficeSettings.jsx'));
+const WeworkLayout = lazyPage(() => import('./wework/WeworkLayout.jsx'));
+const TasksHome = lazyPage(() => import('./wework/TasksHome.jsx'));
+const MyTasksPage = lazyPage(() => import('./wework/MyTasksPage.jsx'));
+const ProjectsPage = lazyPage(() => import('./wework/ProjectsPage.jsx'));
+const ProjectPage = lazyPage(() => import('./wework/ProjectPage.jsx'));
+const ReportsPage = lazyPage(() => import('./wework/ReportsPage.jsx'));
+const BulkPage = lazyPage(() => import('./wework/BulkPage.jsx'));
+const TaskPage = lazyPage(() => import('./wework/TaskPage.jsx'));
+const GuidePage = lazyPage(() => import('./wework/GuidePage.jsx'));
+const GoalsPage = lazyPage(() => import('./wework/GoalsPage.jsx'));
+const WeworkSettingsPage = lazyPage(() => import('./wework/GoalsPage.jsx'), 'WeworkSettingsPage');
+const AccountLayout = lazyPage(() => import('./account/AccountLayout.jsx'));
+const ProfileView = lazyPage(() => import('./account/ProfilePages.jsx'), 'ProfileView');
+const ProfileEdit = lazyPage(() => import('./account/ProfilePages.jsx'), 'ProfileEdit');
+const PasswordPage = lazyPage(() => import('./account/ProfilePages.jsx'), 'PasswordPage');
+const ColorPage = lazyPage(() => import('./account/ProfilePages.jsx'), 'ColorPage');
+const LoginHistory = lazyPage(() => import('./account/ProfilePages.jsx'), 'LoginHistory');
+const AccountMembers = lazyPage(() => import('./account/AdminPages.jsx'), 'MembersPage');
+const GroupsPage = lazyPage(() => import('./account/AdminPages.jsx'), 'GroupsPage');
+const AppsPage = lazyPage(() => import('./account/AdminPages.jsx'), 'AppsPage');
+const CompanyPage = lazyPage(() => import('./account/AdminPages.jsx'), 'CompanyPage');
+const AuditPage = lazyPage(() => import('./account/AdminPages.jsx'), 'AuditPage');
+const NotificationsPage = lazyPage(() => import('./account/AdminPages.jsx'), 'NotificationsPage');
+const DepartmentsPage = lazyPage(() => import('./account/AdminPages.jsx'), 'DepartmentsPage');
+const BulkPasswordPage = lazyPage(() => import('./account/AdminPages.jsx'), 'BulkPasswordPage');
+const RequestLayout = lazyPage(() => import('./request/RequestLayout.jsx'));
+const RequestList = lazyPage(() => import('./request/RequestList.jsx'));
+const RequestForm = lazyPage(() => import('./request/RequestForm.jsx'));
+const RequestDetail = lazyPage(() => import('./request/RequestDetail.jsx'));
+const GroupsAdmin = lazyPage(() => import('./request/GroupsAdmin.jsx'), 'GroupsAdmin');
+const GroupEditor = lazyPage(() => import('./request/GroupsAdmin.jsx'), 'GroupEditor');
+const TemplatesPage = lazyPage(() => import('./request/GroupsAdmin.jsx'), 'TemplatesPage');
+const GroupHistory = lazyPage(() => import('./request/GroupsAdmin.jsx'), 'GroupHistory');
+const RequestGuide = lazyPage(() => import('./request/GroupsAdmin.jsx'), 'RequestGuide');
+const RequestReports = lazyPage(() => import('./request/RequestReports.jsx'));
+const RequestPrint = lazyPage(() => import('./request/RequestPrint.jsx'));
+const TwoFactorPage = lazyPage(() => import('./account/SecurityPages.jsx'), 'TwoFactorPage');
+const SecuritySettingsPage = lazyPage(() => import('./account/SecurityPages.jsx'), 'SecuritySettingsPage');
+const WebhooksPage = lazyPage(() => import('./request/Webhooks.jsx'), 'WebhooksPage');
+const ModuleShell = lazyPage(() => import('./components/ModuleShell.jsx'));
+const HrmHome = lazyPage(() => import('./hrm/Hrm.jsx'), 'HrmHome');
+const HrmEmployees = lazyPage(() => import('./hrm/Hrm.jsx'), 'HrmEmployees');
+const HrmEmployee = lazyPage(() => import('./hrm/Hrm.jsx'), 'HrmEmployee');
+const HrmSettings = lazyPage(() => import('./hrm/Hrm.jsx'), 'HrmSettings');
+const HrmContracts = lazyPage(() => import('./hrm/HrmRecords.jsx'), 'HrmContracts');
+const HrmCareers = lazyPage(() => import('./hrm/HrmRecords.jsx'), 'HrmCareers');
+const HrmReports = lazyPage(() => import('./hrm/HrmRecords.jsx'), 'HrmReports');
+const SalesOrg = lazyPage(() => import('./hrm/SalesOrg.jsx'), 'SalesOrg');
+const MyAssets = lazyPage(() => import('./asset/AssetPages.jsx'), 'MyAssets');
+const AssetOverview = lazyPage(() => import('./asset/AssetPages.jsx'), 'AssetOverview');
+const AssetList = lazyPage(() => import('./asset/AssetPages.jsx'), 'AssetList');
+const AssetDetail = lazyPage(() => import('./asset/AssetPages.jsx'), 'AssetDetail');
+const SsoNpp = lazyPage(() => import('./pages/SsoNpp.jsx'));
+const AssetPeople = lazyPage(() => import('./asset/AssetPages.jsx'), 'AssetPeople');
+const AssetPerson = lazyPage(() => import('./asset/AssetPages.jsx'), 'AssetPerson');
+const HandoverList = lazyPage(() => import('./asset/AssetFlows.jsx'), 'HandoverList');
+const HandoverDetail = lazyPage(() => import('./asset/AssetFlows.jsx'), 'HandoverDetail');
+const ProcedureList = lazyPage(() => import('./asset/AssetFlows.jsx'), 'ProcedureList');
+const ProcedureDetail = lazyPage(() => import('./asset/AssetFlows.jsx'), 'ProcedureDetail');
+const AssetSettings = lazyPage(() => import('./asset/AssetFlows.jsx'), 'AssetSettings');
+const CheckinHome = lazyPage(() => import('./hrm/Checkin.jsx'), 'CheckinHome');
+const CheckinTeam = lazyPage(() => import('./hrm/Checkin.jsx'), 'CheckinTeam');
+const CheckinSettings = lazyPage(() => import('./hrm/Checkin.jsx'), 'CheckinSettings');
+const TimeoffHome = lazyPage(() => import('./hrm/Timeoff.jsx'), 'TimeoffHome');
+const TimeoffCalendar = lazyPage(() => import('./hrm/Timeoff.jsx'), 'TimeoffCalendar');
+const TimeoffBalances = lazyPage(() => import('./hrm/Timeoff.jsx'), 'TimeoffBalances');
+const DrivePage = lazyPage(() => import('./drive/Drive.jsx'));
+const MessagePage = lazyPage(() => import('./message/Message.jsx'));
 
 /** Guard a module route by the user's app access (Account → Ứng dụng). */
 function RequireApp({ app, children }) {
@@ -58,15 +106,45 @@ function RequireApp({ app, children }) {
 export default function App() {
   const { user, loading } = useApp();
   const location = useLocation();
+  const navigate = useNavigate();
+  // Bấm vào thông báo đẩy khi ứng dụng đang mở → chuyển tới nội dung
+  useEffect(() => {
+    if (!('serviceWorker' in navigator)) return undefined;
+    const h = (e) => {
+      if (e.data?.type !== 'open' || !e.data.url) return;
+      const u = new URL(e.data.url, window.location.origin);
+      if (u.origin === window.location.origin) navigate(u.pathname + u.search);
+    };
+    navigator.serviceWorker.addEventListener('message', h);
+    return () => navigator.serviceWorker.removeEventListener('message', h);
+  }, [navigate]);
+  // Mở công việc / đề xuất / văn bản / cuộc trò chuyện → máy chủ đánh dấu thông báo liên quan đã đọc → cập nhật số trên biểu tượng
+  useEffect(() => {
+    if (!user) return undefined;
+    const t = setTimeout(() => refreshBadge(true), 1500);
+    return () => clearTimeout(t);
+  }, [user, location.pathname]);
+  // Số trên biểu tượng ứng dụng (iPhone / taskbar Windows): cập nhật khi mở lại ứng dụng
+  useEffect(() => {
+    if (!user) return undefined;
+    refreshBadge(true);
+    const h = () => { if (!document.hidden) refreshBadge(); };
+    document.addEventListener('visibilitychange', h);
+    window.addEventListener('focus', h);
+    return () => { document.removeEventListener('visibilitychange', h); window.removeEventListener('focus', h); };
+  }, [user]);
   if (loading) return <div className="center-screen"><Spinner /></div>;
   if (!user) {
     if (location.pathname !== '/login') return <Navigate to="/login" replace state={{ from: location.pathname + location.search }} />;
     return <Login />;
   }
   return (
+    <>
+    <RootBoundary>
     <Routes>
       <Route path="/login" element={<Navigate to={location.state?.from || '/'} replace />} />
       <Route path="/" element={<Home />} />
+      <Route path="/sso/npp" element={<RequireApp app="npp"><SsoNpp /></RequireApp>} />
       <Route path="/office" element={<RequireApp app="office"><OfficeLayout /></RequireApp>}>
         <Route index element={<DocList />} />
         <Route path="new" element={<DocForm />} />
@@ -76,15 +154,17 @@ export default function App() {
       </Route>
       <Route path="/wework" element={<RequireApp app="wework"><WeworkLayout /></RequireApp>}>
         <Route index element={<TasksHome />} />
-        <Route path="my" element={<TasksHome mode="my" />} />
+        <Route path="my" element={<MyTasksPage />} />
         <Route path="task/:id" element={<TaskPage />} />
-        <Route path="projects" element={<ProjectsPage kind="project" />} />
-        <Route path="departments" element={<ProjectsPage kind="department" />} />
-        <Route path="templates" element={<ProjectsPage kind="template" />} />
+        <Route path="projects" element={<ProjectsPage key="project" kind="project" />} />
+        <Route path="departments" element={<ProjectsPage key="department" kind="department" />} />
+        <Route path="templates" element={<ProjectsPage key="template" kind="template" />} />
         <Route path="project/:id" element={<ProjectPage />} />
         <Route path="members" element={<AccountMembers />} />
         <Route path="reports" element={<ReportsPage />} />
         <Route path="bulk" element={<BulkPage />} />
+        <Route path="goals" element={<GoalsPage />} />
+        <Route path="settings" element={<WeworkSettingsPage />} />
         <Route path="guide" element={<GuidePage />} />
       </Route>
       <Route path="/account" element={<AccountLayout />}>
@@ -105,6 +185,7 @@ export default function App() {
         <Route path="2fa" element={<TwoFactorPage />} />
         <Route path="security" element={<SecuritySettingsPage />} />
       </Route>
+      <Route path="/request/:id/print" element={<RequireApp app="request"><RequestPrint /></RequireApp>} />
       <Route path="/request" element={<RequireApp app="request"><RequestLayout /></RequireApp>}>
         <Route index element={<RequestList />} />
         <Route path="new" element={<RequestForm />} />
@@ -125,7 +206,24 @@ export default function App() {
         <Route index element={<HrmHome />} />
         <Route path="employees" element={<HrmEmployees />} />
         <Route path="employees/:id" element={<HrmEmployee />} />
+        <Route path="contracts" element={<HrmContracts />} />
+        <Route path="careers" element={<HrmCareers />} />
+        <Route path="reports" element={<HrmReports />} />
+        <Route path="sales" element={<SalesOrg />} />
         <Route path="settings" element={<HrmSettings />} />
+      </Route>
+      <Route path="/asset/handovers/:id" element={<RequireApp app="asset"><HandoverDetail /></RequireApp>} />
+      <Route path="/asset" element={<RequireApp app="asset"><ModuleShell app="asset" /></RequireApp>}>
+        <Route index element={<MyAssets />} />
+        <Route path="overview" element={<AssetOverview />} />
+        <Route path="list" element={<AssetList />} />
+        <Route path="item/:id" element={<AssetDetail />} />
+        <Route path="people" element={<AssetPeople />} />
+        <Route path="people/:id" element={<AssetPerson />} />
+        <Route path="handovers" element={<HandoverList />} />
+        <Route path="procedures" element={<ProcedureList />} />
+        <Route path="procedures/:id" element={<ProcedureDetail />} />
+        <Route path="settings" element={<AssetSettings />} />
       </Route>
       <Route path="/checkin" element={<RequireApp app="checkin"><ModuleShell app="checkin" /></RequireApp>}>
         <Route index element={<CheckinHome />} />
@@ -146,5 +244,10 @@ export default function App() {
       <Route path="/message/:channelId" element={<RequireApp app="message"><MessagePage /></RequireApp>} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
+    </RootBoundary>
+    <MobileTabBar />
+    <GlobalSearch />
+    <SideTooltip />
+    </>
   );
 }

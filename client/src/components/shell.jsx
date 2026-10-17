@@ -1,13 +1,16 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
-import { Bell, Grid3x3, FileText, CheckSquare, Settings, LogOut, User, KeyRound, CheckCheck, GitPullRequestArrow, Sun, Moon, Monitor } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { Bell, Grid3x3, Search, FileText, CheckSquare, Settings, LogOut, User, KeyRound, CheckCheck, GitPullRequestArrow, Sun, Moon, Monitor, BellRing, Download } from 'lucide-react';
 import { api } from '../api.js';
 import { useApp } from '../context.jsx';
 import { Avatar, Dropdown, MenuItem } from './ui.jsx';
 import { timeAgo, cx } from '../utils.js';
 import { ProfileModal } from '../admin/Profile.jsx';
-import { ECOSYSTEM, canOpen, AppIcon } from '../apps.jsx';
+import { AppLauncher } from './AppLauncher.jsx';
+import { openGlobalSearch } from './GlobalSearch.jsx';
 import { getThemePref, setThemePref, onThemeChange, resolvedTheme } from '../theme.js';
+import { setBadge, promptInstall } from '../push.js';
+import { useInstallable } from './PushCard.jsx';
 
 const THEMES = [
   { key: 'light', label: 'Sáng', icon: Sun },
@@ -53,30 +56,27 @@ export function ThemeToggle({ dark }) {
   );
 }
 
+/** Nút kính lúp (Tìm kiếm toàn hệ thống) + nút lưới "Tất cả ứng dụng" trên thanh công cụ của mọi module. */
 export function AppSwitcher({ dark }) {
-  const { apps } = useApp();
-  const list = ECOSYSTEM.filter((a) => canOpen(a, apps));
   return (
-    <Dropdown
-      align="right"
-      width={340}
-      trigger={(open, toggle) => (
-        <button className={cx('icon-btn', dark && 'on-dark')} onClick={toggle} title="Tất cả ứng dụng" aria-label="Tất cả ứng dụng">
-          <Grid3x3 size={18} />
-        </button>
-      )}
-    >
-      <div className="app-grid">
-        {list.map((a) => (
-          <Link key={a.key} to={a.path} className="app-tile" data-close>
-            <AppIcon app={a} size={40} />
-            <b>{a.name}</b>
-            <small>{a.desc}</small>
-          </Link>
-        ))}
-      </div>
-      <Link to="/" className="menu-item center-link" data-close>Xem toàn bộ hệ sinh thái →</Link>
-    </Dropdown>
+    <>
+      <button type="button" className={cx('icon-btn', dark && 'on-dark')} onClick={openGlobalSearch}
+        title="Tìm kiếm toàn hệ thống (Ctrl + K)" aria-label="Tìm kiếm toàn hệ thống">
+        <Search size={18} />
+      </button>
+      <AppGrid dark={dark} />
+    </>
+  );
+}
+
+function AppGrid({ dark }) {
+  return (
+    <AppLauncher trigger={(open, toggle, ref) => (
+      <button ref={ref} className={cx('icon-btn', dark && 'on-dark', open && 'active')} onClick={toggle}
+        title="Tất cả ứng dụng" aria-label="Tất cả ứng dụng" aria-expanded={open} aria-haspopup="dialog">
+        <Grid3x3 size={18} />
+      </button>
+    )} />
   );
 }
 
@@ -88,7 +88,9 @@ export function NotificationBell({ app, dark }) {
   const navigate = useNavigate();
   const load = useCallback(async () => {
     try {
-      setData(await api.get('/notifications', { limit: 40 }));
+      const d = await api.get('/notifications', { limit: 40 });
+      setData(d);
+      setBadge(d.unread);
     } catch { /* ignore */ }
   }, []);
   useEffect(() => {
@@ -147,6 +149,7 @@ export function NotificationBell({ app, dark }) {
 export function UserMenu({ dark, showName = true }) {
   const { user, logout } = useApp();
   const [profile, setProfile] = useState(null);
+  const installable = useInstallable();
   const navigate = useNavigate();
   return (
     <>
@@ -170,6 +173,8 @@ export function UserMenu({ dark, showName = true }) {
         <div className="menu-section"><small className="muted">Giao diện</small><ThemeSwitch /></div>
         <MenuItem icon={User} onClick={() => navigate('/account')}>Tài khoản</MenuItem>
         <MenuItem icon={KeyRound} onClick={() => setProfile('password')}>Đổi mật khẩu</MenuItem>
+        <MenuItem icon={BellRing} onClick={() => navigate('/account/notifications')}>Thông báo đẩy & ứng dụng</MenuItem>
+        {installable && <MenuItem icon={Download} onClick={() => promptInstall()}>Cài ứng dụng LDL</MenuItem>}
         {user.role === 'admin' && <MenuItem icon={Settings} onClick={() => navigate('/account/members')}>Quản trị hệ thống</MenuItem>}
         <MenuItem icon={LogOut} danger onClick={logout}>Đăng xuất</MenuItem>
       </Dropdown>

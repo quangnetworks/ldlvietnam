@@ -2,7 +2,7 @@ import {
   LayoutGrid, Globe, MessageCircle, FolderOpen, UserCircle2, CheckSquare, UserPlus, GitPullRequestArrow, Users2, FileText,
   CalendarCheck, Target, Workflow, Link2, LifeBuoy, Contact, Wallet, Fingerprint, Plane, Clock, Star, ShieldAlert, Package,
   BookOpen, Video, PenLine, Receipt, TrendingUp, Landmark, CalendarDays, Bot, Database, Award, GraduationCap, HeartHandshake,
-  ClipboardCheck,
+  ClipboardCheck, Network,
 } from 'lucide-react';
 
 export const CATEGORIES = [
@@ -46,7 +46,9 @@ export const ECOSYSTEM = [
   { key: 'onboard', name: 'LDL Onboard', desc: 'Hội nhập', cat: 'hrm', icon: HeartHandshake, color: '#0ca678' },
   { key: 'reward', name: 'LDL Reward', desc: 'Tặng thưởng', cat: 'hrm', icon: Award, color: '#fab005' },
   { key: 'case', name: 'LDL Case', desc: 'Vi phạm và sự vụ', cat: 'hrm', icon: ShieldAlert, color: '#c92a2a' },
-  { key: 'asset', name: 'LDL Asset', desc: 'Quản lý tài sản', cat: 'hrm', icon: Package, color: '#795548' },
+  // Hệ thống riêng (npp.vanquang.xyz), đăng nhập bằng tài khoản Workspace qua /sso/npp; optIn = không tick sẵn khi tạo tài khoản.
+  { key: 'npp', name: 'Distribution Control Tower', desc: 'Hệ thống phân phối & CRM', cat: 'work', icon: Network, color: '#d6336c', path: '/sso/npp', module: 'npp', optIn: true },
+  { key: 'asset', name: 'LDL Asset', desc: 'Quản lý tài sản', cat: 'hrm', icon: Package, color: '#795548', path: '/asset', module: 'asset' },
   { key: 'inside', name: 'LDL Inside', desc: 'Mạng xã hội doanh nghiệp', cat: 'info', icon: Star, color: '#7950f2' },
   { key: 'booking', name: 'LDL Booking', desc: 'Đặt tài nguyên', cat: 'info', icon: CalendarCheck, color: '#1971c2' },
   { key: 'wiki', name: 'LDL Wiki', desc: 'Tri thức', cat: 'info', icon: BookOpen, color: '#2f9e44' },
