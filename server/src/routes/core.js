@@ -7,7 +7,7 @@ import {
 import { badRequest, forbidden, notFound, toInt, idList, jsonBody } from '../util.js';
 import { searchClause } from '../search.js';
 import { userApps, grantApps, audit, recordLogin, MODULES } from '../platform.js';
-import { verifyTotp, ipAllowed } from '../security.js';
+import { verifyTotp, ipAllowed, clientIp } from '../security.js';
 import { isExpired } from '../auth.js';
 import { servePublicFile } from '../files.js';
 import { vacateUser } from './territory.js';
@@ -18,12 +18,31 @@ const r = new Hono();
 r.get('/public/files/:token/:name?', servePublicFile);
 
 // ---------- Auth ----------
+/**
+ * Chặn dò mật khẩu / mã xác thực: quá 5 lần sai cho một tài khoản, hoặc 30 lần sai từ một địa chỉ IP,
+ * trong 15 phút → tạm từ chối đăng nhập cho tới khi các lần sai cũ ra khỏi khung 15 phút.
+ */
+export const LOGIN_WINDOW_MIN = 15;
+export const LOGIN_MAX_USER_FAILS = 5;
+export const LOGIN_MAX_IP_FAILS = 30;
+async function loginBlocked(c, names) {
+  const since = `-${LOGIN_WINDOW_MIN} minutes`;
+  const r = await get(
+    `SELECT (SELECT COUNT(*) FROM login_logs WHERE success = 0 AND username IN (?, ?) AND created_at > datetime('now', ?)) AS by_user,
+            (SELECT COUNT(*) FROM login_logs WHERE success = 0 AND ip = ? AND created_at > datetime('now', ?)) AS by_ip`,
+    String(names[0]).slice(0, 100), String(names[1] ?? names[0]).slice(0, 100), since, clientIp(c), since);
+  return r.by_user >= LOGIN_MAX_USER_FAILS || r.by_ip >= LOGIN_MAX_IP_FAILS;
+}
+
 r.post('/auth/login', async (c) => {
   const { username, password, otp } = await jsonBody(c);
   if (!username || !password) throw badRequest('Vui lòng nhập tên đăng nhập và mật khẩu');
   const u = await get('SELECT * FROM users WHERE lower(username) = lower(?) OR lower(email) = lower(?)', username, username);
+  if (await loginBlocked(c, [username, u?.username])) {
+    return c.json({ error: `Đăng nhập sai quá nhiều lần. Vui lòng thử lại sau ${LOGIN_WINDOW_MIN} phút hoặc liên hệ quản trị viên.` }, 429);
+  }
   if (!u || !u.active || !(await verifyPassword(password, u.password_hash))) {
-    await recordLogin(c, u && u.active ? u : null, String(username).slice(0, 100), false);
+    await recordLogin(c, u && u.active ? u : null, u?.username || String(username).slice(0, 100), false);
     return c.json({ error: 'Tên đăng nhập hoặc mật khẩu không đúng' }, 401);
   }
   if (isExpired(u)) return c.json({ error: 'Tài khoản khách đã hết hạn truy cập. Liên hệ quản trị viên.' }, 401);

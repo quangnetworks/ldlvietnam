@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
 import { requireAuth } from './auth.js';
 import { HttpError } from './util.js';
+import { get } from './db.js';
 import coreRoutes from './routes/core.js';
 import officeRoutes from './routes/office.js';
 import weworkRoutes from './routes/wework.js';
@@ -23,13 +24,25 @@ const PUBLIC_API = new Set(['/api/health', '/api/auth/login', '/api/auth/logout'
 export function createApp() {
   const app = new Hono();
 
+  // Header bảo mật (trang giao diện trên Cloudflare dùng client/public/_headers)
+  app.use('*', async (c, next) => {
+    await next();
+    c.header('X-Content-Type-Options', 'nosniff');
+    c.header('X-Frame-Options', 'SAMEORIGIN');
+    c.header('Referrer-Policy', 'strict-origin-when-cross-origin');
+  });
   app.use('/api/*', backgroundContext);
   app.use('/api/*', async (c, next) => {
     // /api/public/*: signed, short-lived file links (the token itself is the credential)
     if (PUBLIC_API.has(c.req.path) || c.req.path.startsWith('/api/public/')) return next();
     return requireAuth(c, () => requireModule(c, next));
   });
-  app.get('/api/health', (c) => c.json({ ok: true }));
+  // Kiểm tra sống: máy chủ + cơ sở dữ liệu (dùng cho giám sát / sau khi deploy)
+  app.get('/api/health', async (c) => {
+    let db = false;
+    try { db = (await get('SELECT 1 AS ok'))?.ok === 1; } catch { /* báo lỗi qua db=false */ }
+    return c.json({ ok: db, db, time: new Date().toISOString() }, db ? 200 : 503);
+  });
   app.route('/api', coreRoutes);
   app.route('/api', officeRoutes);
   app.route('/api', weworkRoutes);
