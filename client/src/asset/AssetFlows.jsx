@@ -13,6 +13,7 @@ import { HrHero, Kpi, HrCard, Pill } from '../hrm/hrUi.jsx';
 import { fmtDate, fmtDateTime, cx } from '../utils.js';
 import { HandoverTable } from './AssetPages.jsx';
 import { AssetStatus, HandoverStatus, KindPill, CONDITION_LABEL, REASON_LABEL, money, useAssetMeta, HandoverModal } from './assetShared.jsx';
+import { SupplyHoldingCard } from './Supplies.jsx';
 
 // ================================================================ biên bản
 export function HandoverList() {
@@ -299,11 +300,11 @@ export function ProcedureDetail() {
           <ul className="as-steps">
             {p.steps.map((s, i) => (
               <li key={s.key} className={cx(s.done && 'done', s.key === 'assets' && 'asset-step')}>
-                <button type="button" className="as-step-check" disabled={!open || !meta?.is_manager || (s.auto && !s.done && !on && p.assets.length > 0)} onClick={() => toggle(s)}
+                <button type="button" className="as-step-check" disabled={!open || !meta?.is_manager || (s.auto && !s.done && !on && (p.assets.length > 0 || p.supplies?.length > 0))} onClick={() => toggle(s)}
                   aria-label={s.done ? 'Bỏ đánh dấu' : 'Đánh dấu hoàn thành'}>{s.done ? <CheckCircle2 size={20} /> : <span className="as-step-no">{i + 1}</span>}</button>
                 <div className="grow">
                   <b>{s.label}</b>
-                  {s.key === 'assets' && <small className="muted block">{on ? 'Tự hoàn thành khi nhân viên xác nhận biên bản bàn giao.' : p.assets.length ? `Còn ${p.assets.length} tài sản chưa thu hồi.` : 'Đã thu hồi hết tài sản.'}</small>}
+                  {s.key === 'assets' && <small className="muted block">{on ? 'Tự hoàn thành khi nhân viên xác nhận biên bản bàn giao.' : p.assets.length || p.supplies?.length ? `Còn ${[p.assets.length && `${p.assets.length} tài sản`, p.supplies?.length && `${p.supplies.reduce((n, x) => n + x.qty, 0)} đồng phục / CCDC`].filter(Boolean).join(' và ')} chưa thu hồi.` : 'Đã thu hồi hết tài sản.'}</small>}
                   {s.done && s.done_by && <small className="muted block">{s.done_by} · {fmtDateTime(s.done_at)}</small>}
                 </div>
                 {s.key === 'assets' && open && meta?.is_manager && (
@@ -325,6 +326,7 @@ export function ProcedureDetail() {
           {p.note && <p className="small muted pre">Ghi chú: {p.note}</p>}
         </HrCard>
         <div className="hr-span-5">
+          {!on && <SupplyHoldingCard supplies={p.supplies} offboard />}
           <HrCard icon={Package} tone="blue" title="Tài sản đang giữ" count={p.assets.length}>
             {p.assets.length ? (
               <div className="hr-people">{p.assets.map((a) => (

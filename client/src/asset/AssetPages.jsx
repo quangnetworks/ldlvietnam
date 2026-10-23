@@ -17,6 +17,7 @@ import {
   AssetStatus, HandoverStatus, KindPill, STATUS_LABEL, STATUS_TONE, CONDITION_LABEL, REASON_LABEL, money, moneyShort,
   useAssetMeta, AssetFormModal, HandoverModal,
 } from './assetShared.jsx';
+import { SupplyHoldingCard } from './Supplies.jsx';
 
 // ================================================================ tài sản của tôi
 function AssetCard({ a, i }) {
@@ -74,6 +75,7 @@ export function PersonAssets({ userId, embedded, onChanged }) {
         {d.assets.length ? <div className="as-cards">{d.assets.map((a, i) => <AssetCard key={a.id} a={a} i={i} />)}</div>
           : <div className="hr-empty"><PackageCheck size={16} /> {self ? 'Bạn không giữ tài sản nào của công ty.' : 'Không giữ tài sản nào.'}</div>}
       </HrCard>
+      <SupplyHoldingCard supplies={d.supplies} i={1} />
       {d.procedures.length > 0 && (
         <HrCard icon={UserCheck} tone="aqua" title="Thủ tục nhận việc / nghỉ việc" count={d.procedures.length} i={1}>
           <div className="hr-people">

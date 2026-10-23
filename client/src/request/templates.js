@@ -127,6 +127,15 @@ export const TEMPLATES = [
     fields: [req('Ngày nghỉ dự kiến', 'date'), req('Lý do', 'textarea'), f('Người nhận bàn giao', 'user'), f('Công nợ khách hàng đang phụ trách', 'textarea')] },
   { name: 'Đề xuất đào tạo', category: 'Hành chính - Nhân sự', flow: 'sequential', sla_hours: 48, fields: [
     req('Khoá học / nội dung'), req('Người tham gia', 'textarea'), req('Thời gian', 'date'), f('Chi phí', 'money'), f('Mục tiêu áp dụng', 'textarea')] },
+  { name: 'Đề xuất cấp phát đồng phục / xe kéo', category: 'Hành chính - Nhân sự', flow: 'sequential', sla_hours: 24,
+    description: 'Cấp cho PG / PS / PB mới tại NPP. Nhân viên nghỉ việc phải bàn giao lại áo cho cấp quản lý hoặc gửi trả về công ty; không bàn giao sẽ bị trừ 500.000đ/áo. Người đề xuất chịu trách nhiệm về thất thoát và phổ biến quy định này cho người nhận.',
+    fields: [
+      req('Nhà phân phối'), req('Khu vực / tỉnh'),
+      req('Danh sách người nhận (tên – vị trí – giới tính – ngày vào làm)', 'textarea'),
+      f('Số lượng áo', 'number'), f('Số lượng nón', 'number'), f('Số lượng xe kéo', 'number'),
+      req('Địa chỉ & số điện thoại người nhận hàng', 'textarea'),
+      req('Đã phổ biến quy định hoàn trả đồng phục cho người nhận', 'checkbox'),
+    ] },
   { name: 'Đề xuất cấp văn phòng phẩm / đồng phục', category: 'Hành chính - Nhân sự', flow: 'any', sla_hours: 24, fields: [
     req('Danh sách & số lượng', 'textarea'), f('Bộ phận sử dụng'), f('Ngày cần', 'date')] },
 

@@ -13,6 +13,7 @@ import { searchClause } from '../search.js';
 import { audit } from '../platform.js';
 import { isSubordinate } from '../auth.js';
 import { vacateUser } from './territory.js';
+import { supplyHoldingsOfUser } from './supplies.js';
 
 const r = new Hono();
 const APP = 'asset';
@@ -495,6 +496,7 @@ r.get('/asset/people/:uid', async (c) => {
     assets: (await all(`${ASSET_SELECT} WHERE a.holder_id = ? ORDER BY a.assigned_at DESC`, uid)).map(view),
     handovers: await all(`${HANDOVER_SELECT} WHERE h.employee_id = ? ORDER BY h.id DESC`, uid),
     procedures: await all('SELECT * FROM hr_procedures WHERE user_id = ? ORDER BY id DESC', uid),
+    supplies: await supplyHoldingsOfUser(uid),
   });
 });
 
@@ -514,14 +516,16 @@ async function fullProcedure(id) {
   p.steps = JSON.parse(p.steps || '[]');
   p.assets = (await all(`${ASSET_SELECT} WHERE a.holder_id = ? ORDER BY a.code`, p.user_id)).map(view);
   p.handovers = await all(`${HANDOVER_SELECT} WHERE h.procedure_id = ? ORDER BY h.id DESC`, p.id);
+  // đồng phục, xe kéo… cấp theo số lượng: nghỉ việc phải trả hết (hoặc ghi nhận hỏng / mất, bồi thường)
+  p.supplies = (await supplyHoldingsOfUser(p.user_id)).filter((x) => x.returnable);
   // bước tài sản tự tính: nghỉ việc = đã thu hồi hết; nhận việc = đã có biên bản bàn giao được xác nhận
   const assetStep = p.steps.find((s) => s.key === 'assets');
   if (assetStep && !assetStep.manual) {
     assetStep.auto = true;
-    assetStep.done = p.kind === 'offboard' ? p.assets.length === 0 : p.handovers.some((h) => h.kind === 'issue' && h.status === 'confirmed');
+    assetStep.done = p.kind === 'offboard' ? p.assets.length === 0 && p.supplies.length === 0 : p.handovers.some((h) => h.kind === 'issue' && h.status === 'confirmed');
   }
   p.progress = p.steps.length ? Math.round((p.steps.filter((s) => s.done).length / p.steps.length) * 100) : 100;
-  p.can_complete = p.status === 'open' && p.steps.every((s) => s.done) && (p.kind !== 'offboard' || p.assets.length === 0);
+  p.can_complete = p.status === 'open' && p.steps.every((s) => s.done) && (p.kind !== 'offboard' || (p.assets.length === 0 && p.supplies.length === 0));
   return p;
 }
 

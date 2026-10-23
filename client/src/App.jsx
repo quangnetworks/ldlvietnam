@@ -76,6 +76,8 @@ const HandoverList = lazyPage(() => import('./asset/AssetFlows.jsx'), 'HandoverL
 const HandoverDetail = lazyPage(() => import('./asset/AssetFlows.jsx'), 'HandoverDetail');
 const ProcedureList = lazyPage(() => import('./asset/AssetFlows.jsx'), 'ProcedureList');
 const ProcedureDetail = lazyPage(() => import('./asset/AssetFlows.jsx'), 'ProcedureDetail');
+const SupplyOverview = lazyPage(() => import('./asset/Supplies.jsx'), 'SupplyOverview');
+const SupplyHolder = lazyPage(() => import('./asset/Supplies.jsx'), 'SupplyHolder');
 const AssetSettings = lazyPage(() => import('./asset/AssetFlows.jsx'), 'AssetSettings');
 const CheckinHome = lazyPage(() => import('./hrm/Checkin.jsx'), 'CheckinHome');
 const CheckinTeam = lazyPage(() => import('./hrm/Checkin.jsx'), 'CheckinTeam');
@@ -223,6 +225,8 @@ export default function App() {
         <Route path="handovers" element={<HandoverList />} />
         <Route path="procedures" element={<ProcedureList />} />
         <Route path="procedures/:id" element={<ProcedureDetail />} />
+        <Route path="supplies" element={<SupplyOverview />} />
+        <Route path="supplies/holder/:id" element={<SupplyHolder />} />
         <Route path="settings" element={<AssetSettings />} />
       </Route>
       <Route path="/checkin" element={<RequireApp app="checkin"><ModuleShell app="checkin" /></RequireApp>}>

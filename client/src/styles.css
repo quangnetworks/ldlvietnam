@@ -2653,3 +2653,26 @@ button.stat-tile.active { border-color: var(--blue); box-shadow: 0 0 0 3px var(-
 .rq-choose b { display: flex; align-items: center; gap: 8px; }
 .rq-choose.used { background: var(--bg-2); }
 .rq-used-tag { font-size: 11px; font-weight: 500; color: #2b8a3e; background: color-mix(in srgb, #40c057 14%, transparent); border-radius: 10px; padding: 1px 8px; }
+
+/* ================= LDL Asset — đồng phục & CCDC cấp phát theo số lượng ================= */
+.sp-lines { display: grid; gap: 6px; margin: 12px 0; }
+.sp-line { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 10px; }
+.sp-qty { width: 84px; text-align: right; }
+.sp-charge { width: 140px; }
+.sp-unit { width: 40px; font-size: 12px; }
+.sp-unit-in { width: 80px; }
+.sp-table td.num, .sp-table th.num { text-align: right; }
+.sp-table td.num b { font-size: 15px; }
+.sp-note { white-space: normal !important; max-width: 280px; font-size: 12.5px; color: var(--text-2); }
+.sp-owes td:first-child { box-shadow: inset 3px 0 0 var(--red); }
+.sp-holdings { display: flex; flex-wrap: wrap; gap: 10px; }
+.sp-holding { display: grid; min-width: 120px; padding: 12px 14px; border-radius: 12px; background: var(--bg-2); border: 1px solid var(--line); }
+.sp-holding b { font-size: 24px; line-height: 1.1; }
+.sp-holding span { font-size: 13px; color: var(--text-2); }
+.sp-holder-note { margin: 12px 0 0; white-space: pre-wrap; }
+.sp-avatar { display: grid; place-items: center; width: 84px; height: 84px; border-radius: 50%; color: #fff; }
+.sp-avatar.tone-blue { background: var(--blue); }
+.sp-avatar.tone-aqua { background: #0c8599; }
+.sp-voided td { opacity: 0.45; text-decoration: line-through; }
+.hr-seg.sm { margin-bottom: 12px; }
+@media (max-width: 700px) { .sp-line { flex-wrap: wrap; } .sp-charge { width: 100%; } }
