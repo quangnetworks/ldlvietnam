@@ -35,10 +35,10 @@ export function HolderTag({ h }) {
 const TITLES = {
   issue: 'Cấp phát từ kho', return: 'Thu hồi về kho', transfer: 'Chuyển giao giữa người giữ', writeoff: 'Ghi nhận hỏng / mất', receive: 'Nhập kho', opening: 'Số dư đầu kỳ',
 };
-export function MoveModal({ kind: kind0, data, holderId, onClose, onSaved }) {
+export function MoveModal({ kind: kind0, data, holderId, note: note0 = '', requestId, onClose, onSaved }) {
   const toast = useToast();
   const [kind, setKind] = useState(kind0);
-  const [f, setF] = useState({ date: today(), from: ['return', 'transfer', 'writeoff'].includes(kind0) ? holderId || '' : '', to: ['issue', 'opening'].includes(kind0) ? holderId || '' : '', reason: 'damaged', note: '' });
+  const [f, setF] = useState({ date: today(), from: ['return', 'transfer', 'writeoff'].includes(kind0) ? holderId || '' : '', to: ['issue', 'opening'].includes(kind0) ? holderId || '' : '', reason: 'damaged', note: note0 });
   const [qty, setQty] = useState({});
   const [charge, setCharge] = useState({});
   const [err, setErr] = useState('');
@@ -52,7 +52,7 @@ export function MoveModal({ kind: kind0, data, holderId, onClose, onSaved }) {
     setErr('');
     try {
       const lines = items.map((i) => ({ item_id: i.id, qty: Number(qty[i.id]) || 0, charge: charge[i.id] })).filter((l) => l.qty > 0);
-      await api.post('/asset/supply-moves', { kind, date: f.date, from_holder_id: f.from || null, to_holder_id: f.to || null, reason: f.reason, note: f.note, lines });
+      await api.post('/asset/supply-moves', { kind, date: f.date, from_holder_id: f.from || null, to_holder_id: f.to || null, reason: f.reason, note: f.note, request_id: requestId, lines });
       toast(`Đã ghi sổ: ${TITLES[kind].toLowerCase()}`);
       onSaved();
     } catch (e) { setErr(e.message); }

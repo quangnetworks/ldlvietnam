@@ -45,13 +45,13 @@ const moneyInput = (value, onChange) => (
 );
 
 /** Tạo / sửa tài sản. Tạo mới: số lượng (tạo nhiều đơn vị, mã tự sinh theo loại) và giao ngay cho một người (tuỳ chọn). */
-export function AssetFormModal({ asset, onClose, onSaved }) {
+export function AssetFormModal({ asset, defaults, onClose, onSaved }) {
   const { users } = useApp();
   const toast = useToast();
   const [meta] = useAssetMeta();
   const [f, setF] = useState(() => ({
     name: '', code: '', type: '', kind: 'asset', serial: '', location: '', supplier: '', purchase_date: '', price: '', depreciation_months: '',
-    warranty_until: '', condition: 'new', note: '', quantity: 1, holder_id: null, ...(asset || {}),
+    warranty_until: '', condition: 'new', note: '', quantity: 1, holder_id: null, ...(defaults || {}), ...(asset || {}),
   }));
   const [busy, setBusy] = useState(false);
   const types = meta?.settings.types || [];

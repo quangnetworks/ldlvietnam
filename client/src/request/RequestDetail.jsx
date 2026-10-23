@@ -11,6 +11,7 @@ import { StatusSteps } from './RequestForm.jsx';
 import GroupGuide from './GroupGuide.jsx';
 import FileViewer, { InlinePreview } from '../components/FileViewer.jsx';
 import CommentBox, { CommentList } from '../components/CommentBox.jsx';
+import { RequestAssetCard } from '../asset/Finance.jsx';
 
 const DECIDE = {
   approve: { title: 'Chấp thuận đề xuất', btn: 'Chấp thuận', cls: 'btn-success', need: false },
@@ -153,6 +154,7 @@ export default function RequestDetail() {
             {q.completed_at && <p className="small muted">Hoàn tất: {fmtDateTime(q.completed_at)}</p>}
           </div>
           {q.automation && <AutomationCard q={q} act={act} toast={toast} />}
+          <RequestAssetCard q={q} />
           <GroupGuide groupId={q.group_id} guide={q.group_guide} files={q.group_files} title="Biểu mẫu & quy trình" />
           <div className="card">
             <h3 className="card-title">Người theo dõi</h3>

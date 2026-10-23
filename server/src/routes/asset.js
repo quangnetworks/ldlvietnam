@@ -129,6 +129,7 @@ function parseAsset(b, st, partial = false) {
     out.price = Number.isFinite(v) ? v : null;
   }
   if (b.depreciation_months !== undefined) out.depreciation_months = toInt(b.depreciation_months) || null;
+  if (b.request_id !== undefined) out.request_id = toInt(b.request_id) || null;
   else if (!partial) out.depreciation_months = st.types.find((t) => t.name === out.type)?.depreciation_months || null;
   if (b.condition !== undefined) out.condition = CONDITIONS[b.condition] ? b.condition : 'good';
   return out;
@@ -233,7 +234,7 @@ r.post('/assets', async (c) => {
     const keys = Object.keys(data);
     const { lastId } = await run(`INSERT INTO assets(code, ${keys.join(', ')}, created_by) VALUES (?, ${keys.map(() => '?').join(', ')}, ?)`,
       code, ...keys.map((k) => data[k]), c.get('user').id);
-    await logTx(lastId, 'create', c.get('user').id, { detail: 'Tạo tài sản' });
+    await logTx(lastId, 'create', c.get('user').id, { detail: data.request_id ? `Tạo tài sản từ đề xuất #${data.request_id}` : 'Tạo tài sản' });
     ids.push(lastId);
   }
   // giao ngay cho một người (tuỳ chọn) → tạo biên bản bàn giao
@@ -453,6 +454,93 @@ r.get('/asset/checks/:cid/photo', async (c) => {
   if (!k?.photo) throw notFound('Không có ảnh');
   if (!(await canCheck(c.get('user'), { holder_id: k.holder_id }))) throw forbidden();
   return sendFile(c, { filename: k.photo, original_name: `kiem-tra-tai-san-${k.id}.jpg`, mime: 'image/jpeg' }, true);
+});
+
+// ================================================================ khấu hao, thanh lý, liên kết đề xuất
+export const DISPOSAL_METHODS = { sell: 'Bán thanh lý', destroy: 'Huỷ bỏ', donate: 'Tặng / cho', return_supplier: 'Trả nhà cung cấp' };
+/** Số tháng đã khấu hao tính đến ngày `on` (cùng cách tính với bookValue: bắt đầu từ tháng sau tháng mua). */
+function monthsUsed(a, on) {
+  const [y1, m1] = a.purchase_date.split('-').map(Number);
+  const [y2, m2] = on.split('-').map(Number);
+  return Math.min(a.depreciation_months, Math.max(0, (y2 - y1) * 12 + (m2 - m1)));
+}
+const monthEnd = (ym) => { const [y, m] = ym.split('-').map(Number); return new Date(Date.UTC(y, m, 0)).toISOString().slice(0, 10); };
+const prevMonth = (ym) => { const [y, m] = ym.split('-').map(Number); return m === 1 ? `${y - 1}-12` : `${y}-${String(m - 1).padStart(2, '0')}`; };
+
+/** Bảng khấu hao theo tháng (đường thẳng) cho kế toán. */
+r.get('/asset/depreciation', async (c) => {
+  await requireManager(c);
+  const ym = /^\d{4}-\d{2}$/.test(c.req.query('month') || '') ? c.req.query('month') : today().slice(0, 7);
+  const end = monthEnd(ym);
+  const prevEnd = monthEnd(prevMonth(ym));
+  const assets = await all(`SELECT a.id, a.code, a.name, a.type, a.kind, a.price, a.purchase_date, a.depreciation_months, a.status, a.placement, a.partner,
+      a.location, d.date AS disposed_on FROM assets a LEFT JOIN asset_disposals d ON d.asset_id = a.id
+    WHERE a.price > 0 AND (d.date IS NULL OR d.date >= ?)`, `${ym}-01`);
+  const rows = [];
+  let missing = 0;
+  for (const a of assets) {
+    if (!a.purchase_date) { missing++; continue; }
+    if (!a.depreciation_months || a.purchase_date > end) continue;
+    const used = monthsUsed(a, end);
+    const accumulated = Math.round((a.price * used) / a.depreciation_months);
+    const before = Math.round((a.price * monthsUsed(a, prevEnd)) / a.depreciation_months);
+    rows.push({ ...a, months_used: used, monthly: Math.round(a.price / a.depreciation_months), in_month: accumulated - before, accumulated,
+      book_value: a.price - accumulated, fully: used >= a.depreciation_months });
+  }
+  const byType = {};
+  for (const x of rows) {
+    const t = (byType[x.type || 'Chưa phân loại'] ||= { type: x.type || 'Chưa phân loại', count: 0, cost: 0, in_month: 0, accumulated: 0, book_value: 0 });
+    t.count++; t.cost += x.price; t.in_month += x.in_month; t.accumulated += x.accumulated; t.book_value += x.book_value;
+  }
+  const sum = (k) => rows.reduce((s, x) => s + x[k], 0);
+  return c.json({ month: ym, rows, by_type: Object.values(byType),
+    totals: { count: rows.length, cost: sum('price'), in_month: sum('in_month'), accumulated: sum('accumulated'), book_value: sum('book_value') },
+    missing_purchase_date: missing });
+});
+
+/** Thanh lý: chỉ khi tài sản đã về công ty (không còn người giữ, không đặt tại NPP). */
+r.post('/assets/:id/dispose', async (c) => {
+  await requireManager(c);
+  const a = await assetOr404(c.req.param('id'));
+  const b = await jsonBody(c);
+  if (a.status === 'disposed') throw badRequest('Tài sản đã thanh lý');
+  if (a.holder_id) throw badRequest('Tài sản đang có người giữ — lập biên bản thu hồi trước');
+  if (a.placement === 'market') throw badRequest('Tài sản đang đặt tại NPP / điểm bán — thu hồi về công ty trước');
+  const method = DISPOSAL_METHODS[b.method] ? b.method : null;
+  if (!method) throw badRequest('Chọn hình thức thanh lý');
+  const date = isDate(b.date) ? b.date : today();
+  const proceeds = b.proceeds === '' || b.proceeds == null ? null : Number(String(b.proceeds).replace(/[^\d]/g, '')) || 0;
+  const bv = bookValue(a, date);
+  const rid = toInt(b.request_id) || null;
+  await batch([
+    ['INSERT INTO asset_disposals(asset_id, date, method, proceeds, cost, book_value, request_id, note, created_by) VALUES (?,?,?,?,?,?,?,?,?)',
+      [a.id, date, method, proceeds, a.price ?? null, bv ?? null, rid, b.note ? String(b.note).slice(0, 2000) : null, c.get('user').id]],
+    ["UPDATE assets SET status = 'disposed', updated_at = datetime('now') WHERE id = ?", [a.id]],
+  ]);
+  const money = proceeds != null ? ` — thu ${proceeds.toLocaleString('vi-VN')} đ` : '';
+  await logTx(a.id, 'dispose', c.get('user').id, { detail: `${DISPOSAL_METHODS[method]} ngày ${date.split('-').reverse().join('/')}${money}${rid ? ` (đề xuất #${rid})` : ''}` });
+  await audit(c.get('user').id, 'asset.dispose', `Thanh lý ${a.code} — ${a.name}`);
+  return c.json(view(await assetOr404(a.id)));
+});
+
+r.get('/asset/disposals', async (c) => {
+  await requireManager(c);
+  const y = /^\d{4}$/.test(c.req.query('year') || '') ? c.req.query('year') : today().slice(0, 4);
+  const rows = await all(`SELECT d.*, a.code, a.name, a.type, u.name AS created_by_name FROM asset_disposals d JOIN assets a ON a.id = d.asset_id
+    LEFT JOIN users u ON u.id = d.created_by WHERE d.date LIKE ? ORDER BY d.date DESC, d.id DESC`, `${y}-%`);
+  return c.json({ year: y, rows, methods: DISPOSAL_METHODS });
+});
+
+/** Những gì đã ghi vào LDL Asset từ một đề xuất (tài sản tạo mới, phiếu cấp phát CCDC, thanh lý). */
+r.get('/asset/by-request/:rid', async (c) => {
+  await requireManager(c);
+  const rid = toInt(c.req.param('rid'));
+  return c.json({
+    assets: (await all(`${ASSET_SELECT} WHERE a.request_id = ? ORDER BY a.code`, rid)).map(view),
+    moves: await all(`SELECT m.id, m.kind, m.qty, m.date, i.name AS item_name, i.unit, th.name AS to_name FROM asset_supply_moves m
+      JOIN asset_supply_items i ON i.id = m.item_id LEFT JOIN asset_supply_holders th ON th.id = m.to_holder_id WHERE m.request_id = ? AND m.voided = 0`, rid),
+    disposals: await all('SELECT d.*, a.code, a.name FROM asset_disposals d JOIN assets a ON a.id = d.asset_id WHERE d.request_id = ?', rid),
+  });
 });
 
 // ================================================================ bàn giao / thu hồi

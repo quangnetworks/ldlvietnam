@@ -191,3 +191,35 @@ test('asset audit: open a round, confirm by QR link / code / own asset, close wi
   assert.equal(list.status, 'closed');
   assert.equal(list.moved, 1);
 });
+
+test('asset finance: created from an approved request, monthly depreciation, disposal with book value', async () => {
+  const hr = await login('chilan');
+  const demo = await login('demo');
+  const a = (await hr.post('/assets', { name: 'Máy tính bảng DMS', type: 'Điện thoại', price: 12000000, purchase_date: '2026-01-15', depreciation_months: 12, request_id: 9001 })).data.items[0];
+  const linked = (await hr.get('/asset/by-request/9001')).data;
+  assert.equal(linked.assets[0].id, a.id);
+  assert.match((await hr.get(`/assets/${a.id}`)).data.history[0].detail, /đề xuất #9001/);
+  assert.equal((await demo.get('/asset/depreciation')).status, 403);
+
+  // tháng 4/2026: đã dùng 3 tháng → luỹ kế 3 triệu, trong tháng 1 triệu, còn 9 triệu
+  const dep = (await hr.get('/asset/depreciation?month=2026-04')).data;
+  const row = dep.rows.find((x) => x.id === a.id);
+  assert.deepEqual([row.months_used, row.in_month, row.accumulated, row.book_value], [3, 1000000, 3000000, 9000000]);
+  assert.ok(dep.by_type.some((t) => t.type === 'Điện thoại' && t.in_month >= 1000000));
+  // trước tháng mua: chưa có trong bảng
+  assert.equal((await hr.get('/asset/depreciation?month=2025-12')).data.rows.some((x) => x.id === a.id), false);
+
+  // đang có người giữ → không thanh lý được
+  await hr.post('/asset/handovers', { kind: 'issue', employee_id: demo.user.id, asset_ids: [a.id] });
+  assert.equal((await hr.post(`/assets/${a.id}/dispose`, { method: 'sell' })).status, 400);
+  await hr.post('/asset/handovers', { kind: 'return', employee_id: demo.user.id, asset_ids: [a.id] });
+  const dz = await hr.post(`/assets/${a.id}/dispose`, { method: 'sell', date: '2026-07-10', proceeds: '2.000.000', request_id: 9002 });
+  assert.equal(dz.status, 200);
+  assert.equal(dz.data.status, 'disposed');
+  const list = (await hr.get('/asset/disposals?year=2026')).data.rows.find((x) => x.asset_id === a.id);
+  assert.deepEqual([list.proceeds, list.book_value, list.cost], [2000000, 6000000, 12000000]);
+  assert.equal((await hr.get('/asset/by-request/9002')).data.disposals.length, 1);
+  // thanh lý tháng 7 → tháng 7 còn trong bảng, tháng 8 thì không
+  assert.ok((await hr.get('/asset/depreciation?month=2026-07')).data.rows.some((x) => x.id === a.id));
+  assert.equal((await hr.get('/asset/depreciation?month=2026-08')).data.rows.some((x) => x.id === a.id), false);
+});

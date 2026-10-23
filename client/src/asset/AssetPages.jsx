@@ -4,7 +4,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 import {
   Package, PackageCheck, PackagePlus, PackageMinus, Wrench, AlertTriangle, Wallet, TrendingDown, Users2, Search, Plus, Upload, Download,
   ArrowLeftRight, Pencil, Trash2, History, ClipboardCheck, UserRound, MapPin, Tag, Boxes, ShieldCheck, CalendarClock, ArrowLeft, UserCheck,
-  CheckCircle2, LogIn, LogOut, FileSignature, Layers, Store, Camera, Undo2, QrCode, ClipboardList,
+  CheckCircle2, LogIn, LogOut, FileSignature, Layers, Store, Camera, Undo2, QrCode, ClipboardList, Recycle, Link2,
 } from 'lucide-react';
 import { api } from '../api.js';
 import { useApp, useFetch, useToast } from '../context.jsx';
@@ -20,6 +20,7 @@ import {
 import { SupplyHoldingCard } from './Supplies.jsx';
 import { PlaceModal, CheckModal, MarketCard, MarketActions } from './Market.jsx';
 import { AuditConfirmBar } from './Audits.jsx';
+import { DisposeModal } from './Finance.jsx';
 
 // ================================================================ tài sản của tôi
 function AssetCard({ a, i }) {
@@ -373,7 +374,8 @@ export function AssetDetail() {
   };
   const TX = { create: [Plus, 'gray', 'Tạo tài sản'], assign: [PackagePlus, 'blue', 'Bàn giao'], return: [PackageMinus, 'violet', 'Thu hồi'],
     transfer: [ArrowLeftRight, 'aqua', 'Điều chuyển'], status: [Wrench, 'amber', 'Trạng thái'], update: [Pencil, 'gray', 'Cập nhật'],
-    place: [Store, 'aqua', 'Đặt tại thị trường'], recall: [Undo2, 'violet', 'Thu hồi về công ty'], check: [Camera, 'green', 'Kiểm tra tại chỗ'] };
+    place: [Store, 'aqua', 'Đặt tại thị trường'], recall: [Undo2, 'violet', 'Thu hồi về công ty'], check: [Camera, 'green', 'Kiểm tra tại chỗ'],
+    dispose: [Recycle, 'red', 'Thanh lý'] };
   const pct = a.price ? Math.round(((a.book_value ?? a.price) / a.price) * 100) : null;
   return (
     <div className="page hr">
@@ -401,6 +403,7 @@ export function AssetDetail() {
               <button className="btn btn-sm" onClick={() => setModal('status')}><Wrench size={14} /> Trạng thái</button>
               <Link className="btn btn-sm" to={`/asset/labels?ids=${a.id}`}><QrCode size={14} /> Tem QR</Link>
               <button className="btn btn-sm" onClick={() => setModal('edit')}><Pencil size={14} /> Sửa</button>
+              {!a.holder_id && a.placement !== 'market' && a.status !== 'disposed' && <button className="btn btn-sm btn-danger-ghost" onClick={() => setModal('dispose')}><Recycle size={14} /> Thanh lý</button>}
               {!a.holder_id && <button className="icon-btn sm" onClick={del} aria-label="Xoá"><Trash2 size={15} /></button>}
             </div>
           )}
@@ -426,6 +429,7 @@ export function AssetDetail() {
           </div>
           {pct != null && <div className="hr-hbar-track as-depr" title={`Còn ${pct}% giá trị`}><span style={{ width: `${pct}%`, background: 'var(--hr-cat-7)' }} /></div>}
           {a.supplier && <small className="muted">Nhà cung cấp: {a.supplier}</small>}
+          {a.request_id && <small className="muted block"><Link2 size={12} /> Tạo từ đề xuất <Link to={`/request/${a.request_id}`}>#{a.request_id}</Link></small>}
           {a.note && <p className="small pre">{a.note}</p>}
         </HrCard>
         <MarketCard a={a} i={2} onCheck={() => setModal('check')} />
@@ -449,6 +453,7 @@ export function AssetDetail() {
       </div>
       {modal === 'edit' && <AssetFormModal asset={a} onClose={() => setModal(null)} onSaved={done} />}
       {modal === 'place' && <PlaceModal asset={a} onClose={() => setModal(null)} onSaved={done} />}
+      {modal === 'dispose' && <DisposeModal asset={a} onClose={() => setModal(null)} onSaved={done} />}
       {modal === 'check' && <CheckModal asset={a} onClose={() => setModal(null)} onSaved={done} />}
       {modal === 'status' && <StatusModal asset={a} onClose={() => setModal(null)} onSaved={done} />}
       {modal === 'transfer' && <TransferModal asset={a} onClose={() => setModal(null)} onSaved={done} />}
