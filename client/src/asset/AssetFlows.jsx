@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import {
   FileSignature, PackagePlus, PackageMinus, Search, Printer, ArrowLeft, CheckCircle2, XCircle, ClipboardCheck, LogIn, LogOut, Plus,
-  UserCheck, Package, AlertTriangle, Settings2, ShieldCheck, Tag, MapPin, Truck, ListChecks, Save, Trash2, Clock3, Lock, Hourglass,
+  UserCheck, Package, AlertTriangle, Settings2, ShieldCheck, Tag, MapPin, Truck, ListChecks, Save, Trash2, Clock3, Lock, Hourglass, CalendarClock,
 } from 'lucide-react';
 import { api } from '../api.js';
 import { useApp, useFetch, useToast } from '../context.jsx';
@@ -387,6 +387,12 @@ export function AssetSettings() {
           <button className="btn btn-primary mt" onClick={() => save({ managers: s.managers })}><Save size={15} /> Lưu phân quyền</button>
         </HrCard>
       )}
+      <HrCard icon={CalendarClock} tone="aqua" title="Tài sản tại NPP / điểm bán" i={1}>
+        <Field label="Chu kỳ kiểm tra tại chỗ (ngày)" hint="Quá số ngày này chưa có ảnh kiểm tra thì tài sản được đánh dấu quá hạn">
+          <input type="number" min="7" max="365" className="input" style={{ maxWidth: 140 }} value={s.check_interval_days ?? 90} onChange={(e) => setS({ ...s, check_interval_days: e.target.value })} />
+        </Field>
+        <button className="btn btn-primary mt" onClick={() => save({ check_interval_days: s.check_interval_days })}><Save size={15} /> Lưu</button>
+      </HrCard>
       <HrCard icon={Tag} tone="blue" title="Loại tài sản" count={s.types.length} i={1} action={<button className="btn btn-primary btn-sm" onClick={() => save(noManagers)}><Save size={14} /> Lưu</button>}>
         <p className="muted small">Tiền tố dùng để tự sinh mã (VD: LAP → LAP-0001). Khấu hao mặc định (tháng) điền sẵn khi tạo tài sản thuộc loại này.</p>
         <div className="as-types">

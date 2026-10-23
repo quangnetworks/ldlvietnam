@@ -4,7 +4,7 @@ import { PageOutlet } from './Boundary.jsx';
 import { SideToggle, useSideCollapsed } from './Sidebar.jsx';
 import {
   LayoutDashboard, Users2, Settings, Fingerprint, UsersRound, Plane, CalendarDays, Scale, FolderOpen, Building2, Share2, Clock3,
-  Trash2, Menu, FileSignature, TrendingUp, BarChart3, Package, Boxes, UserCheck, Users, UserCog, Network, Shirt,
+  Trash2, Menu, FileSignature, TrendingUp, BarChart3, Package, Boxes, UserCheck, Users, UserCog, Network, Shirt, Store,
 } from 'lucide-react';
 import { api } from '../api.js';
 import { useApp, useFetch } from '../context.jsx';
@@ -39,6 +39,7 @@ const NAV = {
     { to: '/asset/overview', label: 'Tổng quan', icon: LayoutDashboard, mgr: true },
     { to: '/asset/list', label: 'Tài sản & công cụ', icon: Boxes, mgr: true },
     { to: '/asset/people', label: 'Theo người sử dụng', icon: Users, mgr: true },
+    { to: '/asset/market', label: 'Tại NPP / điểm bán', icon: Store, mgr: true },
     { to: '/asset/supplies', label: 'Đồng phục & CCDC', icon: Shirt, mgr: true },
     { to: '/asset/handovers', label: 'Bàn giao & thu hồi', icon: FileSignature, mgr: true },
     { to: '/asset/procedures', label: 'Nhận việc / nghỉ việc', icon: UserCog, mgr: true },

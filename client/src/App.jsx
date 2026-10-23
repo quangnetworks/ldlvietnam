@@ -76,6 +76,7 @@ const HandoverList = lazyPage(() => import('./asset/AssetFlows.jsx'), 'HandoverL
 const HandoverDetail = lazyPage(() => import('./asset/AssetFlows.jsx'), 'HandoverDetail');
 const ProcedureList = lazyPage(() => import('./asset/AssetFlows.jsx'), 'ProcedureList');
 const ProcedureDetail = lazyPage(() => import('./asset/AssetFlows.jsx'), 'ProcedureDetail');
+const MarketOverview = lazyPage(() => import('./asset/Market.jsx'), 'MarketOverview');
 const SupplyOverview = lazyPage(() => import('./asset/Supplies.jsx'), 'SupplyOverview');
 const SupplyHolder = lazyPage(() => import('./asset/Supplies.jsx'), 'SupplyHolder');
 const AssetSettings = lazyPage(() => import('./asset/AssetFlows.jsx'), 'AssetSettings');
@@ -225,6 +226,7 @@ export default function App() {
         <Route path="handovers" element={<HandoverList />} />
         <Route path="procedures" element={<ProcedureList />} />
         <Route path="procedures/:id" element={<ProcedureDetail />} />
+        <Route path="market" element={<MarketOverview />} />
         <Route path="supplies" element={<SupplyOverview />} />
         <Route path="supplies/holder/:id" element={<SupplyHolder />} />
         <Route path="settings" element={<AssetSettings />} />

@@ -4,7 +4,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 import {
   Package, PackageCheck, PackagePlus, PackageMinus, Wrench, AlertTriangle, Wallet, TrendingDown, Users2, Search, Plus, Upload, Download,
   ArrowLeftRight, Pencil, Trash2, History, ClipboardCheck, UserRound, MapPin, Tag, Boxes, ShieldCheck, CalendarClock, ArrowLeft, UserCheck,
-  CheckCircle2, LogIn, LogOut, FileSignature, Layers,
+  CheckCircle2, LogIn, LogOut, FileSignature, Layers, Store, Camera, Undo2,
 } from 'lucide-react';
 import { api } from '../api.js';
 import { useApp, useFetch, useToast } from '../context.jsx';
@@ -18,6 +18,7 @@ import {
   useAssetMeta, AssetFormModal, HandoverModal,
 } from './assetShared.jsx';
 import { SupplyHoldingCard } from './Supplies.jsx';
+import { PlaceModal, CheckModal, MarketCard, MarketActions } from './Market.jsx';
 
 // ================================================================ tài sản của tôi
 function AssetCard({ a, i }) {
@@ -27,6 +28,7 @@ function AssetCard({ a, i }) {
       <span className="grow">
         <b className="ellipsis">{a.name}</b>
         <small className="muted block ellipsis"><span className="hr-code">{a.code}</span> {a.type || ''}{a.serial ? ` · ${a.serial}` : ''}</small>
+        {a.placement === 'market' && <small className="as-card-place"><Store size={12} /> {a.partner}{a.outlet ? ` · ${a.outlet}` : ''}</small>}
         <span className="as-card-foot"><AssetStatus status={a.status} /><small className="muted">Nhận {fmtDate(a.assigned_at)} · {CONDITION_LABEL[a.condition]?.toLowerCase()}</small></span>
       </span>
     </Link>
@@ -360,7 +362,8 @@ export function AssetDetail() {
     try { await api.del(`/assets/${a.id}`); toast('Đã xoá tài sản'); navigate('/asset/list'); } catch (e) { toast(e.message, 'error'); }
   };
   const TX = { create: [Plus, 'gray', 'Tạo tài sản'], assign: [PackagePlus, 'blue', 'Bàn giao'], return: [PackageMinus, 'violet', 'Thu hồi'],
-    transfer: [ArrowLeftRight, 'aqua', 'Điều chuyển'], status: [Wrench, 'amber', 'Trạng thái'], update: [Pencil, 'gray', 'Cập nhật'] };
+    transfer: [ArrowLeftRight, 'aqua', 'Điều chuyển'], status: [Wrench, 'amber', 'Trạng thái'], update: [Pencil, 'gray', 'Cập nhật'],
+    place: [Store, 'aqua', 'Đặt tại thị trường'], recall: [Undo2, 'violet', 'Thu hồi về công ty'], check: [Camera, 'green', 'Kiểm tra tại chỗ'] };
   const pct = a.price ? Math.round(((a.book_value ?? a.price) / a.price) * 100) : null;
   return (
     <div className="page hr">
@@ -384,6 +387,7 @@ export function AssetDetail() {
               {a.holder_id ? <button className="btn btn-sm" onClick={() => setModal('return')}><PackageMinus size={14} /> Thu hồi</button>
                 : a.status === 'available' && <button className="btn btn-sm btn-primary" onClick={() => setModal('issue')}><PackagePlus size={14} /> Bàn giao</button>}
               {!['disposed', 'lost'].includes(a.status) && <button className="btn btn-sm" onClick={() => setModal('transfer')}><ArrowLeftRight size={14} /> Điều chuyển</button>}
+              <MarketActions a={a} onPlace={() => setModal('place')} onRecalled={done} />
               <button className="btn btn-sm" onClick={() => setModal('status')}><Wrench size={14} /> Trạng thái</button>
               <button className="btn btn-sm" onClick={() => setModal('edit')}><Pencil size={14} /> Sửa</button>
               {!a.holder_id && <button className="icon-btn sm" onClick={del} aria-label="Xoá"><Trash2 size={15} /></button>}
@@ -412,7 +416,8 @@ export function AssetDetail() {
           {a.supplier && <small className="muted">Nhà cung cấp: {a.supplier}</small>}
           {a.note && <p className="small pre">{a.note}</p>}
         </HrCard>
-        <HrCard className="hr-span-12" icon={History} tone="gray" title="Lịch sử giao dịch" count={a.history.length} i={2}>
+        <MarketCard a={a} i={2} onCheck={() => setModal('check')} />
+        <HrCard className="hr-span-12" icon={History} tone="gray" title="Lịch sử giao dịch" count={a.history.length} i={3}>
           <ul className="hr-timeline">
             {a.history.map((t) => {
               const [Icon, tone, label] = TX[t.type] || [History, 'gray', t.type];
@@ -431,6 +436,8 @@ export function AssetDetail() {
         </HrCard>
       </div>
       {modal === 'edit' && <AssetFormModal asset={a} onClose={() => setModal(null)} onSaved={done} />}
+      {modal === 'place' && <PlaceModal asset={a} onClose={() => setModal(null)} onSaved={done} />}
+      {modal === 'check' && <CheckModal asset={a} onClose={() => setModal(null)} onSaved={done} />}
       {modal === 'status' && <StatusModal asset={a} onClose={() => setModal(null)} onSaved={done} />}
       {modal === 'transfer' && <TransferModal asset={a} onClose={() => setModal(null)} onSaved={done} />}
       {modal === 'issue' && <HandoverModal kind="issue" lockKind assetIds={[a.id]} onClose={() => setModal(null)} onSaved={done} />}

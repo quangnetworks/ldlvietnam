@@ -102,3 +102,52 @@ test('supplies: offboarding waits until uniforms are returned or written off', a
   assert.equal(after.supplies.length, 0);
   assert.equal(after.can_complete, true);
 });
+
+async function upload(token, url, fields, withPhoto) {
+  const fd = new FormData();
+  for (const [k, v] of Object.entries(fields)) fd.append(k, String(v));
+  if (withPhoto) fd.append('files', new Blob([new Uint8Array([0xff, 0xd8, 0xff, 0xd9])], { type: 'image/jpeg' }), 'tu-mat.jpg');
+  const r = await app.fetch(new Request(base + url, { method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: fd }));
+  return { status: r.status, data: await r.json() };
+}
+async function tokenOf(username) {
+  const res = await app.fetch(new Request(`${base}/auth/login`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username, password: '123456' }) }));
+  return (await res.json()).token;
+}
+
+test('market assets: placed at a distributor under a responsible rep, checked on site with a photo, recalled when the distributor ends', async () => {
+  const hr = await login('chilan');
+  const demo = await login('demo');
+  const other = await login('hoangcong');
+  const a = (await hr.post('/assets', { name: 'Tủ mát Sanaky 400L', type: 'Tủ mát, tủ trưng bày', price: 9000000 })).data.items[0];
+  assert.equal((await demo.post(`/assets/${a.id}/place`, { partner: 'NPP Hùng Vỹ Phúc' })).status, 403);
+  const pr = await hr.post(`/assets/${a.id}/place`, { partner: 'NPP Hùng Vỹ Phúc', outlet: 'Tạp hoá Cô Ba', area: 'Kiên Giang', responsible_id: demo.user.id, agreement_until: '2027-06-30' });
+  assert.equal(pr.status, 200, JSON.stringify(pr.data) + JSON.stringify(a));
+  const placed = pr.data;
+  assert.equal(placed.placement, 'market');
+  assert.equal(placed.holder_id, demo.user.id); // trách nhiệm qua biên bản bàn giao
+  assert.equal(placed.status, 'in_use');
+  const m = (await hr.get('/asset/market')).data;
+  assert.equal(m.assets.find((x) => x.id === a.id).check_overdue, true);
+
+  // người phụ trách kiểm tra: bắt buộc ảnh; người khác không được
+  const tDemo = await tokenOf('demo');
+  assert.equal((await upload(tDemo, `/assets/${a.id}/checks`, { result: 'ok' }, false)).status, 400);
+  assert.equal((await upload(await tokenOf('hoangcong'), `/assets/${a.id}/checks`, { result: 'ok' }, true)).status, 403);
+  const ck = await upload(tDemo, `/assets/${a.id}/checks`, { result: 'damaged', lat: 10.01, lng: 105.08, accuracy: 12, note: 'Cửa tủ nứt' }, true);
+  assert.equal(ck.status, 201);
+  assert.equal(ck.data.last_check_result, 'damaged');
+  assert.equal(ck.data.condition, 'broken');
+  const d = (await demo.get(`/assets/${a.id}`)).data;
+  assert.equal(d.checks.length, 1);
+  assert.equal(d.checks[0].has_photo, 1);
+  assert.equal((await hr.get('/asset/market')).data.assets.find((x) => x.id === a.id).check_overdue, false);
+  assert.equal((await other.get(`/assets/${a.id}`)).status, 403);
+
+  // thanh lý NPP → thu hồi toàn bộ tài sản tại NPP
+  assert.equal((await hr.post('/asset/market/recall-partner', { partner: 'NPP Hùng Vỹ Phúc' })).data.count, 1);
+  const back = (await hr.get(`/assets/${a.id}`)).data;
+  assert.equal(back.placement, 'company');
+  assert.equal(back.holder_id, null);
+  assert.ok(back.history.some((t) => t.type === 'place') && back.history.some((t) => t.type === 'recall'));
+});

@@ -8,7 +8,7 @@
  */
 import { Hono } from 'hono';
 import { all, get, run, batch, notify, getSetting, setSetting } from '../db.js';
-import { badRequest, notFound, forbidden, toInt, idList, jsonBody } from '../util.js';
+import { badRequest, notFound, forbidden, toInt, idList, jsonBody, formBody, storeFiles, sendFile } from '../util.js';
 import { searchClause } from '../search.js';
 import { audit } from '../platform.js';
 import { isSubordinate } from '../auth.js';
@@ -36,9 +36,13 @@ export const SETTINGS_DEFAULTS = {
     { name: 'Công cụ dụng cụ', prefix: 'CC', kind: 'tool', depreciation_months: 12 },
     { name: 'Đồng phục, thẻ nhân viên', prefix: 'DP', kind: 'tool', depreciation_months: null },
     { name: 'Xe, phương tiện', prefix: 'XE', kind: 'asset', depreciation_months: 72 },
+    { name: 'Tủ mát, tủ trưng bày', prefix: 'TM', kind: 'asset', depreciation_months: 60 },
+    { name: 'Kệ, giá trưng bày', prefix: 'KE', kind: 'tool', depreciation_months: 24 },
+    { name: 'Biển hiệu, POSM', prefix: 'POSM', kind: 'tool', depreciation_months: 12 },
   ],
   locations: ['Văn phòng Hà Nội', 'Văn phòng TP. Hồ Chí Minh', 'Kho'],
   suppliers: [],
+  check_interval_days: 90,                     // kiểm tra tài sản tại NPP / điểm bán định kỳ
   onboard_steps: ['Ký hợp đồng / thư mời nhận việc', 'Cập nhật hồ sơ nhân sự', 'Cấp tài khoản LDL, email', '[assets] Bàn giao tài sản, công cụ làm việc',
     'Hướng dẫn nội quy, quy trình làm việc', 'Giới thiệu với phòng ban'],
   offboard_steps: ['Đơn / quyết định nghỉ việc', 'Bàn giao công việc, hồ sơ đang xử lý', '[assets] Thu hồi tài sản, công cụ', 'Quyết toán lương, BHXH, thuế',
@@ -148,6 +152,7 @@ r.put('/asset/settings', async (c) => {
     })).filter((t) => t.name).slice(0, 60);
   }
   for (const k of ['locations', 'suppliers', 'onboard_steps', 'offboard_steps']) if (b[k] !== undefined) next[k] = list(b[k]);
+  if (b.check_interval_days !== undefined) next.check_interval_days = Math.min(365, Math.max(7, toInt(b.check_interval_days) || 90));
   if (b.managers !== undefined) {
     if (c.get('user').role !== 'admin') throw forbidden('Chỉ quản trị viên được phân quyền quản lý tài sản');
     next.managers = idList(b.managers);
@@ -279,7 +284,9 @@ r.get('/assets/:id', async (c) => {
   const history = await all(`SELECT t.*, fu.name AS from_name, tu.name AS to_name, au.name AS actor_name, au.color AS actor_color, h.code AS handover_code
     FROM asset_transactions t LEFT JOIN users fu ON fu.id = t.from_user_id LEFT JOIN users tu ON tu.id = t.to_user_id
     LEFT JOIN users au ON au.id = t.user_id LEFT JOIN asset_handovers h ON h.id = t.handover_id WHERE t.asset_id = ? ORDER BY t.id DESC`, a.id);
-  return c.json({ ...view(a), history });
+  const checks = await all(`SELECT k.id, k.result, k.condition, k.lat, k.lng, k.accuracy, k.note, k.checked_at, (k.photo IS NOT NULL) AS has_photo, u.name AS checked_by_name
+    FROM asset_checks k LEFT JOIN users u ON u.id = k.checked_by WHERE k.asset_id = ? ORDER BY k.id DESC LIMIT 30`, a.id);
+  return c.json({ ...view(a), history, checks, can_check: await canCheck(user, a) });
 });
 
 r.put('/assets/:id', async (c) => {
@@ -334,6 +341,117 @@ r.post('/assets/:id/transfer', async (c) => {
   if (a.holder_id) await createHandover(c.get('user'), { kind: 'return', employee_id: a.holder_id, asset_ids: [a.id], reason: 'transfer', note: b.note });
   const h = await createHandover(c.get('user'), { kind: 'issue', employee_id: to, asset_ids: [a.id], reason: 'transfer', note: b.note });
   return c.json({ asset: view(await assetOr404(a.id)), handover_id: h });
+});
+
+// ================================================================ tài sản đặt tại NPP / điểm bán
+export const CHECK_RESULTS = { ok: 'Còn đúng chỗ, sử dụng tốt', damaged: 'Hư hỏng', moved: 'Bị di chuyển / sai điểm bán', missing: 'Không tìm thấy' };
+const MAX_CHECK_PHOTO = 10 * 1024 * 1024;
+const str = (v, max = 200) => String(v ?? '').trim().slice(0, max) || null;
+
+/** Người được ghi kiểm tra: quản lý tài sản, người phụ trách (đang giữ) hoặc cấp quản lý của người đó. */
+async function canCheck(user, a) {
+  if (await isAssetManager(user)) return true;
+  return !!a.holder_id && (a.holder_id === user.id || (await canSeePerson(user, a.holder_id)));
+}
+
+r.get('/asset/market', async (c) => {
+  await requireManager(c);
+  const st = await settings();
+  const rows = (await all(`${ASSET_SELECT} WHERE a.placement = 'market' ORDER BY a.partner COLLATE NOCASE, a.outlet COLLATE NOCASE, a.code`)).map(view);
+  const due = new Date(Date.now() + 7 * 3600e3 - (st.check_interval_days || 90) * 864e5).toISOString().slice(0, 10);
+  for (const a of rows) a.check_overdue = !a.last_check_at || a.last_check_at.slice(0, 10) < due;
+  return c.json({ assets: rows, check_interval_days: st.check_interval_days || 90, results: CHECK_RESULTS });
+});
+
+/** Đặt tài sản tại NPP / điểm bán; người phụ trách nhận trách nhiệm qua biên bản bàn giao (có xác nhận). */
+r.post('/assets/:id/place', async (c) => {
+  await requireManager(c);
+  const a = await assetOr404(c.req.param('id'));
+  const b = await jsonBody(c);
+  if (['lost', 'disposed'].includes(a.status)) throw badRequest('Tài sản đã mất / thanh lý');
+  const partner = str(b.partner, 120);
+  if (!partner) throw badRequest('Nhập NPP / đại lý nhận tài sản');
+  const resp = toInt(b.responsible_id) || null;
+  if (resp && !(await get('SELECT 1 FROM users WHERE id = ? AND active = 1', resp))) throw badRequest('Người phụ trách không hợp lệ');
+  const where = [partner, str(b.outlet, 160)].filter(Boolean).join(' — ');
+  const note = `Đặt tại ${where}${b.note ? `. ${String(b.note).slice(0, 500)}` : ''}`;
+  if (resp && resp !== a.holder_id) {
+    if (a.holder_id) await createHandover(c.get('user'), { kind: 'return', employee_id: a.holder_id, asset_ids: [a.id], reason: 'transfer', note });
+    const cur = await assetOr404(a.id);
+    if (['broken', 'maintenance'].includes(cur.status)) throw badRequest('Tài sản đang hỏng / bảo trì — không đặt tại thị trường được');
+    // đang đặt ở thị trường nhưng chưa có người phụ trách → về "sẵn sàng" để lập biên bản bàn giao
+    if (!cur.holder_id && cur.status === 'in_use') await run("UPDATE assets SET status = 'available' WHERE id = ?", a.id);
+    await createHandover(c.get('user'), { kind: 'issue', employee_id: resp, asset_ids: [a.id], reason: 'adhoc', note });
+  } else if (!resp && a.holder_id && b.keep_holder !== true) {
+    await createHandover(c.get('user'), { kind: 'return', employee_id: a.holder_id, asset_ids: [a.id], reason: 'transfer', note });
+  }
+  const placedAt = isDate(b.placed_at) ? b.placed_at : today();
+  await run(`UPDATE assets SET placement = 'market', partner = ?, outlet = ?, outlet_address = ?, area = ?, placed_at = ?, agreement_until = ?,
+      status = CASE WHEN status IN ('available', 'in_use') THEN 'in_use' ELSE status END, updated_at = datetime('now') WHERE id = ?`,
+  partner, str(b.outlet, 160), str(b.outlet_address, 300), str(b.area, 80), placedAt, isDate(b.agreement_until) ? b.agreement_until : null, a.id);
+  await logTx(a.id, 'place', c.get('user').id, { to: resp, detail: note });
+  return c.json(view(await assetOr404(a.id)));
+});
+
+/** Thu hồi về công ty (một tài sản). */
+async function recallAsset(user, a, note) {
+  if (a.placement !== 'market') throw badRequest(`${a.code} không đặt tại thị trường`);
+  const detail = `Thu hồi từ ${[a.partner, a.outlet].filter(Boolean).join(' — ')}${note ? `. ${String(note).slice(0, 500)}` : ''}`;
+  if (a.holder_id) await createHandover(user, { kind: 'return', employee_id: a.holder_id, asset_ids: [a.id], reason: 'adhoc', note: detail });
+  await run(`UPDATE assets SET placement = 'company', partner = NULL, outlet = NULL, outlet_address = NULL, area = NULL, placed_at = NULL, agreement_until = NULL,
+      status = CASE WHEN status = 'in_use' AND holder_id IS NULL THEN 'available' ELSE status END, updated_at = datetime('now') WHERE id = ?`, a.id);
+  await logTx(a.id, 'recall', user.id, { detail });
+}
+r.post('/assets/:id/recall', async (c) => {
+  await requireManager(c);
+  const a = await assetOr404(c.req.param('id'));
+  await recallAsset(c.get('user'), a, (await jsonBody(c)).note);
+  return c.json(view(await assetOr404(a.id)));
+});
+/** Thu hồi tất cả tài sản tại một NPP (VD khi thanh lý / chấm dứt hợp đồng NPP). */
+r.post('/asset/market/recall-partner', async (c) => {
+  await requireManager(c);
+  const b = await jsonBody(c);
+  const partner = str(b.partner, 120);
+  if (!partner) throw badRequest('Chọn NPP');
+  const list = await all(`${ASSET_SELECT} WHERE a.placement = 'market' AND a.partner = ?`, partner);
+  for (const a of list) await recallAsset(c.get('user'), a, b.note || 'Thu hồi toàn bộ tài sản tại NPP');
+  await audit(c.get('user').id, 'asset.recall', `Thu hồi ${list.length} tài sản tại ${partner}`);
+  return c.json({ count: list.length });
+});
+
+/** Kiểm tra tại chỗ: ảnh + vị trí + kết quả (người phụ trách hoặc quản lý). */
+r.post('/assets/:id/checks', async (c) => {
+  const user = c.get('user');
+  const a = await assetOr404(c.req.param('id'));
+  if (!(await canCheck(user, a))) throw forbidden('Bạn không phụ trách tài sản này');
+  const { fields, files } = await formBody(c);
+  const result = CHECK_RESULTS[fields.result] ? fields.result : null;
+  if (!result) throw badRequest('Chọn kết quả kiểm tra');
+  const photo = files[0] || null;
+  if (photo && (!/^image\//.test(photo.type || '') || photo.size > MAX_CHECK_PHOTO)) throw badRequest('Ảnh không hợp lệ (chỉ nhận ảnh, tối đa 10MB)');
+  if (a.placement === 'market' && !photo && !(await isAssetManager(user))) throw badRequest('Chụp ảnh tài sản tại điểm bán để ghi nhận kiểm tra');
+  const lat = Number(fields.lat); const lng = Number(fields.lng); const acc = Number(fields.accuracy);
+  const geo = fields.lat !== undefined && fields.lat !== '' && Number.isFinite(lat) && Number.isFinite(lng) && Math.abs(lat) <= 90 && Math.abs(lng) <= 180;
+  const cond = CONDITIONS[fields.condition] ? fields.condition : result === 'damaged' ? 'broken' : null;
+  const [stored] = photo ? await storeFiles([photo]) : [];
+  await run('INSERT INTO asset_checks(asset_id, result, condition, photo, lat, lng, accuracy, note, checked_by) VALUES (?,?,?,?,?,?,?,?,?)',
+    a.id, result, cond, stored?.filename ?? null, geo ? lat : null, geo ? lng : null, geo && Number.isFinite(acc) ? Math.round(acc) : null, str(fields.note, 1000), user.id);
+  await run(`UPDATE assets SET last_check_at = datetime('now'), last_check_result = ?, condition = COALESCE(?, condition), updated_at = datetime('now') WHERE id = ?`, result, cond, a.id);
+  await logTx(a.id, 'check', user.id, { detail: `Kiểm tra: ${CHECK_RESULTS[result]}${fields.note ? ` — ${String(fields.note).slice(0, 300)}` : ''}` });
+  if (result !== 'ok') {
+    const managers = (await settings()).managers.filter((m) => m !== user.id);
+    for (const m of managers) {
+      await notify(m, { actorId: user.id, app: APP, type: 'asset_check', title: `${a.code} — ${a.name} tại ${a.partner || 'thị trường'}: ${CHECK_RESULTS[result].toLowerCase()}`, link: `/asset/item/${a.id}` });
+    }
+  }
+  return c.json(view(await assetOr404(a.id)), 201);
+});
+r.get('/asset/checks/:cid/photo', async (c) => {
+  const k = await get('SELECT k.*, a.holder_id, a.placement FROM asset_checks k JOIN assets a ON a.id = k.asset_id WHERE k.id = ?', toInt(c.req.param('cid')));
+  if (!k?.photo) throw notFound('Không có ảnh');
+  if (!(await canCheck(c.get('user'), { holder_id: k.holder_id }))) throw forbidden();
+  return sendFile(c, { filename: k.photo, original_name: `kiem-tra-tai-san-${k.id}.jpg`, mime: 'image/jpeg' }, true);
 });
 
 // ================================================================ bàn giao / thu hồi
