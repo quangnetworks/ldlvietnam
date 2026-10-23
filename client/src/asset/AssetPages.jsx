@@ -4,7 +4,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 import {
   Package, PackageCheck, PackagePlus, PackageMinus, Wrench, AlertTriangle, Wallet, TrendingDown, Users2, Search, Plus, Upload, Download,
   ArrowLeftRight, Pencil, Trash2, History, ClipboardCheck, UserRound, MapPin, Tag, Boxes, ShieldCheck, CalendarClock, ArrowLeft, UserCheck,
-  CheckCircle2, LogIn, LogOut, FileSignature, Layers, Store, Camera, Undo2,
+  CheckCircle2, LogIn, LogOut, FileSignature, Layers, Store, Camera, Undo2, QrCode, ClipboardList,
 } from 'lucide-react';
 import { api } from '../api.js';
 import { useApp, useFetch, useToast } from '../context.jsx';
@@ -19,6 +19,7 @@ import {
 } from './assetShared.jsx';
 import { SupplyHoldingCard } from './Supplies.jsx';
 import { PlaceModal, CheckModal, MarketCard, MarketActions } from './Market.jsx';
+import { AuditConfirmBar } from './Audits.jsx';
 
 // ================================================================ tài sản của tôi
 function AssetCard({ a, i }) {
@@ -77,6 +78,13 @@ export function PersonAssets({ userId, embedded, onChanged }) {
         {d.assets.length ? <div className="as-cards">{d.assets.map((a, i) => <AssetCard key={a.id} a={a} i={i} />)}</div>
           : <div className="hr-empty"><PackageCheck size={16} /> {self ? 'Bạn không giữ tài sản nào của công ty.' : 'Không giữ tài sản nào.'}</div>}
       </HrCard>
+      {d.audits?.map((x) => (
+        <div key={x.id} className="as-alert hr-rise"><ClipboardList size={20} />
+          <div className="grow"><b>Đang kiểm kê "{x.name}" — {self ? 'bạn' : 'nhân sự này'} còn {x.pending} tài sản chưa xác nhận</b>
+            <small className="block">Quét tem QR trên tài sản bằng camera điện thoại, hoặc mở từng tài sản và bấm Xác nhận có mặt.</small></div>
+          <Link className="btn btn-sm" to={`/asset/audits/${x.id}`}>Xem danh sách</Link>
+        </div>
+      ))}
       <SupplyHoldingCard supplies={d.supplies} i={1} />
       {d.procedures.length > 0 && (
         <HrCard icon={UserCheck} tone="aqua" title="Thủ tục nhận việc / nghỉ việc" count={d.procedures.length} i={1}>
@@ -266,6 +274,7 @@ export function AssetList() {
   return (
     <div className="page hr">
       <HrHero icon={Package} tone="brown" title="Tài sản & công cụ" subtitle="Danh mục tài sản, người đang giữ, tình trạng và giá trị còn lại">
+        {items?.length > 0 && <Link className="btn" to={`/asset/labels?ids=${items.map((x) => x.id).join(',')}`}><QrCode size={15} /> In tem QR</Link>}
         {items?.length > 0 && <button className="btn" onClick={exportCsv}><Download size={15} /> Xuất Excel</button>}
         <button className="btn" onClick={() => setModal('import')}><Upload size={15} /> Nhập Excel</button>
         <button className="btn solid" onClick={() => setModal('asset')}><Plus size={15} /> Thêm tài sản</button>
@@ -348,6 +357,7 @@ function TransferModal({ asset, onClose, onSaved }) {
 
 export function AssetDetail() {
   const { id } = useParams();
+  const { user } = useApp();
   const navigate = useNavigate();
   const toast = useToast();
   const [meta] = useAssetMeta();
@@ -389,12 +399,14 @@ export function AssetDetail() {
               {!['disposed', 'lost'].includes(a.status) && <button className="btn btn-sm" onClick={() => setModal('transfer')}><ArrowLeftRight size={14} /> Điều chuyển</button>}
               <MarketActions a={a} onPlace={() => setModal('place')} onRecalled={done} />
               <button className="btn btn-sm" onClick={() => setModal('status')}><Wrench size={14} /> Trạng thái</button>
+              <Link className="btn btn-sm" to={`/asset/labels?ids=${a.id}`}><QrCode size={14} /> Tem QR</Link>
               <button className="btn btn-sm" onClick={() => setModal('edit')}><Pencil size={14} /> Sửa</button>
               {!a.holder_id && <button className="icon-btn sm" onClick={del} aria-label="Xoá"><Trash2 size={15} /></button>}
             </div>
           )}
         </div>
       </section>
+      <AuditConfirmBar a={a} canConfirm={manager || a.holder_id === user.id} onDone={reload} />
       <div className="hr-grid">
         <HrCard className="hr-span-5" icon={UserRound} tone="blue" title="Người đang giữ">
           {a.holder_id ? (

@@ -76,6 +76,9 @@ const HandoverList = lazyPage(() => import('./asset/AssetFlows.jsx'), 'HandoverL
 const HandoverDetail = lazyPage(() => import('./asset/AssetFlows.jsx'), 'HandoverDetail');
 const ProcedureList = lazyPage(() => import('./asset/AssetFlows.jsx'), 'ProcedureList');
 const ProcedureDetail = lazyPage(() => import('./asset/AssetFlows.jsx'), 'ProcedureDetail');
+const AuditList = lazyPage(() => import('./asset/Audits.jsx'), 'AuditList');
+const AuditDetail = lazyPage(() => import('./asset/Audits.jsx'), 'AuditDetail');
+const AssetLabels = lazyPage(() => import('./asset/Audits.jsx'), 'AssetLabels');
 const MarketOverview = lazyPage(() => import('./asset/Market.jsx'), 'MarketOverview');
 const SupplyOverview = lazyPage(() => import('./asset/Supplies.jsx'), 'SupplyOverview');
 const SupplyHolder = lazyPage(() => import('./asset/Supplies.jsx'), 'SupplyHolder');
@@ -227,6 +230,9 @@ export default function App() {
         <Route path="procedures" element={<ProcedureList />} />
         <Route path="procedures/:id" element={<ProcedureDetail />} />
         <Route path="market" element={<MarketOverview />} />
+        <Route path="audits" element={<AuditList />} />
+        <Route path="audits/:id" element={<AuditDetail />} />
+        <Route path="labels" element={<AssetLabels />} />
         <Route path="supplies" element={<SupplyOverview />} />
         <Route path="supplies/holder/:id" element={<SupplyHolder />} />
         <Route path="settings" element={<AssetSettings />} />

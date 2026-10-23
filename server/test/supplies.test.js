@@ -151,3 +151,43 @@ test('market assets: placed at a distributor under a responsible rep, checked on
   assert.equal(back.holder_id, null);
   assert.ok(back.history.some((t) => t.type === 'place') && back.history.some((t) => t.type === 'recall'));
 });
+
+test('asset audit: open a round, confirm by QR link / code / own asset, close with the missing ones marked lost', async () => {
+  const hr = await login('chilan');
+  const demo = await login('demo');
+  const mk = async (name) => (await hr.post('/assets', { name, type: 'Kệ, giá trưng bày', location: 'Kho Cần Thơ' })).data.items[0];
+  const k1 = await mk('Kệ sắt 5 tầng A');
+  const k2 = await mk('Kệ sắt 5 tầng B');
+  const k3 = await mk('Kệ sắt 5 tầng C');
+  await hr.post('/asset/handovers', { kind: 'issue', employee_id: demo.user.id, asset_ids: [k1.id] });
+
+  assert.equal((await demo.post('/asset/audits', { name: 'Kiểm kê' })).status, 403);
+  const op = await hr.post('/asset/audits', { name: 'Kiểm kê kho Cần Thơ Q4/2026', location: 'Kho Cần Thơ' });
+  assert.equal(op.status, 201);
+  assert.equal(op.data.total, 3);
+  // tài sản đã nằm trong đợt đang mở thì không vào đợt khác
+  assert.equal((await hr.post('/asset/audits', { name: 'Trùng', location: 'Kho Cần Thơ' })).status, 400);
+  assert.equal((await hr.get(`/assets/${k2.id}`)).data.open_audits[0].id, op.data.id);
+  assert.equal((await demo.get(`/asset/people/${demo.user.id}`)).data.audits[0].pending, 1);
+
+  // nhân viên tự xác nhận tài sản đang giữ (quét QR = đường dẫn trang tài sản); không xác nhận được tài sản của người khác
+  const url = `https://home.ldlvn.xyz/asset/item/${k1.id}`;
+  assert.equal((await demo.post(`/asset/audits/${op.data.id}/scan`, { code: url, condition: 'fair' })).status, 200);
+  assert.equal((await demo.post(`/asset/audits/${op.data.id}/scan`, { asset_id: k2.id })).status, 403);
+  // quản lý nhập mã (máy quét mã vạch / gõ tay), ghi nhận sai vị trí
+  const sc = await hr.post(`/asset/audits/${op.data.id}/scan`, { code: k2.code.toLowerCase(), actual_place: 'Kho Vĩnh Long' });
+  assert.equal(sc.data.asset_id, k2.id);
+  const d = (await hr.get(`/asset/audits/${op.data.id}`)).data;
+  assert.equal(d.lines.filter((l) => l.found).length, 2);
+  assert.equal((await hr.get(`/assets/${k1.id}`)).data.condition, 'fair');
+  // nhân viên chỉ thấy dòng của mình
+  assert.equal((await demo.get(`/asset/audits/${op.data.id}`)).data.lines.length, 1);
+
+  const cl = await hr.post(`/asset/audits/${op.data.id}/close`, { mark_missing_lost: true });
+  assert.equal(cl.data.missing, 1);
+  assert.equal((await hr.get(`/assets/${k3.id}`)).data.status, 'lost');
+  assert.equal((await hr.post(`/asset/audits/${op.data.id}/scan`, { asset_id: k3.id })).status, 400);
+  const list = (await hr.get('/asset/audits')).data.find((x) => x.id === op.data.id);
+  assert.equal(list.status, 'closed');
+  assert.equal(list.moved, 1);
+});

@@ -17,6 +17,7 @@ import { requireModule } from './platform.js';
 import pushRoutes from './routes/push.js';
 import ssoRoutes from './routes/sso.js';
 import supplyRoutes from './routes/supplies.js';
+import auditRoutes from './routes/audits.js';
 import { backgroundContext } from './push.js';
 
 const PUBLIC_API = new Set(['/api/health', '/api/auth/login', '/api/auth/logout']);
@@ -58,6 +59,7 @@ export function createApp() {
   app.route('/api', pushRoutes);
   app.route('/api', ssoRoutes);
   app.route('/api', supplyRoutes);
+  app.route('/api', auditRoutes);
   app.all('/api/*', (c) => c.json({ error: 'API không tồn tại' }, 404));
 
   app.onError((err, c) => {

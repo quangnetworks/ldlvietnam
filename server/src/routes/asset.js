@@ -14,6 +14,7 @@ import { audit } from '../platform.js';
 import { isSubordinate } from '../auth.js';
 import { vacateUser } from './territory.js';
 import { supplyHoldingsOfUser } from './supplies.js';
+import { openAuditsFor } from './audits.js';
 
 const r = new Hono();
 const APP = 'asset';
@@ -286,7 +287,7 @@ r.get('/assets/:id', async (c) => {
     LEFT JOIN users au ON au.id = t.user_id LEFT JOIN asset_handovers h ON h.id = t.handover_id WHERE t.asset_id = ? ORDER BY t.id DESC`, a.id);
   const checks = await all(`SELECT k.id, k.result, k.condition, k.lat, k.lng, k.accuracy, k.note, k.checked_at, (k.photo IS NOT NULL) AS has_photo, u.name AS checked_by_name
     FROM asset_checks k LEFT JOIN users u ON u.id = k.checked_by WHERE k.asset_id = ? ORDER BY k.id DESC LIMIT 30`, a.id);
-  return c.json({ ...view(a), history, checks, can_check: await canCheck(user, a) });
+  return c.json({ ...view(a), history, checks, can_check: await canCheck(user, a), open_audits: await openAuditsFor(a.id) });
 });
 
 r.put('/assets/:id', async (c) => {
@@ -615,6 +616,9 @@ r.get('/asset/people/:uid', async (c) => {
     handovers: await all(`${HANDOVER_SELECT} WHERE h.employee_id = ? ORDER BY h.id DESC`, uid),
     procedures: await all('SELECT * FROM hr_procedures WHERE user_id = ? ORDER BY id DESC', uid),
     supplies: await supplyHoldingsOfUser(uid),
+    // đợt kiểm kê đang mở có tài sản người này đang giữ mà chưa xác nhận
+    audits: await all(`SELECT x.id, x.name, COUNT(*) AS pending FROM asset_audit_lines l JOIN asset_audits x ON x.id = l.audit_id JOIN assets a ON a.id = l.asset_id
+      WHERE x.status = 'open' AND l.found = 0 AND a.holder_id = ? GROUP BY x.id ORDER BY x.id DESC`, uid),
   });
 });
 
