@@ -13,7 +13,7 @@ import { readComment, saveCommentFiles, withCommentFiles, commentFileOr404, comm
 const r = new Hono();
 const APP = 'request';
 
-export const FIELD_TYPES = ['text', 'textarea', 'number', 'money', 'date', 'select', 'checkbox', 'user'];
+export const FIELD_TYPES = ['text', 'textarea', 'number', 'money', 'date', 'time', 'select', 'checkbox', 'user'];
 export const REQUEST_STATUS = {
   draft: 'Lưu nháp', pending: 'Chờ duyệt', approved: 'Đã chấp thuận', rejected: 'Đã từ chối', returned: 'Đã trả lại', cancelled: 'Đã huỷ',
 };
@@ -241,6 +241,7 @@ function validateData(fields, data, strict) {
       if (Number.isNaN(n)) throw badRequest(`"${f.label}" phải là số`);
       v = n;
     } else if (f.type === 'date' && !/^\d{4}-\d{2}-\d{2}$/.test(v)) throw badRequest(`"${f.label}" không đúng định dạng ngày`);
+    else if (f.type === 'time' && !/^([01]\d|2[0-3]):[0-5]\d$/.test(v)) throw badRequest(`"${f.label}" không đúng định dạng giờ (HH:MM)`);
     else if (f.type === 'select' && Array.isArray(f.options) && f.options.length && !f.options.includes(v)) throw badRequest(`"${f.label}" không hợp lệ`);
     else if (f.type === 'checkbox') v = true;
     else if (f.type === 'user') v = toInt(v);

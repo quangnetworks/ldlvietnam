@@ -2721,3 +2721,5 @@ button.stat-tile.active { border-color: var(--blue); box-shadow: 0 0 0 3px var(-
   .ql-label img { width: 24mm; height: 24mm; }
   .hr-hero-glow { display: none; }
 }
+
+.ci-permit { color: #1971c2; font-weight: 500; }

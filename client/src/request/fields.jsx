@@ -7,6 +7,7 @@ export const FIELD_TYPES = [
   { value: 'number', label: 'Số' },
   { value: 'money', label: 'Số tiền (VNĐ)' },
   { value: 'date', label: 'Ngày' },
+  { value: 'time', label: 'Giờ (giờ:phút)' },
   { value: 'select', label: 'Danh sách chọn' },
   { value: 'checkbox', label: 'Ô tích (Có/Không)' },
   { value: 'user', label: 'Nhân sự' },
@@ -33,6 +34,7 @@ export function FieldInput({ field, value, onChange, users }) {
         onChange={(e) => onChange(e.target.value.replace(/\D/g, ''))} placeholder="0" />
     );
     case 'date': return <input type="date" {...common} />;
+    case 'time': return <input type="time" {...common} />;
     case 'select': return (
       <select {...common}><option value="">— Chọn —</option>{(field.options || []).map((o) => <option key={o} value={o}>{o}</option>)}</select>
     );

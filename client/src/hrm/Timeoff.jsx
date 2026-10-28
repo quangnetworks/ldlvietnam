@@ -43,7 +43,7 @@ export function TimeoffHome() {
                 <tbody>{data.records.map((r) => (
                   <tr key={r.id}>
                     <td><Link className="link" to={`/request/${r.id}`}>{r.title}</Link>{r.reason && <small className="muted block">{r.reason}</small>}</td>
-                    <td>{r.kind}</td><td>{fmtDate(r.from)}</td><td>{fmtDate(r.to)}</td><td>{r.days}</td>
+                    <td>{r.kind}{{ am: ' (buổi sáng)', pm: ' (buổi chiều)' }[r.session] || ''}</td><td>{fmtDate(r.from)}</td><td>{fmtDate(r.to)}</td><td>{String(r.days).replace('.', ',')}</td>
                     <td><span className={cx('badge', REQ_STATUS[r.status]?.[1])}>{REQ_STATUS[r.status]?.[0] || r.status}</span></td>
                   </tr>))}</tbody>
               </table></div>
@@ -77,7 +77,7 @@ export function TimeoffCalendar() {
                 <div key={date} className="cal-cell">
                   <span className="cal-day">{i + 1}</span>
                   {list.slice(0, 3).map((x) => (
-                    <Link key={x.id} to={`/request/${x.id}`} className={cx('cal-chip', x.status === 'pending' && 'pending')} title={`${x.name} · ${x.kind}`}>{x.name}</Link>
+                    <Link key={x.id} to={`/request/${x.id}`} className={cx('cal-chip', x.status === 'pending' && 'pending')} title={`${x.name} · ${x.kind}${{ am: ' (buổi sáng)', pm: ' (buổi chiều)' }[x.session] || ''}`}>{x.name}{x.session && x.session !== 'full' ? ' ½' : ''}</Link>
                   ))}
                   {list.length > 3 && <small className="muted">+{list.length - 3} người</small>}
                 </div>

@@ -106,8 +106,21 @@ export const TEMPLATES = [
     f('Số dư theo đối tác', 'money'), f('Chênh lệch & nguyên nhân', 'textarea')] },
 
   // ---------------- Hành chính - Nhân sự
-  { name: 'Đề xuất nghỉ phép', category: 'Hành chính - Nhân sự', flow: 'sequential', sla_hours: 24, fields: [
-    req('Nghỉ từ ngày', 'date'), req('Đến ngày', 'date'), sel('Loại nghỉ', ['Nghỉ phép năm', 'Nghỉ không lương', 'Nghỉ ốm', 'Nghỉ chế độ (cưới, tang…)']), req('Lý do', 'textarea')] },
+  // Mã trường from / to / kind / session / reason được LDL Timeoff và Checkin đọc — giữ nguyên khi chỉnh nhóm
+  { name: 'Đề xuất nghỉ phép', category: 'Hành chính - Nhân sự', flow: 'sequential', sla_hours: 24,
+    description: 'Nghỉ nửa ngày: chọn Buổi sáng / Buổi chiều (trừ 0,5 ngày phép; nghỉ nhiều ngày thì buổi đó tính cho ngày cuối).',
+    fields: [
+      req('Nghỉ từ ngày', 'date', { key: 'from' }), req('Đến ngày', 'date', { key: 'to' }),
+      f('Loại nghỉ', 'select', { key: 'kind', required: true, options: ['Nghỉ phép năm', 'Nghỉ không lương', 'Nghỉ ốm', 'Nghỉ chế độ (cưới, tang…)'] }),
+      f('Buổi nghỉ', 'select', { key: 'session', required: true, options: ['Cả ngày', 'Buổi sáng', 'Buổi chiều'] }),
+      req('Lý do', 'textarea', { key: 'reason' })] },
+  { name: 'Đề xuất đi muộn / về sớm', category: 'Hành chính - Nhân sự', flow: 'sequential', sla_hours: 4,
+    description: 'Sau khi duyệt, bảng chấm công không tính đi muộn / về sớm cho ngày này.',
+    fields: [
+      req('Ngày', 'date', { key: 'date' }),
+      f('Loại', 'select', { key: 'kind', required: true, options: ['Về sớm', 'Đi muộn', 'Ra ngoài giữa giờ'] }),
+      f('Từ giờ', 'time', { key: 'time_from' }), f('Đến giờ', 'time', { key: 'time_to' }),
+      req('Lý do', 'textarea', { key: 'reason' })] },
   { name: 'Đề xuất làm thêm giờ', category: 'Hành chính - Nhân sự', flow: 'sequential', sla_hours: 12, fields: [
     req('Ngày làm thêm', 'date'), req('Số giờ', 'number'), req('Nội dung công việc', 'textarea')] },
   { name: 'Đề xuất đi công tác', category: 'Hành chính - Nhân sự', flow: 'sequential', sla_hours: 24, fields: [

@@ -93,6 +93,7 @@ const checkinSettings = () => jsonSetting('checkin_settings', { start: '08:30', 
 const timeoffSettings = async () => {
   const st = await jsonSetting('timeoff_settings', { group_id: null, annual_days: 12, count_saturday: false });
   if (!st.group_id) st.group_id = (await get("SELECT id FROM request_groups WHERE name = 'Đề xuất nghỉ phép'"))?.id ?? null;
+  if (!st.early_group_id) st.early_group_id = (await get("SELECT id FROM request_groups WHERE name = 'Đề xuất đi muộn / về sớm'"))?.id ?? null;
   return st;
 };
 
@@ -1180,7 +1181,13 @@ function leaveDays(from, to, countSaturday) {
   return n;
 }
 
-/** Leave requests (LDL Request, group configured in Timeoff settings) as flat records. */
+/** Buổi nghỉ trên đề xuất: "Buổi sáng" / "Buổi chiều" = nửa ngày, còn lại cả ngày. */
+export function leaveSession(v) {
+  const s = String(v || '').toLowerCase();
+  return /sáng|sang|\bam\b|morning/.test(s) ? 'am' : /chiều|chieu|\bpm\b|afternoon/.test(s) ? 'pm' : 'full';
+}
+
+/** Leave requests (LDL Request, group configured in Timeoff settings) as flat records. Nửa ngày: trừ 0,5 (tính cho ngày cuối). */
 async function leaveRecords(st, { userId = null, statuses = ['approved', 'pending'], from = null, to = null } = {}) {
   if (!st.group_id) return [];
   const where = ['q.group_id = ?', `q.status IN (${statuses.map(() => '?').join(',')})`];
@@ -1194,8 +1201,10 @@ async function leaveRecords(st, { userId = null, statuses = ['approved', 'pendin
     try { data = JSON.parse(q.data || '{}'); } catch { data = {}; }
     const f = data.from || null;
     const t = data.to || data.from || null;
+    const session = leaveSession(data.session);
+    const full = leaveDays(f, t, st.count_saturday);
     return { id: q.id, title: q.title, status: q.status, user_id: q.creator_id, name: q.name, color: q.color, department_name: q.department_name,
-      from: f, to: t, kind: data.kind || 'Nghỉ phép năm', reason: data.reason || '', days: leaveDays(f, t, st.count_saturday), created_at: q.created_at };
+      from: f, to: t, kind: data.kind || 'Nghỉ phép năm', reason: data.reason || '', session, days: session !== 'full' && full > 0 ? full - 0.5 : full, created_at: q.created_at };
   }).filter((x) => x.from && (!from || x.to >= from) && (!to || x.from <= to));
 }
 
@@ -1259,7 +1268,9 @@ r.put('/timeoff/settings', requireAdmin, async (c) => {
   const gid = toInt(b.group_id);
   if (gid && !(await get('SELECT 1 FROM request_groups WHERE id = ?', gid))) throw badRequest('Nhóm đề xuất không tồn tại');
   const days = Number(b.annual_days);
-  const next = { group_id: gid, annual_days: days >= 0 && days <= 365 ? days : 12, count_saturday: !!b.count_saturday };
+  const eg = toInt(b.early_group_id);
+  if (eg && !(await get('SELECT 1 FROM request_groups WHERE id = ?', eg))) throw badRequest('Nhóm đề xuất không tồn tại');
+  const next = { group_id: gid, early_group_id: eg || null, annual_days: days >= 0 && days <= 365 ? days : 12, count_saturday: !!b.count_saturday };
   await setSetting('timeoff_settings', JSON.stringify(next));
   await audit(c.get('user').id, 'timeoff.settings', 'Cập nhật cài đặt LDL Timeoff');
   return c.json(next);
@@ -1361,11 +1372,39 @@ r.get('/checkin/:id/photo/:kind', async (c) => {
   return sendFile(c, { filename: rec[`${kind}_photo`], original_name: `cham-cong-${rec.date}-${kind === 'in' ? 'vao' : 'ra'}.jpg`, mime: 'image/jpeg' }, true);
 });
 
+/** Đề xuất đi muộn / về sớm / ra ngoài giữa giờ đã duyệt (nhóm cấu hình trong Timeoff, mặc định theo tên). */
+async function earlyRecords(st, { userId = null, from = null, to = null } = {}) {
+  if (!st.early_group_id) return [];
+  const where = ['q.group_id = ?', "q.status = 'approved'"];
+  const params = [st.early_group_id];
+  if (userId) { where.push('q.creator_id = ?'); params.push(userId); }
+  const rows = await all(`SELECT q.id, q.data, q.creator_id FROM requests q WHERE ${where.join(' AND ')}`, ...params);
+  return rows.map((q) => {
+    let d = {};
+    try { d = JSON.parse(q.data || '{}'); } catch { d = {}; }
+    const k = String(d.kind || '').toLowerCase();
+    return { id: q.id, user_id: q.creator_id, date: d.date || null, kind: d.kind || 'Về sớm', type: /muộn|muon/.test(k) ? 'late' : /ra ngoài|ra ngoai|giữa giờ/.test(k) ? 'out' : 'early',
+      time_from: d.time_from || null, time_to: d.time_to || null };
+  }).filter((x) => x.date && (!from || x.date >= from) && (!to || x.date <= to));
+}
+
+/** Miễn đi muộn / về sớm khi có nghỉ nửa ngày hoặc đề xuất đi muộn / về sớm đã duyệt cho ngày đó. */
+function excuse(rec, date, leaves, permits) {
+  const half = leaves.find((l) => l.from <= date && l.to >= date && l.session !== 'full' && l.to === date)?.session;
+  const ps = permits.filter((p) => p.date === date);
+  const lateOk = half === 'am' || ps.some((p) => p.type === 'late');
+  const earlyOk = half === 'pm' || ps.some((p) => p.type === 'early');
+  const reasons = [half === 'am' && 'Nghỉ buổi sáng', half === 'pm' && 'Nghỉ buổi chiều', ...ps.map((p) => `${p.kind}${p.time_from ? ` ${p.time_from}` : ''}${p.time_to ? `–${p.time_to}` : ''} (đề xuất #${p.id})`)].filter(Boolean);
+  return { ...rec, late_minutes: lateOk ? 0 : rec.late_minutes, early_minutes: earlyOk ? 0 : rec.early_minutes,
+    excused_late: lateOk && rec.late_minutes > 0 ? rec.late_minutes : 0, excused_early: earlyOk && rec.early_minutes > 0 ? rec.early_minutes : 0, excuse: reasons.join('; ') || null };
+}
+
 async function monthData(uid, month, st) {
   const tst = await timeoffSettings();
   const recs = await all('SELECT * FROM checkins WHERE user_id = ? AND date LIKE ? ORDER BY date', uid, `${month}-%`);
   const leaves = (await leaveRecords(tst, { userId: uid, statuses: ['approved'], from: `${month}-01`, to: `${month}-31` }));
-  const map = Object.fromEntries(recs.map((x) => [x.date, evaluate(x, st)]));
+  const permits = await earlyRecords(tst, { userId: uid, from: `${month}-01`, to: `${month}-31` });
+  const map = Object.fromEntries(recs.map((x) => [x.date, excuse(evaluate(x, st), x.date, leaves, permits)]));
   const [y, m] = month.split('-').map(Number);
   const daysInMonth = new Date(Date.UTC(y, m, 0)).getUTCDate();
   const today = vnDate();
@@ -1377,12 +1416,14 @@ async function monthData(uid, month, st) {
     const workday = dow !== 0 && (dow !== 6 || st.work_saturday);
     const rec = map[date] || null;
     const leave = leaves.find((l) => l.from <= date && l.to >= date) || null;
+    const half = leave && leave.session !== 'full' && leave.to === date ? leave.session : null;
     let status = 'off';
-    if (rec?.check_in_at) { status = rec.late_minutes > 0 ? 'late' : 'ok'; worked++; hours += rec.hours || 0; if (rec.late_minutes > 0) late++; }
-    else if (leave && workday) { status = 'leave'; leaveCount++; }
+    if (rec?.check_in_at) { status = rec.late_minutes > 0 ? 'late' : 'ok'; worked++; hours += rec.hours || 0; if (rec.late_minutes > 0) late++; if (half && workday) leaveCount += 0.5; }
+    else if (leave && workday) { status = 'leave'; leaveCount += half ? 0.5 : 1; }
     else if (workday && date < today) { status = 'absent'; absent++; }
     else if (workday) status = 'upcoming';
-    days.push({ date, dow, workday, status, record: rec, leave: leave ? { kind: leave.kind, id: leave.id } : null });
+    days.push({ date, dow, workday, status, record: rec, leave: leave ? { kind: leave.kind, id: leave.id, session: half || 'full' } : null,
+      permits: permits.filter((p) => p.date === date).map((p) => ({ id: p.id, kind: p.kind, from: p.time_from, to: p.time_to })) });
   }
   return { month, days, summary: { worked, late, absent, leave: leaveCount, hours: Math.round(hours * 100) / 100 } };
 }
@@ -1403,9 +1444,13 @@ r.get('/checkin/team', async (c) => {
   const users = await all(`SELECT u.id, u.name, u.color, u.title, d.name AS department_name FROM users u LEFT JOIN departments d ON d.id = u.department_id
     WHERE u.active = 1 AND u.role <> 'guest' ${hr ? '' : `AND ${underSql('u.id')}`} ORDER BY u.name COLLATE NOCASE`, ...(hr ? [] : [user.id]));
   const recs = await all('SELECT * FROM checkins WHERE date = ?', date);
-  const leaves = await leaveRecords(await timeoffSettings(), { statuses: ['approved'], from: date, to: date });
-  const byUser = Object.fromEntries(recs.map((x) => [x.user_id, evaluate(x, st)]));
-  return c.json({ date, is_hr: hr, items: users.map((u) => ({ ...u, record: byUser[u.id] || null, leave: leaves.find((l) => l.user_id === u.id)?.kind || null })) });
+  const tst = await timeoffSettings();
+  const leaves = await leaveRecords(tst, { statuses: ['approved'], from: date, to: date });
+  const permits = await earlyRecords(tst, { from: date, to: date });
+  const byUser = Object.fromEntries(recs.map((x) => [x.user_id, excuse(evaluate(x, st), date, leaves.filter((l) => l.user_id === x.user_id), permits.filter((p) => p.user_id === x.user_id))]));
+  const label = (l) => (l ? `${l.kind}${l.session !== 'full' && l.to === date ? ` (${l.session === 'am' ? 'buổi sáng' : 'buổi chiều'})` : ''}` : null);
+  return c.json({ date, is_hr: hr, items: users.map((u) => ({ ...u, record: byUser[u.id] || null, leave: label(leaves.find((l) => l.user_id === u.id)),
+    permit: permits.filter((p) => p.user_id === u.id).map((p) => `${p.kind} ${p.time_from || ''}${p.time_to ? `–${p.time_to}` : ''}`.trim()).join('; ') || null })) });
 });
 
 r.get('/checkin/export', async (c) => {

@@ -223,3 +223,45 @@ test('asset finance: created from an approved request, monthly depreciation, dis
   assert.ok((await hr.get('/asset/depreciation?month=2026-07')).data.rows.some((x) => x.id === a.id));
   assert.equal((await hr.get('/asset/depreciation?month=2026-08')).data.rows.some((x) => x.id === a.id), false);
 });
+
+test('leave: half a day counts 0.5 and excuses the morning / afternoon; approved late-arrival / early-leave requests excuse the timesheet', async () => {
+  const { run } = await import('../src/db.js');
+  const admin = await login('admin');
+  const pl = await login('phuonglinh');
+  const kd = await login('truongkd');
+  const tPl = await tokenOf('phuonglinh');
+  const kdId = (await pl.get('/users')).data.find((u) => u.username === 'truongkd').id;
+  const s0 = (await pl.get('/timeoff/summary')).data;
+  // thêm trường "Buổi nghỉ" vào nhóm nghỉ phép
+  const g = (await admin.get(`/request-groups/${s0.group_id}`)).data;
+  const fields = [...g.fields.filter((f) => f.key !== 'session'), { key: 'session', label: 'Buổi nghỉ', type: 'select', options: ['Cả ngày', 'Buổi sáng', 'Buổi chiều'] }];
+  assert.equal((await admin.put(`/request-groups/${g.id}`, { ...g, fields, approvers: g.approvers.map((a) => a.user_id), followers: g.followers.map((f) => f.user_id) })).status, 200);
+  // nhóm đi muộn / về sớm (tự nhận theo tên)
+  const eg = (await admin.post('/request-groups', { name: 'Đề xuất đi muộn / về sớm', category: 'Hành chính - Nhân sự', flow: 'sequential', custom_approvers: true,
+    fields: [{ key: 'date', label: 'Ngày', type: 'date', required: true }, { key: 'kind', label: 'Loại', type: 'select', options: ['Về sớm', 'Đi muộn', 'Ra ngoài giữa giờ'], required: true },
+      { key: 'time_from', label: 'Từ giờ', type: 'time' }, { key: 'time_to', label: 'Đến giờ', type: 'time' }, { key: 'reason', label: 'Lý do', type: 'textarea', required: true }] })).data.id;
+  const submit = async (group, data) => (await upload(tPl, '/requests', { group_id: group, data: JSON.stringify(data), approvers: kdId }, false));
+  assert.equal((await submit(eg, { date: '2026-12-04', kind: 'Đi muộn', time_from: '25:00', reason: 'x' })).status, 400);
+
+  const half = (await submit(s0.group_id, { from: '2026-12-03', to: '2026-12-03', kind: 'Nghỉ phép năm', session: 'Buổi chiều', reason: 'Khám bệnh' })).data;
+  const late = (await submit(eg, { date: '2026-12-04', kind: 'Đi muộn', time_from: '08:30', time_to: '10:00', reason: 'Gặp NPP' })).data;
+  await kd.post(`/requests/${half.id}/decide`, { action: 'approve' });
+  await kd.post(`/requests/${late.id}/decide`, { action: 'approve' });
+  const s1 = (await pl.get('/timeoff/summary')).data;
+  assert.equal(s1.used, s0.used + 0.5);
+
+  // chấm công: 03/12 về lúc 15:00 (nghỉ chiều) — 04/12 vào lúc 10:00 (đi muộn có duyệt) — 07/12 về 16:00 (không đề xuất)
+  for (const [date, inAt, outAt] of [['2026-12-03', '01:25', '08:00'], ['2026-12-04', '03:00', '10:40'], ['2026-12-07', '01:25', '09:00']]) {
+    await run('INSERT INTO checkins(user_id, date, check_in_at, check_out_at) VALUES (?,?,?,?)', pl.user.id, date, `${date} ${inAt}:00`, `${date} ${outAt}:00`);
+  }
+  const m = (await pl.get('/checkin/month?month=2026-12')).data;
+  const day = (d) => m.days.find((x) => x.date === d);
+  assert.equal(day('2026-12-03').record.early_minutes, 0);
+  assert.ok(day('2026-12-03').record.excused_early > 0);
+  assert.equal(day('2026-12-03').leave.session, 'pm');
+  assert.equal(day('2026-12-04').record.late_minutes, 0);
+  assert.match(day('2026-12-04').record.excuse, /Đi muộn 08:30–10:00/);
+  assert.equal(day('2026-12-04').status, 'ok');
+  assert.ok(day('2026-12-07').record.early_minutes > 0);
+  assert.equal(m.summary.leave, 0.5);
+});

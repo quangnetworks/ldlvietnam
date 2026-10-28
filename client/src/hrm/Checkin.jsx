@@ -53,7 +53,7 @@ function Timesheet({ userId }) {
             <div className="stat-tile"><div className="stat-label">Ngày công</div><div className="stat-value">{data.summary.worked}</div></div>
             <div className="stat-tile"><div className="stat-label">Đi muộn</div><div className="stat-value text-orange">{data.summary.late}</div></div>
             <div className="stat-tile"><div className="stat-label">Vắng</div><div className="stat-value text-red">{data.summary.absent}</div></div>
-            <div className="stat-tile"><div className="stat-label">Nghỉ phép</div><div className="stat-value">{data.summary.leave}</div></div>
+            <div className="stat-tile"><div className="stat-label">Nghỉ phép</div><div className="stat-value">{String(data.summary.leave).replace('.', ',')}</div></div>
             <div className="stat-tile"><div className="stat-label">Tổng giờ</div><div className="stat-value">{data.summary.hours}</div></div>
           </div>
           <div className="cal-grid">
@@ -62,10 +62,11 @@ function Timesheet({ userId }) {
             {data.days.map((d) => {
               const [label, cls] = DAY_STATUS[d.status] || [d.status, ''];
               return (
-                <div key={d.date} className={cx('cal-cell', cls)} title={d.leave?.kind || label}>
+                <div key={d.date} className={cx('cal-cell', cls)} title={[d.leave?.kind, d.record?.excuse].filter(Boolean).join(' · ') || label}>
                   <span className="cal-day">{Number(d.date.slice(8))}</span>
                   {d.record?.in_time && <small>{d.record.in_time}{d.record.out_time ? ` – ${d.record.out_time}` : ''}</small>}
-                  {d.leave && <small>{d.leave.kind}</small>}
+                  {d.leave && <small>{d.leave.kind}{d.leave.session === 'am' ? ' · sáng' : d.leave.session === 'pm' ? ' · chiều' : ''}</small>}
+                  {d.permits?.map((p) => <small key={p.id} className="ci-permit">{p.kind}{p.from ? ` ${p.from}` : ''}{p.to ? `–${p.to}` : ''}</small>)}
                   {!d.record && !d.leave && label && <small>{label}</small>}
                 </div>
               );
@@ -170,8 +171,8 @@ export function CheckinHome() {
           <h3 className="card-title row gap-sm"><Clock size={16} /> Hôm nay</h3>
           {!rec ? <p className="muted">Chưa có dữ liệu chấm công.</p> : (
             <div className="ci-today">
-              <div><small className="muted">Giờ vào</small><b>{rec.in_time || '—'}</b>{rec.late_minutes > 0 && <span className="badge badge-orange">Muộn {rec.late_minutes}′</span>}</div>
-              <div><small className="muted">Giờ ra</small><b>{rec.out_time || '—'}</b>{rec.early_minutes > 0 && rec.out_time && <span className="badge badge-orange">Sớm {rec.early_minutes}′</span>}</div>
+              <div><small className="muted">Giờ vào</small><b>{rec.in_time || '—'}</b>{rec.late_minutes > 0 && <span className="badge badge-orange">Muộn {rec.late_minutes}′</span>}{rec.excused_late > 0 && <span className="badge badge-green" title={rec.excuse}>Muộn có phép</span>}</div>
+              <div><small className="muted">Giờ ra</small><b>{rec.out_time || '—'}</b>{rec.early_minutes > 0 && rec.out_time && <span className="badge badge-orange">Sớm {rec.early_minutes}′</span>}{rec.excused_early > 0 && <span className="badge badge-green" title={rec.excuse}>Về sớm có phép</span>}</div>
               <div><small className="muted">Số giờ</small><b>{rec.hours ?? '—'}</b></div>
             </div>
           )}
@@ -236,7 +237,7 @@ export function CheckinTeam() {
                     <td><span className="row gap-sm"><Avatar name={u.name} color={u.color} size={26} /><span>{u.name}<small className="muted block">{u.title}</small></span></span></td>
                     <td>{u.department_name}</td>
                     <td>{r?.in_time || '—'}</td><td>{r?.out_time || '—'}</td><td>{r?.hours ?? '—'}</td>
-                    <td>{u.leave ? <span className="badge badge-purple">{u.leave}</span>
+                    <td>{u.permit && <span className="badge badge-blue" title="Đề xuất đã duyệt">{u.permit}</span>}{u.leave ? <span className="badge badge-purple">{u.leave}</span>
                       : r?.check_in_at ? (r.late_minutes > 0 ? <span className="badge badge-orange">Muộn {r.late_minutes} phút</span> : <span className="badge badge-green">Đúng giờ</span>)
                         : <span className="badge badge-gray">Chưa chấm công</span>}</td>
                     <td><PunchLinks rec={r} /></td>
