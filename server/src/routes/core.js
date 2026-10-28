@@ -129,7 +129,7 @@ r.put('/settings', requireAdmin, async (c) => {
  * Hồ sơ chi tiết (giới thiệu, địa chỉ, quá trình làm việc…) lấy riêng khi mở trang cá nhân — danh bạ nhẹ dù đông nhân sự.
  */
 const DIRECTORY_FIELDS =
-  'u.id, u.username, u.name, u.email, u.phone, u.title, u.department_id, u.manager_id, u.sales_role, u.role, u.color, u.active, u.birthday, u.expires_at, u.avatar_version, u.is_owner, '
+  'u.id, u.username, u.name, u.email, u.phone, u.title, u.department_id, u.manager_id, u.sales_role, u.role, u.color, u.active, u.birthday, u.expires_at, u.avatar_version, u.is_owner, u.owner_label, '
   + '(SELECT GROUP_CONCAT(ud.department_id) FROM user_departments ud WHERE ud.user_id = u.id) AS extra_departments';
 
 r.get('/users', async (c) => {

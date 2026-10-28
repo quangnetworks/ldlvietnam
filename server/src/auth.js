@@ -68,7 +68,7 @@ export async function verifyFileToken(c, token) {
 }
 
 export const PUBLIC_USER_FIELDS =
-  'u.id, u.username, u.name, u.email, u.phone, u.title, u.department_id, u.manager_id, u.sales_role, u.role, u.color, u.active, u.birthday, u.address, u.bio, u.profile, u.last_login_at, u.created_at, u.totp_enabled, u.expires_at, u.avatar_version, u.is_owner, '
+  'u.id, u.username, u.name, u.email, u.phone, u.title, u.department_id, u.manager_id, u.sales_role, u.role, u.color, u.active, u.birthday, u.address, u.bio, u.profile, u.last_login_at, u.created_at, u.totp_enabled, u.expires_at, u.avatar_version, u.is_owner, u.owner_label, '
   + '(SELECT GROUP_CONCAT(ud.department_id) FROM user_departments ud WHERE ud.user_id = u.id) AS extra_departments';
 
 /** "3,5" (GROUP_CONCAT) → [3, 5] */

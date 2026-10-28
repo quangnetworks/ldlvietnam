@@ -52,7 +52,7 @@ export function ProfileView() {
           <AvatarEditor userId={p.id} name={p.name} color={p.color} size={100} onChanged={reload} />
           <div className="grow">
             <h1>{p.name} {!p.active && <span className="badge badge-gray">VÔ HIỆU HOÁ</span>}</h1>
-            <div className="muted">{p.title || 'Chưa nhập chức danh'}{p.is_owner ? <span className="owner-badge">Chủ doanh nghiệp</span> : p.role === 'admin' && <span className="text-red"> · Quản trị hệ thống</span>}</div>
+            <div className="muted">{p.title || 'Chưa nhập chức danh'}{p.is_owner ? <span className="owner-badge">{p.owner_label || 'Chủ doanh nghiệp'}</span> : p.role === 'admin' && <span className="text-red"> · Quản trị hệ thống</span>}</div>
             {!own && <ContactButtons user={p} className="profile-contact" />}
             <dl className="profile-dl">
               <dt>Email</dt><dd>{p.email || '—'}</dd>

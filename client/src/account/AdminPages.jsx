@@ -76,7 +76,7 @@ function UserModal({ user: editing, guest = false, ownersCount, onClose, onSaved
           <select className="input" value={f.role} onChange={(e) => setF({ ...f, role: e.target.value, apps: e.target.value === 'guest' && !editing ? [] : f.apps })}>
             <option value="member">Thành viên</option>
             <option value="admin">Quản trị hệ thống (quản trị cấp cao)</option>
-            {(!!me.is_owner || f.role === 'owner' || ownersCount === 0) && <option value="owner">Chủ doanh nghiệp (quản trị cao nhất)</option>}
+            {(!!me.is_owner || f.role === 'owner' || ownersCount === 0) && <option value="owner">{editing?.owner_label || 'Chủ doanh nghiệp'} (quản trị cao nhất)</option>}
             <option value="guest">Tài khoản khách (đối tác, NPP…)</option>
           </select>
         </Field>
@@ -210,7 +210,7 @@ export function MembersPage() {
                   <Link to={`/account/u/${u.id}`} className="mem-title">{u.name}</Link>
                   <div className="small"><b>@{u.username}</b> · <i className="muted">{u.title || 'Chưa nhập chức danh'}</i></div>
                   <div className="mem-apps">
-                    {u.is_owner ? <span className="owner-badge">Chủ doanh nghiệp</span>
+                    {u.is_owner ? <span className="owner-badge">{u.owner_label || 'Chủ doanh nghiệp'}</span>
                       : u.role === 'admin' && <span className="text-red small">Quản trị cấp cao · </span>}
                     {u.role === 'guest' && <span className="badge badge-gray">KHÁCH{u.expires_at ? ` · HẾT HẠN ${fmtDate(u.expires_at)}` : ''}</span>}
                     {!!u.totp_enabled && <span className="small text-green" title="Đã bật bảo mật hai lớp">2FA · </span>}
