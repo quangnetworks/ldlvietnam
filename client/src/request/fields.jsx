@@ -7,6 +7,7 @@ export const FIELD_TYPES = [
   { value: 'number', label: 'Số' },
   { value: 'money', label: 'Số tiền (VNĐ)' },
   { value: 'date', label: 'Ngày' },
+  { value: 'time', label: 'Giờ (giờ:phút)' },
   { value: 'select', label: 'Danh sách chọn' },
   { value: 'checkbox', label: 'Ô tích (Có/Không)' },
   { value: 'user', label: 'Nhân sự' },
@@ -33,6 +34,7 @@ export function FieldInput({ field, value, onChange, users }) {
         onChange={(e) => onChange(e.target.value.replace(/\D/g, ''))} placeholder="0" />
     );
     case 'date': return <input type="date" {...common} />;
+    case 'time': return <input type="time" {...common} />;
     case 'select': return (
       <select {...common}><option value="">— Chọn —</option>{(field.options || []).map((o) => <option key={o} value={o}>{o}</option>)}</select>
     );
@@ -52,4 +54,21 @@ export function fieldDisplay(field, value, usersById = {}) {
     case 'user': return usersById[value] || `#${value}`;
     default: return String(value);
   }
+}
+
+/** Quy trình xử lý của nhóm đề xuất (theo Base Request). */
+export const FLOWS = [
+  { value: 'parallel', label: 'Duyệt đồng thời', hint: 'Tất cả người duyệt nhận đề xuất cùng lúc; tất cả đồng ý mới được chấp thuận.' },
+  { value: 'sequential', label: 'Duyệt lần lượt', hint: 'Từng người duyệt theo thứ tự; người sau chỉ nhận khi người trước đã đồng ý.' },
+  { value: 'any', label: 'Chỉ cần một người duyệt', hint: 'Tất cả nhận cùng lúc; một người đồng ý là đề xuất được chấp thuận.' },
+  { value: 'blocks', label: 'Luồng duyệt trong khối người duyệt', hint: 'Chia người duyệt thành các khối nối tiếp; mỗi khối chọn "tất cả đồng ý" hoặc "chỉ cần một người".' },
+];
+export const flowLabel = (flow) => FLOWS.find((f) => f.value === flow)?.label || 'Duyệt lần lượt';
+
+/** Ghi chú cho người duyệt trong luồng: bước, và cách duyệt khi nhiều người cùng bước. */
+export function stepNote(a, list, flow) {
+  if (flow === 'any') return 'Người duyệt';
+  const same = list.filter((x) => x.step === a.step).length;
+  if (same < 2) return `Bước ${a.step}`;
+  return `Bước ${a.step} · ${(a.step_mode || a.mode) === 'any' ? 'một người đồng ý' : 'cùng duyệt'}`;
 }

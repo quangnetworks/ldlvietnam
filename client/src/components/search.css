@@ -1,0 +1,57 @@
+/* ======================================================================
+ * Tìm kiếm toàn hệ thống (GlobalSearch) + tô sáng từ khớp (Hl)
+ * ====================================================================== */
+mark.hl { background: color-mix(in srgb, #ffd43b 45%, transparent); color: inherit; border-radius: 3px; padding: 0 1px; }
+:root[data-theme='dark'] mark.hl { background: color-mix(in srgb, #fab005 38%, transparent); }
+
+.gs-backdrop { position: fixed; inset: 0; z-index: 1400; background: rgba(12, 14, 18, 0.45); display: flex; justify-content: center; align-items: flex-start;
+  padding: 10vh 16px 16px; -webkit-backdrop-filter: blur(4px); backdrop-filter: blur(4px); animation: gs-fade 0.15s ease-out; }
+.gs { width: min(680px, 100%); max-height: min(72vh, 680px); display: flex; flex-direction: column; background: var(--bg); color: var(--text);
+  border-radius: 18px; border: 1px solid var(--line); box-shadow: 0 24px 64px rgba(15, 23, 42, 0.32); overflow: hidden; animation: gs-pop 0.18s var(--ease, ease-out); }
+.gs-bar { display: flex; align-items: center; gap: 10px; padding: 12px 14px; border-bottom: 1px solid var(--line); }
+.gs-bar input { flex: 1; min-width: 0; border: 0; outline: 0; background: none; color: var(--text); font-size: 16px; }
+.gs-esc { font-size: 11px; color: var(--muted); border: 1px solid var(--line-2); border-radius: 6px; padding: 2px 6px; }
+.gs-spin { width: 16px; height: 16px; border-radius: 50%; border: 2px solid var(--line-2); border-top-color: var(--blue-2); animation: gs-rot 0.7s linear infinite; }
+.gs-body { overflow-y: auto; overscroll-behavior: contain; padding: 6px 8px 10px; flex: 1; min-height: 80px; }
+.gs-group + .gs-group { margin-top: 4px; }
+.gs-group-title { display: flex; align-items: center; gap: 6px; font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase;
+  color: var(--muted); padding: 10px 8px 4px; }
+.gs-item { display: flex; align-items: center; gap: 10px; width: 100%; padding: 8px; border-radius: 10px; text-align: left; color: var(--text); }
+.gs-item.active { background: color-mix(in srgb, var(--blue-2) 10%, transparent); }
+.gs-icon { width: 28px; height: 28px; flex: none; border-radius: 8px; display: grid; place-items: center; background: var(--bg-3); color: var(--text-2); }
+.gs-item.active .gs-icon { background: var(--blue-2); color: #fff; }
+.gs-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.gs-text b { font-weight: 500; font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.gs-text small { font-size: 12px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.gs-enter { flex: none; }
+.gs-none { padding: 28px 12px; text-align: center; color: var(--muted); }
+.gs-empty { padding: 4px 8px 8px; }
+.gs-empty p { margin: 12px 0 4px; line-height: 1.5; }
+.gs-recent { display: flex; flex-wrap: wrap; gap: 6px; padding: 2px 0; }
+.gs-recent button { display: inline-flex; align-items: center; gap: 6px; padding: 5px 10px; border-radius: 999px; background: var(--bg-3); font-size: 13px; color: var(--text-2); }
+.gs-recent button:hover { color: var(--blue-2); }
+.gs-foot { display: flex; align-items: center; gap: 14px; padding: 8px 14px; border-top: 1px solid var(--line); font-size: 11.5px; color: var(--muted); }
+.gs kbd, .al-global kbd { font: inherit; font-size: 10.5px; padding: 1px 5px; margin-right: 3px; border-radius: 5px; border: 1px solid var(--line-2); background: var(--bg-3); color: var(--text-2); }
+@keyframes gs-fade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes gs-pop { from { opacity: 0; transform: translateY(-8px) scale(0.98); } to { opacity: 1; transform: none; } }
+@keyframes gs-rot { to { transform: rotate(360deg); } }
+
+/* Điện thoại: toàn màn hình, ô nhập sát đầu (né tai thỏ), ẩn gợi ý phím */
+@media (max-width: 800px) {
+  .gs-backdrop { padding: 0; align-items: stretch; background: var(--bg); -webkit-backdrop-filter: none; backdrop-filter: none; }
+  .gs { width: 100%; max-height: none; height: var(--app-h, 100dvh); border-radius: 0; border: 0; box-shadow: none; padding-top: var(--safe-top, 0px); animation: none; }
+  .gs-foot { display: none; }
+  .gs-item { padding: 10px 8px; }
+  .gs-body { padding-bottom: calc(16px + var(--safe-bottom, 0px)); }
+}
+
+/* Lối vào trong bảng "Tất cả ứng dụng" */
+.al-global { display: flex; align-items: center; gap: 8px; margin: 6px 12px 0; padding: 0 10px; height: 38px; border-radius: 10px; width: calc(100% - 24px);
+  border: 1px solid color-mix(in srgb, var(--blue-2) 30%, var(--line)); background: color-mix(in srgb, var(--blue-2) 7%, var(--bg)); color: var(--text-2); font-size: 13px; text-align: left; }
+.al-global:hover { border-color: var(--blue-2); color: var(--blue-2); }
+.al-panel.sheet-mode .al-global kbd { display: none; }
+
+/* Nút xoá trong ô tìm văn bản (Office) */
+.top-search-clear { display: grid; place-items: center; color: #ced4da; border-radius: 4px; padding: 2px; }
+.top-search-clear:hover { color: #fff; }
+.top-search { width: 260px; }

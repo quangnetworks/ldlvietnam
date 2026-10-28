@@ -60,7 +60,7 @@ export default function HomeAgenda({ data, reload, loading }) {
             <Link key={i.key} to={i.link} className="agenda-item">
               <span className={cx('agenda-icon', t.cls)}><t.icon size={15} /></span>
               <span className="grow">
-                <span className="agenda-title ellipsis">{i.priority === 'urgent' && <span className="agenda-flag">Khẩn</span>}{i.title}</span>
+                <span className="agenda-title ellipsis">{['urgent', 'critical'].includes(i.priority) && <span className="agenda-flag">Khẩn</span>}{i.title}</span>
                 <small className="muted ellipsis block">{t.label} · {i.sub}</small>
               </span>
               {due && <span className={cx('agenda-due', due.cls)}>{due.text}</span>}

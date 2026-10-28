@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import { Plus, Save } from 'lucide-react';
+import { Plus, Save, Search } from 'lucide-react';
 import { api } from '../api.js';
 import { useApp, useFetch, useToast } from '../context.jsx';
-import { Avatar, Spinner, Field, Empty, FilterSelect } from '../components/ui.jsx';
+import { Avatar, Spinner, Field, Empty, FilterSelect, useShowMore, foldVi } from '../components/ui.jsx';
 import { fmtDate, cx } from '../utils.js';
 import { MonthNav, vnMonth } from './Checkin.jsx';
 
@@ -43,7 +43,7 @@ export function TimeoffHome() {
                 <tbody>{data.records.map((r) => (
                   <tr key={r.id}>
                     <td><Link className="link" to={`/request/${r.id}`}>{r.title}</Link>{r.reason && <small className="muted block">{r.reason}</small>}</td>
-                    <td>{r.kind}</td><td>{fmtDate(r.from)}</td><td>{fmtDate(r.to)}</td><td>{r.days}</td>
+                    <td>{r.kind}{{ am: ' (buổi sáng)', pm: ' (buổi chiều)' }[r.session] || ''}</td><td>{fmtDate(r.from)}</td><td>{fmtDate(r.to)}</td><td>{String(r.days).replace('.', ',')}</td>
                     <td><span className={cx('badge', REQ_STATUS[r.status]?.[1])}>{REQ_STATUS[r.status]?.[0] || r.status}</span></td>
                   </tr>))}</tbody>
               </table></div>
@@ -77,7 +77,7 @@ export function TimeoffCalendar() {
                 <div key={date} className="cal-cell">
                   <span className="cal-day">{i + 1}</span>
                   {list.slice(0, 3).map((x) => (
-                    <Link key={x.id} to={`/request/${x.id}`} className={cx('cal-chip', x.status === 'pending' && 'pending')} title={`${x.name} · ${x.kind}`}>{x.name}</Link>
+                    <Link key={x.id} to={`/request/${x.id}`} className={cx('cal-chip', x.status === 'pending' && 'pending')} title={`${x.name} · ${x.kind}${{ am: ' (buổi sáng)', pm: ' (buổi chiều)' }[x.session] || ''}`}>{x.name}{x.session && x.session !== 'full' ? ' ½' : ''}</Link>
                   ))}
                   {list.length > 3 && <small className="muted">+{list.length - 3} người</small>}
                 </div>
@@ -124,6 +124,12 @@ export function TimeoffBalances() {
   const [data, reload, loading, error] = useFetch(() => api.get('/timeoff/balances', { year }), [year]);
   const [edits, setEdits] = useState({});
   useEffect(() => setEdits({}), [data]);
+  const { departments } = useApp();
+  const [q, setQ] = useState('');
+  const [dep, setDep] = useState('');
+  const fq = foldVi(q.trim());
+  const items = (data?.items || []).filter((u) => (!fq || foldVi(u.name).includes(fq)) && (!dep || u.department_name === dep));
+  const [shown, more] = useShowMore(items, 80, `${q}|${dep}|${year}`);
   const save = async (uid) => {
     try { await api.put('/timeoff/quota', { user_id: uid, year, days: edits[uid] }); toast('Đã cập nhật quỹ phép'); reload(); } catch (e) { toast(e.message, 'error'); }
   };
@@ -132,10 +138,14 @@ export function TimeoffBalances() {
       <div className="page-head"><h1>Quỹ phép nhân viên</h1>
         <FilterSelect value={year} onChange={setYear} options={[1, 0, -1, -2].map((i) => ({ value: new Date().getFullYear() + i, label: `Năm ${new Date().getFullYear() + i}` }))} /></div>
       {user.role === 'admin' && <TimeoffAdminSettings />}
-      {error ? <div className="alert alert-error">{error.message}</div> : loading && !data ? <Spinner /> : (
+      <div className="toolbar wrap mt">
+        <div className="ww-search"><Search size={14} /><input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Tìm nhân viên" /></div>
+        <FilterSelect value={dep} onChange={setDep} options={[{ value: '', label: 'Tất cả phòng ban' }, ...departments.map((d) => ({ value: d.name, label: d.name }))]} />
+      </div>
+      {error ? <div className="alert alert-error">{error.message}</div> : loading && !data ? <Spinner /> : (<>
         <div className="table-wrap mt"><table className="table">
           <thead><tr><th>Nhân viên</th><th>Phòng ban</th><th style={{ width: 150 }}>Phép năm</th><th>Đã nghỉ</th><th>Còn lại</th><th /></tr></thead>
-          <tbody>{data.items.map((u) => (
+          <tbody>{shown.map((u) => (
             <tr key={u.id}>
               <td><Link to={`/timeoff?user_id=${u.id}`} className="row gap-sm"><Avatar name={u.name} color={u.color} size={26} />{u.name}</Link></td>
               <td>{u.department_name}</td>
@@ -147,7 +157,7 @@ export function TimeoffBalances() {
               <td className={u.remaining < 0 ? 'text-red' : ''}><b>{u.remaining}</b></td>
               <td><Link className="link" to={`/timeoff?user_id=${u.id}`}>Chi tiết</Link></td>
             </tr>))}</tbody>
-        </table></div>
+        </table></div>{more}</>
       )}
     </div>
   );

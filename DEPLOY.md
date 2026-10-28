@@ -32,15 +32,16 @@ Kết thúc, script in ra địa chỉ dạng `https://ldlvietnam-workspace.<tê
 
 **Cập nhật code về sau** (giữ nguyên dữ liệu): `git pull && npm ci && node scripts/cf-setup.mjs --reuse`
 
-## Cách 2 — Tự deploy bằng GitHub Actions
+## Chỉ deploy từ máy quản trị
 
-Workflow `.github/workflows/deploy-cloudflare.yml` chạy test rồi deploy (`cf-setup.mjs --reuse`) mỗi khi push,
-khi repo có 2 secret `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`.
+Hệ thống **không tự deploy từ GitHub** (workflow chỉ chạy kiểm thử). Trước đây mỗi lần push lên nhánh chính,
+GitHub Actions deploy lại từ mã cũ hơn và đè lên phiên bản đang chạy. Vì vậy:
 
-1. Tạo **API Token**: *My Profile* → *API Tokens* → *Create Token* → mẫu **Edit Cloudflare Workers** → *Use template*,
-   bấm *+ Add more* thêm `Account · D1 · Edit` và `Account · Workers R2 Storage · Edit` → *Create Token*.
-2. Repo → *Settings* → *Secrets and variables* → *Actions*: thêm `CLOUDFLARE_API_TOKEN` và `CLOUDFLARE_ACCOUNT_ID`.
-3. Tab *Actions* → **Deploy to Cloudflare** → *Run workflow*.
+- `cf-setup.mjs` chỉ chạy trên máy có tệp `server/.deploy-machine` (không đưa lên git) ghi đúng tên máy
+  (`node -e "console.log(require('os').hostname())"`). Môi trường CI, phiên làm việc trên cloud hay máy khác đều bị từ chối.
+- Mỗi lần deploy ghi mã commit vào Worker; lần sau script chỉ deploy khi mã nguồn hiện tại đã chứa commit đang chạy
+  (tránh đưa hệ thống về phiên bản cũ). Thêm `--force` nếu thật sự muốn quay về bản cũ.
+- Không cấp API Token Cloudflare cho GitHub hay dịch vụ khác. Máy quản trị deploy bằng `npx wrangler login`.
 
 ## Sau khi deploy
 
