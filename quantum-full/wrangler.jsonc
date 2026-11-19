@@ -1,0 +1,45 @@
+{
+  // QUANTUM FULL — Lottery Intelligence Platform
+  // Worker + static assets (React SPA build) + D1. Triển khai thống nhất qua @cloudflare/vite-plugin.
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "quantum-full",
+  "main": "src/worker/index.ts",
+  "compatibility_date": "2026-09-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "assets": {
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/api/*"]
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "quantum-full-db",
+      // KHÔNG hardcode database_id. Wrangler tự cấp phát (auto-provision) D1 theo database_name
+      // ở lần deploy đầu tiên. Xem docs/DEPLOYMENT.md nếu phiên bản wrangler của bạn yêu cầu id.
+      "migrations_dir": "migrations"
+    }
+  ],
+  "ratelimits": [
+    {
+      // Giới hạn tốc độ theo người dùng/IP cho API (best-effort, theo từng PoP).
+      "name": "RATE_LIMITER",
+      "namespace_id": "4201",
+      "simple": { "limit": 120, "period": 60 }
+    }
+  ],
+  "vars": {
+    "APP_ENV": "production",
+    // Cloudflare Access: điền team domain (vd: "myteam.cloudflareaccess.com") và Application AUD tag
+    // sau khi tạo Access Application cho quantum.vanquang.xyz. Không phải bí mật.
+    "ACCESS_TEAM_DOMAIN": "",
+    "ACCESS_AUD": "",
+    // Danh sách email (phân cách bởi dấu phẩy) được quyền quản trị khi đăng nhập qua Access.
+    "ADMIN_EMAILS": "",
+    // Chỉ bật "true" trong .dev.vars khi phát triển cục bộ. KHÔNG bật ở production.
+    "ALLOW_DEV_AUTH": "false"
+  },
+  // Secrets (đặt bằng `wrangler secret put`): ADMIN_TOKEN, VIEWER_TOKEN (tuỳ chọn)
+  "routes": [{ "pattern": "quantum.vanquang.xyz", "custom_domain": true }],
+  "workers_dev": false,
+  "observability": { "enabled": true }
+}
