@@ -114,3 +114,18 @@ describe('Cloudflare Access JWT', () => {
     expect(((await me2.json()) as { data: { role: string } }).data.role).toBe('viewer');
   });
 });
+
+describe('Rate limiting', () => {
+  it('Vượt giới hạn ⇒ 429 (bộ đếm fallback khi không có binding)', async () => {
+    const app = createApp();
+    const { RATE_LIMITER: _omit, ...noLimiter } = env as typeof env & { RATE_LIMITER?: unknown };
+    const e = { ...noLimiter, ADMIN_TOKEN: 'another-admin-token-xyz-123' };
+    let last = 0;
+    for (let i = 0; i < 125; i++) {
+      const r = await app.request('/api/v1/games', { headers: { authorization: 'Bearer another-admin-token-xyz-123' } }, e);
+      last = r.status;
+      if (last === 429) break;
+    }
+    expect(last).toBe(429);
+  });
+});

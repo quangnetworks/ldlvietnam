@@ -96,7 +96,7 @@ portfolioRoutes.post('/portfolios/:id/purchase', requireRole('admin'), async (c)
   if (p.status !== 'draft') throw conflict(`Danh mục đang ở trạng thái ${p.status}`);
   const purchaseDate = b.purchase_date ?? vnToday();
   if (p.target_draw_date && purchaseDate > p.target_draw_date) throw unprocessable('Ngày mua phải trước hoặc trong ngày quay');
-  const issues = await checkRealPurchaseLimits(c.env.DB, p.total_cost, p.target_draw_date ?? purchaseDate, purchaseDate);
+  const issues = await checkRealPurchaseLimits(c.env.DB, p.game_id, p.total_cost, p.target_draw_date ?? purchaseDate, purchaseDate);
   if (issues.length) throw new ApiError(422, 'capital_limit', issues.join('; '), issues);
   const user = c.get('user');
   await c.env.DB.batch([

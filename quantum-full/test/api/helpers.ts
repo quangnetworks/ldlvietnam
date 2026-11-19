@@ -24,7 +24,7 @@ export async function api<T = any>(path: string, opts: { method?: string; body?:
 export function syntheticCsv(rules: GameRules, count: number, seed: string): string {
   const draws = syntheticDraws(rules, count, seed);
   const lines = ['draw_code,draw_date,numbers,special'];
-  for (const d of draws) lines.push(`${d.drawCode},${d.drawAt.slice(0, 10)},${d.main.join(' ')},${d.special ?? ''}`);
+  for (const d of draws) lines.push(`${seed.slice(0, 6).toUpperCase()}-${d.drawCode},${d.drawAt.slice(0, 10)},${d.main.join(' ')},${d.special ?? ''}`);
   return lines.join('\n');
 }
 

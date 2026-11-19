@@ -91,18 +91,18 @@ export async function capitalSummary(db: D1Database, mode: 'real' | 'simulated',
 }
 
 /** Kiểm tra hạn mức trước khi ghi nhận một giao dịch mua thực tế. */
-export async function checkRealPurchaseLimits(db: D1Database, cost: number, drawDate: string, purchaseDate: string): Promise<string[]> {
+export async function checkRealPurchaseLimits(db: D1Database, gameId: number, cost: number, drawDate: string, purchaseDate: string): Promise<string[]> {
   const s = await getCapitalSettings(db);
   const issues: string[] = [];
   if (cost > s.budgetPerDraw) issues.push(`Chi phí ${cost.toLocaleString('vi-VN')}đ vượt ngân sách mỗi kỳ ${s.budgetPerDraw.toLocaleString('vi-VN')}đ`);
   const sameDraw = await db
     .prepare(
       `SELECT COALESCE(SUM(-l.amount), 0) AS v FROM bankroll_ledger l JOIN portfolios p ON p.id = l.portfolio_id
-       WHERE l.mode = 'real' AND l.entry_type = 'purchase' AND p.target_draw_date = ?`,
+       WHERE l.mode = 'real' AND l.entry_type = 'purchase' AND p.game_id = ? AND p.target_draw_date = ?`,
     )
-    .bind(drawDate)
+    .bind(gameId, drawDate)
     .first<{ v: number }>();
-  if ((sameDraw?.v ?? 0) + cost > s.budgetPerDraw) issues.push(`Tổng chi cho ngày quay ${drawDate} sẽ vượt ngân sách mỗi kỳ`);
+  if ((sameDraw?.v ?? 0) + cost > s.budgetPerDraw) issues.push(`Tổng chi cho kỳ quay ngày ${drawDate} của game này sẽ vượt ngân sách mỗi kỳ`);
   const spent = await db
     .prepare(
       `SELECT COALESCE(SUM(CASE WHEN substr(entry_date, 1, 7) = ? THEN -amount END), 0) AS m, COALESCE(SUM(CASE WHEN substr(entry_date, 1, 4) = ? THEN -amount END), 0) AS y

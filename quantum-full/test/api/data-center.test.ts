@@ -101,7 +101,7 @@ describe('Data Center — import có kiểm soát', () => {
     const baseAll = await api('/statistics/frequency?game=power655&include_unverified=true');
     expect(base.body.meta.draws).toBe(0); // các kỳ Power trước đó trong file chưa xác minh
     await importAndVerify('power655', POWER655, 60, 'stats');
-    await api('/admin/draws/import', { body: { game: 'power655', format: 'csv', data_source_id: 2, content: syntheticCsv(POWER655, 5, 'unv').replace(/\n0000/g, '\nU000') } });
+    await api('/admin/draws/import', { body: { game: 'power655', format: 'csv', data_source_id: 2, content: syntheticCsv(POWER655, 5, 'unv') } });
     const f = await api('/statistics/frequency?game=power655');
     expect(f.status).toBe(200);
     expect(f.body.meta.draws).toBe(60);

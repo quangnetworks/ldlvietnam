@@ -9,6 +9,8 @@ export default defineConfig(async () => {
       cloudflareTest({
         wrangler: { configPath: './wrangler.jsonc' },
         miniflare: {
+          // Nới giới hạn tốc độ trong môi trường test (có test riêng kiểm tra 429).
+          ratelimits: { RATE_LIMITER: { namespace_id: "4201", simple: { limit: 100000, period: 60 } } },
           bindings: {
             TEST_MIGRATIONS: migrations,
             APP_ENV: 'test',
