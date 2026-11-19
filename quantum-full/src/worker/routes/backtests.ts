@@ -157,7 +157,7 @@ backtestRoutes.post('/backtests/run', rateLimit(5), async (c) => {
   return c.json({ data: runView(updated) }, 201);
 });
 
-backtestRoutes.post('/backtests/:id/continue', rateLimit(3), async (c) => {
+backtestRoutes.post('/backtests/:id/continue', rateLimit(1), async (c) => {
   const r = await c.env.DB.prepare('SELECT * FROM backtest_runs WHERE id = ?').bind(parseId(c)).first<RunRow>();
   if (!r) throw notFound('Phiên backtest');
   if (r.status !== 'running') return c.json({ data: runView(r) });

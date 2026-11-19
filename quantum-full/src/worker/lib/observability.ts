@@ -37,7 +37,7 @@ const memoryBuckets = new Map<string, { count: number; reset: number }>();
  * Rate limiting: dùng binding Cloudflare Rate Limiting nếu có; nếu không, fallback bộ đếm trong bộ nhớ isolate.
  * `cost` cho phép các endpoint tính toán nặng tiêu thụ nhiều hạn mức hơn.
  */
-export function rateLimit(cost = 1, limitPerMinute = 120): MiddlewareHandler<AppEnv> {
+export function rateLimit(cost = 1, limitPerMinute = 600): MiddlewareHandler<AppEnv> {
   return async (c, next) => {
     const key = c.get('user')?.id ?? c.req.header('cf-connecting-ip') ?? 'anonymous';
     let allowed = true;

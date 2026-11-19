@@ -24,7 +24,7 @@
       // Giới hạn tốc độ theo người dùng/IP cho API (best-effort, theo từng PoP).
       "name": "RATE_LIMITER",
       "namespace_id": "4201",
-      "simple": { "limit": 120, "period": 60 }
+      "simple": { "limit": 600, "period": 60 }
     }
   ],
   "vars": {
