@@ -1,0 +1,4 @@
+# Sao chép thành .dev.vars để phát triển cục bộ (file .dev.vars không được commit).
+APP_ENV=development
+ALLOW_DEV_AUTH=true
+ADMIN_TOKEN=change-me-local-admin-token
