@@ -14,6 +14,7 @@ test('Mọi trang trong sidebar hiển thị, không lỗi console, không có s
   const pages: [string, string][] = [
     ['Quyết định hôm nay', 'Quyết định hôm nay'],
     ['Bingo18', 'Bingo18'],
+    ['Xổ số kiến thiết', 'Xổ số kiến thiết'],
     ['Data Center', 'Data Center'],
     ['Thống kê', 'Statistical Intelligence'],
     ['Kiểm định dự đoán', 'Kiểm định dự đoán'],
@@ -162,4 +163,18 @@ test('Bingo18: bảng cược, mô phỏng phiên chơi, kế hoạch hôm nay',
   await expect(page.getByText('Khả năng phiên có lãi')).toBeVisible();
   await page.getByRole('tab', { name: 'Kết quả' }).click();
   await expect(page.getByText('Chưa có kết quả').or(page.getByText(/^#\d+/).first())).toBeVisible();
+});
+
+test('Xổ số kiến thiết: 4 tab hiển thị, giá trị vé 3 miền', async ({ page }) => {
+  await login(page);
+  await page.goto('/xskt');
+  await expect(page.getByRole('heading', { level: 1, name: 'Xổ số kiến thiết' })).toBeVisible();
+  await page.getByRole('radio', { name: 'Miền Bắc' }).click();
+  await page.getByRole('tab', { name: 'Kiểm định' }).click();
+  await expect(page.getByRole('heading', { level: 2 })).toBeVisible();
+  await page.getByRole('tab', { name: 'Mô hình dự báo' }).click();
+  await expect(page.getByRole('heading', { level: 2 })).toBeVisible();
+  await page.getByRole('tab', { name: 'Giá trị vé' }).click();
+  await expect(page.getByText('Mỗi 10.000đ nhận lại trung bình bao nhiêu?')).toBeVisible();
+  await expect(page.getByText('Cơ cấu giải — Miền Nam')).toBeVisible();
 });

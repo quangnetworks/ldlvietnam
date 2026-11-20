@@ -72,6 +72,17 @@ Quy tắc: không nhận ngày quay tương lai; kỳ trùng nội dung ⇒ `dup
 
 Ngân sách: `ticket_count × giá vé ≤ budget ≤ …` và `≤ budget_per_draw` (422 `budget_violation`). Ngày mục tiêu đã qua ⇒ 422.
 
+## Xổ số kiến thiết 3 miền (`region` = `mb` | `mt` | `mn`)
+
+| Method | Path | Mô tả |
+| --- | --- | --- |
+| GET | `/xskt/summary` | Số kỳ, đài, lịch quay theo thứ (suy ra từ 120 ngày gần nhất), trạng thái đồng bộ |
+| GET | `/xskt/draws?region=&station=&date=&page=&page_size=` | Kết quả quay theo đài, nhóm theo giải |
+| GET | `/xskt/audit?region=` | Kiểm định ngẫu nhiên miền + từng đài (BH), quy tắc quay cấu trúc; lưu đệm theo fingerprint dữ liệu |
+| GET | `/xskt/models?region=&station=&window=` | Nóng / Lạnh / Bayes / Markov / Tổ hợp chấm walk-forward (log-loss so với ln 10, vé gợi ý so với kỳ vọng) |
+| GET | `/xskt/value` | Kỳ vọng & xác suất chính xác từng giải 3 miền; so sánh với Vietlott (kỳ thường, kỳ Chia giải) |
+| POST | `/admin/xskt/sync` | `{ regions? }` — đồng bộ nguồn mở (lần đầu nhập dần ≤ 3.000 kỳ/lần; sau đó chỉ tải phần đuôi bằng HTTP Range). Cron mỗi giờ cũng chạy |
+
 ## Bingo18
 
 | Method | Path | Mô tả |
