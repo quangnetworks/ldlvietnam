@@ -52,6 +52,7 @@ Quy tắc: không nhận ngày quay tương lai; kỳ trùng nội dung ⇒ `dup
 | `/statistics/distribution` | Chẵn/lẻ, thấp/cao (so siêu bội), tổng (phân phối chính xác), liên tiếp, khoảng cách |
 | `/statistics/pairs?top=` · `/statistics/triplets?top=` | Cặp/bộ ba với p Poisson và q (FDR) |
 | `/statistics/summary` | Cỡ mẫu & mức tin cậy |
+| `/predictability?game=&include_unverified=&warmup=&window=` | Phán quyết khả năng dự đoán (`insufficient` · `random` · `anomaly` · `exploitable`): 6 kiểm định ngẫu nhiên + backtest walk-forward các chiến lược nóng/lạnh/lặp/gan, hiệu chỉnh Benjamini–Hochberg. Cần ≥ 200 kỳ |
 
 ## Sinh số & danh mục
 
@@ -59,6 +60,7 @@ Quy tắc: không nhận ngày quay tương lai; kỳ trùng nội dung ⇒ `dup
 | --- | --- | --- |
 | GET | `/generator/strategies` | Danh sách chiến lược & phiên bản |
 | POST | `/generator/generate` | `{ game, strategy, budget, ticket_count(≤200), target_draw_date?, seed?, include_unverified?, params? }` → vé, chi phí, xác suất, độ phủ, giải thích, phiên bản, mốc dữ liệu, trạng thái kiểm định. Lưu bất biến |
+| POST | `/portfolio/odds` | `{ game, tickets: [{ main, special }] (1–50) }` → xác suất CHÍNH XÁC của cả danh mục trong một kỳ (liệt kê mọi kết quả khi C(N,K) ≤ 600.000, ngược lại Monte Carlo có seed): P(≥1 vé trúng) so với chọn độc lập, P(hoàn vốn), kỳ vọng, phân phối. Tính toán thuần, không ghi dữ liệu (quyền admin như mọi POST) |
 | POST | `/portfolio/optimize` | Như trên với chiến lược `portfolio_optimized` (`params.maxOverlap`, `avoidPopular`, `candidates`) |
 | GET | `/recommendations` · `/recommendations/:id` | Lịch sử sinh số |
 | POST | `/portfolios` | Lưu danh mục từ bản ghi `{ recommendation_id, name, mode: simulated|real, target_draw_date, target_draw_time? }` |

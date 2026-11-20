@@ -10,6 +10,7 @@ const Today = lazy(() => import('./pages/Today'));
 const Bingo18 = lazy(() => import('./pages/Bingo18'));
 const DataCenter = lazy(() => import('./pages/DataCenter'));
 const Statistics = lazy(() => import('./pages/Statistics'));
+const Predictability = lazy(() => import('./pages/Predictability'));
 const Research = lazy(() => import('./pages/Research'));
 const Generator = lazy(() => import('./pages/Generator'));
 const Portfolio = lazy(() => import('./pages/Portfolio'));
@@ -31,6 +32,7 @@ export function App() {
                 <Route path="/bingo18" element={<Bingo18 />} />
                 <Route path="/data" element={<DataCenter />} />
                 <Route path="/statistics" element={<Statistics />} />
+                <Route path="/predictability" element={<Predictability />} />
                 <Route path="/research" element={<Research />} />
                 <Route path="/generator" element={<Generator />} />
                 <Route path="/portfolio" element={<Portfolio />} />

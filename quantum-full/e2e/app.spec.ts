@@ -16,6 +16,7 @@ test('Mọi trang trong sidebar hiển thị, không lỗi console, không có s
     ['Bingo18', 'Bingo18'],
     ['Data Center', 'Data Center'],
     ['Thống kê', 'Statistical Intelligence'],
+    ['Kiểm định dự đoán', 'Kiểm định dự đoán'],
     ['AI Research', 'AI Research'],
     ['Sinh bộ số', 'Number Generator'],
     ['Danh mục vé', 'Danh mục vé'],
@@ -82,6 +83,10 @@ test('Sinh bộ số: đúng miền số, không vượt ngân sách, lưu danh 
   expect(specials.length).toBe(10);
   for (const b of specials) expect(Number(b)).toBeLessThanOrEqual(12);
   await expect(page.getByText('100.000đ').first()).toBeVisible();
+  // Xác suất CHÍNH XÁC của cả danh mục (liệt kê toàn bộ kết quả quay)
+  await expect(page.getByText('Xác suất chính xác của cả danh mục')).toBeVisible();
+  await expect(page.getByText(/Liệt kê toàn bộ 3\.895\.584 kết quả quay có thể/)).toBeVisible();
+  await expect(page.getByText(/Chọn ngẫu nhiên độc lập: \d/)).toBeVisible();
   // Vượt hạn mức mỗi kỳ ⇒ nút bị khoá
   await page.getByLabel('Số vé').fill('11');
   await expect(page.getByRole('button', { name: 'Sinh bộ số' })).toBeDisabled();

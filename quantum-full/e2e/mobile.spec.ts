@@ -7,7 +7,7 @@ test('Mobile: menu hoạt động, không cuộn ngang', async ({ page }) => {
   await page.getByRole('button', { name: 'Mở menu' }).click();
   await page.getByRole('dialog', { name: 'Menu' }).getByRole('link', { name: 'Sinh bộ số' }).click();
   await expect(page.getByRole('heading', { level: 1, name: 'Number Generator' })).toBeVisible();
-  for (const path of ['/', '/generator', '/data', '/statistics', '/capital']) {
+  for (const path of ['/', '/generator', '/data', '/statistics', '/predictability', '/capital']) {
     await page.goto(path);
     await page.waitForLoadState('networkidle');
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
