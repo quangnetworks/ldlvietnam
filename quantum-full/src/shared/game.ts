@@ -68,6 +68,8 @@ export interface Game extends GameRules {
   code: string;
   name: string;
   scheduleNote: string | null;
+  /** Lịch quay máy đọc được: { weekdays?: number[]; times: string[]; cutoffMinutes?: number } */
+  drawSchedule: { weekdays?: number[]; times: string[]; cutoffMinutes?: number } | null;
   rulesVerificationStatus: 'unverified' | 'verified';
   rulesSourceUrl: string | null;
   rulesVerifiedAt: string | null;

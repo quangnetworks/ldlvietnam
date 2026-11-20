@@ -14,7 +14,7 @@ describe('Database migrations', () => {
   it('Seed cấu hình 2 game, không có dữ liệu lịch sử giả', async () => {
     const games = await env.DB.prepare('SELECT code, rules_verification_status FROM games ORDER BY id').all<{ code: string; rules_verification_status: string }>();
     expect(games.results.map((g) => g.code)).toEqual(['lotto535', 'power655']);
-    expect(games.results.every((g) => g.rules_verification_status === 'unverified')).toBe(true);
+    expect(games.results.every((g) => g.rules_verification_status === 'verified')).toBe(true); // migration 0004: đối chiếu vietlott.vn
     const draws = await env.DB.prepare('SELECT COUNT(*) AS n FROM draws').first<{ n: number }>();
     expect(draws!.n).toBe(0);
   });

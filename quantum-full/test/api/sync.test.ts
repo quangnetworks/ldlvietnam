@@ -73,3 +73,23 @@ describe('Đồng bộ tự động', () => {
     expect((await api('/admin/sync', { token: 'test-viewer-token-0123456789', body: {} })).status).toBe(403);
   });
 });
+
+describe('Quyết định hôm nay (API)', () => {
+  it('Tính quyết định, cập nhật Jackpot có kiểm tra & audit, ghi nhận lần chạy', async () => {
+    const g = await api('/decision/today?now=2026-11-21T01:00:00Z');
+    expect(g.status).toBe(200);
+    expect(g.body.data.decision.candidates.length).toBe(3);
+    expect((await api('/admin/jackpots', { method: 'PUT', body: { game: 'power655', values: { jackpot1: 1000 } } })).status).toBe(400);
+    expect((await api('/admin/jackpots', { method: 'PUT', body: { game: 'power655', values: { first: 50000000 } } })).status).toBe(400);
+    const u = await api('/admin/jackpots', { method: 'PUT', body: { game: 'power655', values: { jackpot1: 250_000_000_000, jackpot2: 5_000_000_000 } } });
+    expect(u.status).toBe(200);
+    const g2 = await api('/decision/today?now=2026-11-21T01:00:00Z');
+    expect(g2.body.data.decision.candidates[0].game).toBe('power655');
+    expect(g2.body.data.decision.candidates[0].jackpotIsMinimum).toBe(false);
+    const p = await api('/decision/today?now=2026-11-21T01:00:00Z', { body: {} });
+    expect(p.status).toBe(201);
+    expect(p.body.data.modelRunId).toBeGreaterThan(0);
+    expect((await api('/audit?action=jackpots.update')).body.data.length).toBe(1);
+    expect((await api('/admin/jackpots', { method: 'PUT', token: 'test-viewer-token-0123456789', body: { game: 'power655', values: {} } })).status).toBe(403);
+  });
+});

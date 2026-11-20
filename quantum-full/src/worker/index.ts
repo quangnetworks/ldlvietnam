@@ -11,6 +11,7 @@ import { auditRoutes } from './routes/audit';
 import { backtestRoutes } from './routes/backtests';
 import { capitalRoutes } from './routes/capital';
 import { dashboardRoutes } from './routes/dashboard';
+import { decisionRoutes } from './routes/decision';
 import { drawRoutes } from './routes/draws';
 import { generatorRoutes } from './routes/generator';
 import { modelRoutes } from './routes/models';
@@ -53,7 +54,7 @@ export function createApp(options: { authenticate?: ReturnType<typeof authentica
   api.use('*', rateLimit(1));
   api.use('*', writeRequiresAdmin);
 
-  for (const r of [systemRoutes, drawRoutes, statisticsRoutes, generatorRoutes, portfolioRoutes, modelRoutes, backtestRoutes, capitalRoutes, auditRoutes, dashboardRoutes]) api.route('/', r);
+  for (const r of [systemRoutes, drawRoutes, statisticsRoutes, generatorRoutes, portfolioRoutes, modelRoutes, backtestRoutes, capitalRoutes, auditRoutes, dashboardRoutes, decisionRoutes]) api.route('/', r);
 
   api.notFound((c) => c.json({ error: { code: 'not_found', message: 'Endpoint không tồn tại' } }, 404));
   api.onError((err, c) => {

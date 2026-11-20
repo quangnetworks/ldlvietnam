@@ -10,7 +10,7 @@ export function GenerationResult({ r, onSaved }: { r: any; onSaved?: () => void 
   const { game } = useGame();
   const toast = useToast();
   const [saveOpen, setSaveOpen] = useState(false);
-  const [save, setSave] = useState({ name: `Danh mục ${new Date().toLocaleDateString('vi-VN')}`, mode: 'simulated', date: r.target_draw_date ?? todayVn(), time: '' });
+  const [save, setSave] = useState({ name: `Danh mục ${new Date().toLocaleDateString('vi-VN')}`, mode: 'simulated', date: r.target_draw_date ?? todayVn(), time: r.target_draw_time ?? '' });
   const [busy, setBusy] = useState(false);
   const copy = async () => {
     const text = r.tickets.map((t: any, i: number) => `${i + 1}. ${t.main.map(two).join(' ')}${t.special != null ? ` | ${two(t.special)}` : ''}`).join('\n');

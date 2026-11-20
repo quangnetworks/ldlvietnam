@@ -12,6 +12,7 @@ test('Mọi trang trong sidebar hiển thị, không lỗi console, không có s
   await expect(page.getByRole('heading', { name: 'Tổng quan' })).toBeVisible();
   await expect(page.getByText('Hãy nhập kết quả quay chính thức')).toBeVisible();
   const pages: [string, string][] = [
+    ['Quyết định hôm nay', 'Quyết định hôm nay'],
     ['Data Center', 'Data Center'],
     ['Thống kê', 'Statistical Intelligence'],
     ['AI Research', 'AI Research'],
@@ -113,4 +114,21 @@ test('AI Research: Monte Carlo & Bayes chạy và lưu lần chạy', async ({ p
   await page.goto('/audit');
   await page.getByRole('tab', { name: 'Nhật ký kiểm toán' }).click();
   await expect(page.getByText('draws.import').first()).toBeVisible();
+});
+
+test('Quyết định hôm nay: hiển thị khuyến nghị, cập nhật Jackpot, ghi nhận', async ({ page }) => {
+  await login(page);
+  await page.goto('/today');
+  await expect(page.getByRole('heading', { level: 2, name: /^(MUA|KHÔNG MUA)/ })).toBeVisible();
+  await expect(page.getByText('Giá trị Jackpot hiện tại')).toBeVisible();
+  await page.getByLabel(/Jackpot 1 \(tối thiểu/).fill('120000000000');
+  await page.getByRole('button', { name: 'Lưu Power 6/55' }).click();
+  await expect(page.getByText('Đã cập nhật giá trị Jackpot')).toBeVisible();
+  await page.getByRole('button', { name: 'Ghi nhận quyết định' }).click();
+  await expect(page.getByText(/Đã ghi nhận quyết định/)).toBeVisible();
+  const gen = page.getByRole('button', { name: /^Sinh \d+ bộ số/ });
+  if (await gen.isVisible()) {
+    await gen.click();
+    await expect(page.getByRole('button', { name: 'Lưu danh mục' })).toBeVisible();
+  }
 });
