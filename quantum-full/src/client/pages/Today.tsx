@@ -7,12 +7,14 @@ import { Badge, Button, Card, ErrorState, Field, Input, Kpi, LoadingBlock, Notic
 import { GenerationResult } from '../components/GenerationResult';
 import { useToast } from '../components/toast';
 import { PredictabilitySummary } from './Predictability';
+import { SplitDrawCard } from '../components/SplitDrawCard';
 import { useGame } from '../lib/game';
 
 const MODE_LABEL: Record<string, string> = {
   discipline: 'Kỷ luật ngân sách — mua theo mức cho phép mỗi ngày',
   value: 'Chỉ mua khi giá trị kỳ vọng đủ cao (Jackpot lớn)',
   minimal: 'Tối thiểu — 1 vé/ngày cho kỳ có giá trị tốt nhất',
+  split_only: 'Chỉ mua kỳ Chia giải Độc đắc có kỳ vọng dương (để dành ngân sách)',
 };
 
 const errMsg = (e: unknown) => (e instanceof ApiClientError ? e.message : 'Có lỗi xảy ra');
@@ -146,7 +148,7 @@ export default function Today() {
           <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
             <Kpi label="Chi phí đề xuất" value={vnd(d.cost)} hint={`${d.tickets} vé`} />
             <Kpi label="Tiền thưởng kỳ vọng" value={vnd(d.expectedReturn)} hint={q.data.settings.applyTax ? 'Sau thuế TNCN' : 'Trước thuế'} />
-            <Kpi label="Lỗ kỳ vọng" value={vnd(d.expectedLoss)} tone="warn" />
+            {d.expectedLoss < 0 ? <Kpi label="Lãi kỳ vọng" value={vnd(-d.expectedLoss)} tone="good" hint="Trung bình qua nhiều kỳ tương tự" /> : <Kpi label="Lỗ kỳ vọng" value={vnd(d.expectedLoss)} tone="warn" />}
             <Kpi label="Ngân sách khả dụng hôm nay" value={vnd(d.allowance.available)} hint={`Đã chi hôm nay ${vnd(d.allowance.spentToday)}`} />
           </div>
 
@@ -161,15 +163,15 @@ export default function Today() {
                   {d.candidates.map((c: any) => (
                     <tr key={`${c.game}-${c.time}`}>
                       <Td className="whitespace-nowrap">
-                        {c.gameName} {d.pick && d.pick.game === c.game && d.pick.time === c.time && <Badge tone="info">Chọn</Badge>}
+                        {c.gameName} {c.split && <Badge tone="good">Chia giải</Badge>} {d.pick && d.pick.game === c.game && d.pick.time === c.time && <Badge tone="info">Chọn</Badge>}
                       </Td>
                       <Td>{c.time}</Td>
                       <Td className="tabular whitespace-nowrap">
                         {ty(c.jackpotUsed)} {c.jackpotIsMinimum && <span className="text-xs text-amber-300">(tối thiểu)</span>}
                       </Td>
                       <Td className="tabular">{pct(c.returnRatio, 1)}</Td>
-                      <Td className="tabular">{vnd(c.expectedLossPerTicket)}</Td>
-                      <Td className="tabular whitespace-nowrap">{ty(c.breakEvenJackpot)}</Td>
+                      <Td className="tabular">{c.expectedLossPerTicket < 0 ? <span className="text-accent">lãi {vnd(-c.expectedLossPerTicket)}</span> : vnd(c.expectedLossPerTicket)}</Td>
+                      <Td className="tabular whitespace-nowrap">{c.split ? `≤ ${(c.split.breakEvenTickets / 1e6).toLocaleString('vi-VN', { maximumFractionDigits: 2 })} triệu vé` : ty(c.breakEvenJackpot)}</Td>
                     </tr>
                   ))}
                 </Table>
@@ -210,6 +212,8 @@ export default function Today() {
               </div>
             </Card>
           </div>
+
+          <SplitDrawCard key={q.data.split?.config?.updatedAt ?? 'none'} split={q.data.split} onSaved={q.reload} />
 
           <div className="grid gap-5 lg:grid-cols-2">
             <JackpotEditor games={q.data.games} jackpots={q.data.jackpots} onSaved={q.reload} />

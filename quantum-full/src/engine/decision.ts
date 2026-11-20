@@ -10,6 +10,7 @@
 import type { GameRules } from '../shared/game';
 import { tierProbabilities } from './probability';
 import { rToNumber } from './combinatorics';
+import { breakEvenTickets, splitDrawEV, type SplitShares } from './splitDraw';
 
 export interface DrawSchedule {
   /** Ngày trong tuần có quay (0 = Chủ nhật … 6 = Thứ bảy). Rỗng/thiếu = mọi ngày. */
@@ -29,7 +30,20 @@ export interface DecisionGame extends GameRules {
   jackpotsUpdatedAt: string | null;
 }
 
-export type DecisionMode = 'discipline' | 'value' | 'minimal';
+export type DecisionMode = 'discipline' | 'value' | 'minimal' | 'split_only';
+
+/** Kỳ "Chia giải Độc đắc" đã được xác nhận (xem engine/splitDraw.ts). */
+export interface SplitDrawInput {
+  game: string;
+  date: string;
+  time: string;
+  jackpot: number;
+  shares: SplitShares;
+  /** Ước lượng số lần dự thưởng của kỳ chia giải. */
+  tickets: number;
+  /** Ước lượng thận trọng (đã cộng mức tăng doanh số) — dùng để ra quyết định. */
+  ticketsConservative: number;
+}
 
 export interface DecisionInput {
   /** Thời điểm hiện tại (ISO, UTC). */
@@ -45,6 +59,7 @@ export interface DecisionInput {
   spentToday: number;
   /** Áp dụng thuế TNCN 10% trên phần vượt 10 triệu đồng mỗi giải. */
   applyTax: boolean;
+  split?: SplitDrawInput | null;
 }
 
 export interface CandidateDraw {
@@ -62,6 +77,8 @@ export interface CandidateDraw {
   breakEvenJackpot: number | null;
   jackpotUsed: number | null;
   jackpotIsMinimum: boolean;
+  /** Khác null nếu đây là kỳ Chia giải Độc đắc; returnRatio của kỳ khi đó là ước lượng THẬN TRỌNG. */
+  split: { jackpot: number; tickets: number; ticketsConservative: number; returnRatioEstimate: number; breakEvenTickets: number | null; pSplitHappens: number } | null;
 }
 
 export interface Decision {
@@ -127,7 +144,7 @@ export function daysLeftInMonth(date: string): number {
   return last - d + 1;
 }
 
-export function candidateDraws(input: Pick<DecisionInput, 'now' | 'games' | 'applyTax'>): CandidateDraw[] {
+export function candidateDraws(input: Pick<DecisionInput, 'now' | 'games' | 'applyTax' | 'split'>): CandidateDraw[] {
   const clock = vnClock(input.now);
   const out: CandidateDraw[] = [];
   for (const g of input.games) {
@@ -138,6 +155,29 @@ export function candidateDraws(input: Pick<DecisionInput, 'now' | 'games' | 'app
       const [hh, mm] = time.split(':').map(Number);
       const closeAt = hh * 60 + mm - (g.schedule.cutoffMinutes ?? 15);
       if (closeAt <= clock.minutes) continue;
+      const sp = input.split && input.split.game === g.code && input.split.date === clock.date && input.split.time === time ? input.split : null;
+      if (sp) {
+        const cons = splitDrawEV(g, sp.jackpot, sp.ticketsConservative, sp.shares, input.applyTax);
+        const est = splitDrawEV(g, sp.jackpot, sp.tickets, sp.shares, input.applyTax);
+        out.push({
+          game: g.code,
+          gameName: g.name,
+          date: clock.date,
+          time,
+          drawAtUtc: new Date(`${clock.date}T${time}:00+07:00`).toISOString(),
+          minutesUntilClose: closeAt - clock.minutes,
+          ticketPrice: g.ticketPrice,
+          expectedPrize: cons.expectedPrize,
+          expectedPrizeFixed: v.expectedPrizeFixed,
+          returnRatio: cons.returnRatio,
+          expectedLossPerTicket: g.ticketPrice - cons.expectedPrize,
+          breakEvenJackpot: null,
+          jackpotUsed: sp.jackpot,
+          jackpotIsMinimum: false,
+          split: { jackpot: sp.jackpot, tickets: sp.tickets, ticketsConservative: sp.ticketsConservative, returnRatioEstimate: est.returnRatio, breakEvenTickets: breakEvenTickets(g, sp.jackpot, sp.shares, input.applyTax), pSplitHappens: cons.pSplitHappens },
+        });
+        continue;
+      }
       out.push({
         game: g.code,
         gameName: g.name,
@@ -153,6 +193,7 @@ export function candidateDraws(input: Pick<DecisionInput, 'now' | 'games' | 'app
         breakEvenJackpot: v.breakEvenJackpot,
         jackpotUsed: v.jackpotUsed,
         jackpotIsMinimum: v.jackpotIsMinimum,
+        split: null,
       });
     }
   }
@@ -174,6 +215,45 @@ export function decideToday(input: DecisionInput): Decision {
     'Hệ thống không tự mua vé. Bạn quyết định và tự mua tại kênh chính thức.',
   ];
   const skip = (headline: string, reasons: string[]): Decision => ({ action: 'skip', headline, pick: null, tickets: 0, cost: 0, expectedReturn: 0, expectedLoss: 0, allowance, candidates, reasons, principles });
+  const vnd = (x: number) => `${Math.round(x).toLocaleString('vi-VN')}đ`;
+  const mil = (x: number) => `${(x / 1e6).toLocaleString('vi-VN', { maximumFractionDigits: 2 })} triệu`;
+  if (input.mode === 'split_only') {
+    principles.unshift('Chỉ mua ở kỳ Chia giải Độc đắc khi kỳ vọng THẬN TRỌNG vượt giá vé; các ngày khác để dành ngân sách.');
+    const split = candidates.find((c) => c.split);
+    if (!split || split.returnRatio < 1) {
+      const reasons = [
+        split
+          ? `Kỳ chia giải ${split.time} có kỳ vọng thận trọng ${(split.returnRatio * 100).toFixed(0)}% (với ≈ ${mil(split.split!.ticketsConservative)} lần dự thưởng) — chưa vượt giá vé.`
+          : 'Hôm nay không có kỳ Chia giải Độc đắc đã được xác nhận (cập nhật ở thẻ “Kỳ Chia giải Độc đắc”).',
+        'Ngoài kỳ chia giải, mỗi vé chỉ hoàn lại khoảng 31–45% — không mua để dồn ngân sách cho kỳ có lợi thế.',
+      ];
+      return skip('KHÔNG MUA — CHỜ KỲ CHIA GIẢI CÓ LỢI THẾ', reasons);
+    }
+    // Ngân sách tích luỹ: không chia theo số ngày còn lại (đã để dành), vẫn giới hạn bởi hạn mức kỳ / tháng / năm.
+    const avail = Math.max(0, Math.min(input.budgetPerDraw, input.monthRemaining, input.yearRemaining) - input.spentToday);
+    const n = Math.floor(avail / split.ticketPrice);
+    if (n < 1) return skip('KHÔNG MUA — HẾT HẠN MỨC', [`Hạn mức khả dụng cho kỳ chia giải: ${vnd(avail)}.`]);
+    const s = split.split!;
+    return {
+      action: 'buy',
+      headline: `MUA ${n} VÉ ${split.gameName.toUpperCase()} — KỲ CHIA GIẢI ${split.time}`,
+      pick: split,
+      tickets: n,
+      cost: n * split.ticketPrice,
+      expectedReturn: n * split.expectedPrize,
+      expectedLoss: n * split.expectedLossPerTicket,
+      allowance: { ...allowance, available: avail },
+      candidates,
+      reasons: [
+        `Kỳ chia giải: toàn bộ Độc đắc ${(s.jackpot / 1e9).toLocaleString('vi-VN', { maximumFractionDigits: 2 })} tỷ được trả cho người chơi kỳ này (nếu không ai trúng Độc đắc thì chia cho các hạng Nhất–Năm).`,
+        `Kỳ vọng mỗi vé: ${(s.returnRatioEstimate * 100).toFixed(0)}% với ≈ ${mil(s.tickets)} lần dự thưởng; thận trọng ${(split.returnRatio * 100).toFixed(0)}% với ≈ ${mil(s.ticketsConservative)}.`,
+        s.breakEvenTickets ? `Còn có lợi khi tổng số lần dự thưởng dưới ≈ ${mil(s.breakEvenTickets)}.` : '',
+        `Lợi thế chỉ thành hiện thực qua nhiều kỳ chia giải: mỗi vé chỉ ≈ 1,4% trúng từ hạng Năm trở lên — đa số kỳ sẽ không trúng gì.`,
+        `Chọn số ít phổ biến (có số 32–35, tránh dãy ngày sinh) để ít người cùng chia trong mỗi hạng.`,
+      ].filter(Boolean),
+      principles,
+    };
+  }
   if (!candidates.length) return skip('KHÔNG MUA HÔM NAY', ['Không còn kỳ quay nào mở bán trong hôm nay (đã qua giờ ngừng bán hoặc không có lịch quay).']);
   const best = candidates[0];
   const maxTickets = Math.floor(available / best.ticketPrice);
@@ -193,8 +273,11 @@ export function decideToday(input: DecisionInput): Decision {
     `${best.gameName} kỳ ${best.time} có tỷ lệ hoàn vốn kỳ vọng${input.applyTax ? ' sau thuế' : ''} cao nhất trong các kỳ còn mở bán hôm nay: ${(best.returnRatio * 100).toFixed(1)}%.`,
     best.jackpotIsMinimum ? 'Jackpot đang tính theo mức tối thiểu — hãy cập nhật giá trị hiện tại từ vietlott.vn để đánh giá chính xác hơn.' : `Jackpot dùng để tính: ${Math.round((best.jackpotUsed ?? 0) / 1e6).toLocaleString('vi-VN')} triệu đồng.`,
     `Ngân sách khả dụng hôm nay: ${available.toLocaleString('vi-VN')}đ = min(hạn mức/kỳ, hạn mức tháng còn lại ÷ ${daysLeft} ngày, hạn mức năm) − đã chi hôm nay.`,
-    `Kỳ vọng lỗ cho ${tickets} vé ≈ ${Math.round(tickets * best.expectedLossPerTicket).toLocaleString('vi-VN')}đ.`,
+    best.expectedLossPerTicket < 0
+      ? `Kỳ vọng LÃI cho ${tickets} vé ≈ ${Math.round(-tickets * best.expectedLossPerTicket).toLocaleString('vi-VN')}đ (trung bình qua nhiều kỳ tương tự).`
+      : `Kỳ vọng lỗ cho ${tickets} vé ≈ ${Math.round(tickets * best.expectedLossPerTicket).toLocaleString('vi-VN')}đ.`,
   ];
+  if (best.split) reasons.unshift(`Đây là kỳ CHIA GIẢI ĐỘC ĐẮC: kỳ vọng thận trọng ${(best.returnRatio * 100).toFixed(0)}%. Chế độ “Chỉ mua kỳ Chia giải” cho phép dùng ngân sách đã để dành.`);
   if (candidates.length > 1) reasons.push(`Lựa chọn thay thế: ${candidates.slice(1, 3).map((c) => `${c.gameName} ${c.time} (${(c.returnRatio * 100).toFixed(1)}%)`).join(', ')}.`);
   return {
     action: 'buy',

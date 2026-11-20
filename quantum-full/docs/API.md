@@ -60,6 +60,7 @@ Quy tắc: không nhận ngày quay tương lai; kỳ trùng nội dung ⇒ `dup
 | --- | --- | --- |
 | GET | `/generator/strategies` | Danh sách chiến lược & phiên bản |
 | POST | `/generator/generate` | `{ game, strategy, budget, ticket_count(≤200), target_draw_date?, seed?, include_unverified?, params? }` → vé, chi phí, xác suất, độ phủ, giải thích, phiên bản, mốc dữ liệu, trạng thái kiểm định. Lưu bất biến |
+| PUT · DELETE | `/admin/split-draw` | Xác nhận / xoá kỳ **Chia giải Độc đắc**: `{ game, date, time, jackpot, reference_winners?: {first,second,third,fourth,fifth}, tickets_override?, sales_growth (mặc định 0,3), shares? }`. Số lần dự thưởng ước lượng MLE Poisson từ số vé trúng từng hạng của kỳ tham chiếu. `GET /decision/today` trả thêm `split` (kỳ vọng ước tính / thận trọng, điểm hoà vốn) và hỗ trợ `mode=split_only` |
 | POST | `/portfolio/odds` | `{ game, tickets: [{ main, special }] (1–50) }` → xác suất CHÍNH XÁC của cả danh mục trong một kỳ (liệt kê mọi kết quả khi C(N,K) ≤ 600.000, ngược lại Monte Carlo có seed): P(≥1 vé trúng) so với chọn độc lập, P(hoàn vốn), kỳ vọng, phân phối. Tính toán thuần, không ghi dữ liệu (quyền admin như mọi POST) |
 | POST | `/portfolio/optimize` | Như trên với chiến lược `portfolio_optimized` (`params.maxOverlap`, `avoidPopular`, `candidates`) |
 | GET | `/recommendations` · `/recommendations/:id` | Lịch sử sinh số |

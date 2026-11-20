@@ -142,3 +142,37 @@ Không đổi schema DB, không có migration mới.
 - 4 vé ngày 20/11 tính chính xác: P(≥1 vé trúng) = 36,96%; nếu chọn ngẫu nhiên độc lập là 33,23%.
 - E2E Playwright đã bổ sung kịch bản. Chưa chạy được trên máy này vì thiếu bản Chromium headless 1243 (`npx playwright install`).
   Đã kiểm thay bằng trình duyệt tích hợp trên D1 e2e riêng.
+
+## 8. Bổ sung: chế độ kỳ "Chia giải Độc đắc" (2026-11-20)
+
+**Phát hiện.** Lotto 5/35 có kỳ Chia giải Độc đắc. Khi Độc đắc vượt 12 tỷ mà chưa ai trúng, kỳ 21:00 hôm sau là kỳ chia giải.
+Nếu kỳ đó cũng không ai trúng Độc đắc, toàn bộ Độc đắc được chia cho các hạng Nhất–Năm:
+- Nhất nhận 2/6, mỗi hạng Nhì–Năm nhận 1/6.
+- Phần chia được cộng thêm vào giải cố định và chia đều cho các vé trúng trong hạng.
+- Hạng không có vé trúng thì phần của hạng đó chia đều cho các hạng còn lại.
+
+Hệ quả: ở kỳ này, toàn bộ Độc đắc chắc chắn được trả cho người chơi của chính kỳ đó. Mỗi vé nhận thêm khoảng Độc đắc ÷ tổng số vé bán ra.
+Đây là thời điểm duy nhất kỳ vọng mỗi vé có thể vượt giá vé, tương tự xổ số Cash WinFall ở Mỹ.
+
+**Mô hình** (`src/engine/splitDraw.ts`):
+- Số vé trúng của người khác ở mỗi hạng ~ Poisson(T·p).
+- Tính kỳ vọng sau thuế TNCN, có tính trường hợp có người trúng Độc đắc (khi đó không chia), và chia lại phần của hạng trống (duyệt 2⁴ trạng thái).
+- Đã đối chiếu với mô phỏng Monte Carlo độc lập: sai lệch dưới 3%.
+- Điểm hoà vốn: kỳ chia giải chỉ có lãi khi tổng số vé bán dưới khoảng 1,36 / 1,73 / 2,21 triệu, tương ứng với Độc đắc 12 / 16 / 20 tỷ.
+
+**Ước lượng số vé bán:** ước lượng hợp lý cực đại (MLE) từ số vé trúng từng hạng của kỳ chia giải tham chiếu, T̂ = Σnᵢ / Σpᵢ.
+Ra quyết định theo ước lượng **thận trọng**: số vé ước lượng × (1 + mức tăng doanh số, mặc định 30%).
+
+**Ứng dụng:**
+- Thẻ "Kỳ Chia giải Độc đắc" trên trang Hôm nay: cấu hình kỳ chia giải và xem đánh giá.
+- Chế độ `split_only`: chỉ mua kỳ chia giải khi kỳ vọng thận trọng ≥ 100%, dùng ngân sách đã để dành (min của hạn mức kỳ, tháng, năm).
+- Lưu cấu hình ở `app_settings.split_draw` (upsert, không cần migration), có ghi nhật ký kiểm toán.
+
+**Kỳ tham chiếu 17/7/2025** (Độc đắc ≈ 16,9 tỷ; số vé trúng suy từ tin báo: Nhì 24, Ba ≈ 490, Tư ≈ 765, Năm ≈ 11.900):
+- Số vé bán ước lượng: T ≈ 0,95 triệu.
+- Kỳ vọng mỗi vé: 185% theo ước lượng, 146% theo ước lượng thận trọng.
+
+**Rủi ro:**
+- Thể lệ tổng hợp từ báo chí; file PDF thể lệ trên vietlott.vn là ảnh scan, chưa đọc được.
+- Doanh số kỳ chia giải tăng mạnh khi người chơi biết cơ chế, nên lợi thế có thể giảm. Cần cập nhật số vé trúng của kỳ gần nhất.
+- Phương sai rất lớn: mỗi vé chỉ khoảng 1,4% trúng từ hạng Năm trở lên.
