@@ -38,7 +38,7 @@ async function buildDecision(c: Context<AppEnv>, q: z.infer<typeof DecisionQuery
   const decision = decideToday({
     now: q.now ?? nowIso(),
     games: games
-      .filter((g) => g.isActive)
+      .filter((g) => g.isActive && g.engine === 'pick')
       .map((g) => ({ ...g, schedule: g.drawSchedule, jackpots: jackpots[g.code]?.values ?? {}, jackpotsUpdatedAt: jackpots[g.code]?.updatedAt ?? null })),
     mode: settings.mode,
     valueThreshold: settings.valueThreshold,
@@ -48,7 +48,7 @@ async function buildDecision(c: Context<AppEnv>, q: z.infer<typeof DecisionQuery
     spentToday: spent?.v ?? 0,
     applyTax: settings.applyTax,
   });
-  return { decision, settings, jackpots, games: games.map((g) => ({ code: g.code, name: g.name, jackpotTiers: g.prizeTiers.filter((t) => t.kind === 'jackpot').map((t) => ({ code: t.code, name: t.name, minimum: t.amount })), scheduleNote: g.scheduleNote, rulesVerificationStatus: g.rulesVerificationStatus })) };
+  return { decision, settings, jackpots, games: games.filter((g) => g.engine === 'pick').map((g) => ({ code: g.code, name: g.name, jackpotTiers: g.prizeTiers.filter((t) => t.kind === 'jackpot').map((t) => ({ code: t.code, name: t.name, minimum: t.amount })), scheduleNote: g.scheduleNote, rulesVerificationStatus: g.rulesVerificationStatus })) };
 }
 
 decisionRoutes.get('/decision/today', async (c) => {

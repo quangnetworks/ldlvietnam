@@ -13,6 +13,7 @@ test('Mọi trang trong sidebar hiển thị, không lỗi console, không có s
   await expect(page.getByText('Hãy nhập kết quả quay chính thức')).toBeVisible();
   const pages: [string, string][] = [
     ['Quyết định hôm nay', 'Quyết định hôm nay'],
+    ['Bingo18', 'Bingo18'],
     ['Data Center', 'Data Center'],
     ['Thống kê', 'Statistical Intelligence'],
     ['AI Research', 'AI Research'],
@@ -131,4 +132,18 @@ test('Quyết định hôm nay: hiển thị khuyến nghị, cập nhật Jackp
     await gen.click();
     await expect(page.getByRole('button', { name: 'Lưu danh mục' })).toBeVisible();
   }
+});
+
+test('Bingo18: bảng cược, mô phỏng phiên chơi, kế hoạch hôm nay', async ({ page }) => {
+  await login(page);
+  await page.goto('/bingo18');
+  await expect(page.getByRole('heading', { level: 2, name: /^(TỐI ĐA|KHÔNG CHƠI)/ })).toBeVisible();
+  await page.getByRole('tab', { name: 'Bảng cược & xác suất' }).click();
+  await expect(page.getByText('Hoàn trả cao nhất')).toBeVisible();
+  await expect(page.getByRole('cell', { name: '56,94%' }).first()).toBeVisible();
+  await page.getByRole('tab', { name: 'Mô phỏng phiên chơi' }).click();
+  await page.getByRole('button', { name: 'Mô phỏng' }).click();
+  await expect(page.getByText('Khả năng phiên có lãi')).toBeVisible();
+  await page.getByRole('tab', { name: 'Kết quả' }).click();
+  await expect(page.getByText('Chưa có kết quả').or(page.getByText(/^#\d+/).first())).toBeVisible();
 });

@@ -75,6 +75,8 @@ export interface Game extends GameRules {
   rulesVerifiedAt: string | null;
   rulesNote: string | null;
   isActive: boolean;
+  /** 'pick' = chọn K số trong N (Lotto/Power); 'dice3' = Bingo18 (3 số 1–6, có thể trùng). */
+  engine: 'pick' | 'dice3';
 }
 
 export function mainPoolSize(g: Pick<GameRules, 'mainMin' | 'mainMax'>): number {

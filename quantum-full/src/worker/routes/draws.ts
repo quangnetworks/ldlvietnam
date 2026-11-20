@@ -9,6 +9,7 @@ import { ApiError, PaginationQuery, conflict, notFound, nowIso, pageMeta, parseI
 import type { AppEnv } from '../lib/types';
 import { importDraws, parseCsv, parseJsonPayload } from '../services/importer';
 import { OPEN_SOURCE_NAME, SYNC_SOURCES, syncAll } from '../services/sync';
+import { BINGO_URL } from '../services/bingoSync';
 import { getSetting } from '../db/settings';
 
 export const drawRoutes = new Hono<AppEnv>();
@@ -236,7 +237,7 @@ drawRoutes.get('/sync/status', async (c) => {
     ? (
         await c.env.DB.prepare(
           `SELECT j.id, j.status, j.inserted, j.duplicates, j.conflicts, j.invalid, j.created_at, j.created_by, g.code AS game_code,
-            (SELECT COUNT(*) FROM draws d WHERE d.import_job_id = j.id AND d.verification_status = 'unverified') AS unverified
+            (SELECT COUNT(*) FROM draws d WHERE d.import_job_id = j.id AND d.verification_status = 'unverified') + (SELECT COUNT(*) FROM bingo18_draws b WHERE b.import_job_id = j.id AND b.verification_status = 'unverified') AS unverified
            FROM import_jobs j JOIN games g ON g.id = j.game_id WHERE j.data_source_id = ? ORDER BY j.id DESC LIMIT 20`,
         )
           .bind(ds.id)
@@ -248,7 +249,8 @@ drawRoutes.get('/sync/status', async (c) => {
     data: {
       enabled,
       source: ds,
-      sources: SYNC_SOURCES.map((s) => ({ game: s.gameCode, url: s.url })),
+      sources: [...SYNC_SOURCES.map((s) => ({ game: s.gameCode, url: s.url })), { game: 'bingo18', url: BINGO_URL }],
+      bingo18Backfill: await getSetting(c.env.DB, 'bingo18_sync', null),
       schedule: 'Mỗi giờ (phút 05). Nguồn mở cập nhật khoảng 07:00 và 19:00 giờ Việt Nam',
       lastRun: lastRun ? { at: lastRun.created_at, actor: lastRun.actor, results: JSON.parse(lastRun.after_json) } : null,
       jobs,
@@ -278,7 +280,8 @@ drawRoutes.post('/admin/import-jobs/:id/verify', requireRole('admin'), async (c)
       ts,
       id,
     ),
+    c.env.DB.prepare("UPDATE bingo18_draws SET verification_status = 'verified', verified_at = ?, verified_by = ? WHERE import_job_id = ? AND verification_status = 'unverified'").bind(ts, c.get('user').id, id),
     auditStatement(c, { action: 'draws.verify_import_job', entityType: 'import_job', entityId: id, after: { note: b.note } }),
   ]);
-  return c.json({ data: { importJobId: id, verified: res[0].meta.changes ?? 0 } });
+  return c.json({ data: { importJobId: id, verified: (res[0].meta.changes ?? 0) + (res[1].meta.changes ?? 0) } });
 });
