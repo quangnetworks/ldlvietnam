@@ -12,6 +12,7 @@ import { getSetting } from '../db/settings';
 import { auditStatement, type ActorCtx } from '../lib/audit';
 import { importDraws, type ImportError, type ImportResult, type RawDraw } from './importer';
 import { syncBingo, type BingoSyncResult } from './bingoSync';
+import { syncXskt, type XsktRegionSync } from './xsktSync';
 
 export const OPEN_SOURCE_NAME = 'vietlott-data (GitHub, MIT)';
 export const USER_AGENT = 'QuantumFull/1.0 (+https://quantum.vanquang.xyz; open-data sync)';
@@ -130,9 +131,9 @@ export async function syncGame(actor: ActorCtx, source: SyncSource, fetcher: Fet
   return { ...out, newRows: freshNotReported.length, import: imp };
 }
 
-export async function syncAll(actor: ActorCtx, opts: { force?: boolean; games?: string[]; fetcher?: Fetcher } = {}): Promise<{ enabled: boolean; results: SyncResult[]; bingo18: BingoSyncResult | null }> {
+export async function syncAll(actor: ActorCtx, opts: { force?: boolean; games?: string[]; fetcher?: Fetcher } = {}): Promise<{ enabled: boolean; results: SyncResult[]; bingo18: BingoSyncResult | null; xskt: XsktRegionSync[] | null }> {
   const enabled = await getSetting<boolean>(actor.db, 'auto_sync_enabled', true);
-  if (!enabled && !opts.force) return { enabled, results: [], bingo18: null };
+  if (!enabled && !opts.force) return { enabled, results: [], bingo18: null, xskt: null };
   const results: SyncResult[] = [];
   for (const s of SYNC_SOURCES) {
     if (opts.games && !opts.games.includes(s.gameCode)) continue;
@@ -144,9 +145,12 @@ export async function syncAll(actor: ActorCtx, opts: { force?: boolean; games?: 
   }
   let bingo18: BingoSyncResult | null = null;
   if (!opts.games || opts.games.includes('bingo18')) bingo18 = await syncBingo(actor, opts.fetcher);
+  let xskt: XsktRegionSync[] | null = null;
+  if (!opts.games || opts.games.includes('xskt')) xskt = await syncXskt(actor, opts.fetcher);
   const summary: Record<string, unknown>[] = results.map((r) => ({ game: r.game, fetched: r.fetched, newRows: r.newRows, inserted: r.import?.inserted ?? 0, invalid: r.import?.invalid ?? 0, conflicts: r.import?.conflicts ?? 0, error: r.error }));
   if (bingo18) summary.push({ game: 'bingo18', fetched: bingo18.tail.fetched + bingo18.backfill.fetched, newRows: bingo18.tail.inserted + bingo18.backfill.inserted, inserted: bingo18.tail.inserted + bingo18.backfill.inserted, invalid: 0, conflicts: 0, error: bingo18.error, backfillDone: bingo18.backfill.done });
+  for (const x of xskt ?? []) summary.push({ game: `xskt_${x.region}`, fetched: x.fetched, newRows: x.inserted, inserted: x.inserted, invalid: x.invalid, conflicts: 0, error: x.error, backfillDone: !x.backlog });
   await auditStatement(actor, { action: 'draws.sync', entityType: 'data_source', after: summary }).run();
   console.log(JSON.stringify({ level: 'info', msg: 'sync', actor: actor.actorId, results: results.map((r) => ({ game: r.game, newRows: r.newRows, inserted: r.import?.inserted ?? 0, error: r.error })) }));
-  return { enabled, results, bingo18 };
+  return { enabled, results, bingo18, xskt };
 }
