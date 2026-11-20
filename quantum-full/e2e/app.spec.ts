@@ -170,10 +170,11 @@ test('Xổ số kiến thiết: 4 tab hiển thị, giá trị vé 3 miền', as
   await page.goto('/xskt');
   await expect(page.getByRole('heading', { level: 1, name: 'Xổ số kiến thiết' })).toBeVisible();
   await page.getByRole('radio', { name: 'Miền Bắc' }).click();
+  // Tiêu đề phán quyết (các thẻ khác cũng là h2 ⇒ lọc theo nội dung để tránh vi phạm strict mode)
   await page.getByRole('tab', { name: 'Kiểm định' }).click();
-  await expect(page.getByRole('heading', { level: 2 })).toBeVisible();
+  await expect(page.getByRole('heading', { level: 2, name: /^(KẾT QUẢ KHỚP NGẪU NHIÊN|CÓ ĐỘ LỆCH THỐNG KÊ|CHƯA ĐỦ DỮ LIỆU)/ })).toBeVisible({ timeout: 30_000 });
   await page.getByRole('tab', { name: 'Mô hình dự báo' }).click();
-  await expect(page.getByRole('heading', { level: 2 })).toBeVisible();
+  await expect(page.getByRole('heading', { level: 2, name: /^(KHÔNG MÔ HÌNH NÀO|CÓ MÔ HÌNH VƯỢT|CHƯA ĐỦ DỮ LIỆU)/ })).toBeVisible({ timeout: 30_000 });
   await page.getByRole('tab', { name: 'Giá trị vé' }).click();
   await expect(page.getByText('Mỗi 10.000đ nhận lại trung bình bao nhiêu?')).toBeVisible();
   await expect(page.getByText('Cơ cấu giải — Miền Nam')).toBeVisible();
