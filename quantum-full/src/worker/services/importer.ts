@@ -4,13 +4,11 @@
  * - Mỗi kỳ có source_hash; kỳ đã tồn tại với nội dung khác ⇒ XUNG ĐỘT, không ghi đè.
  * - Ghi import_job (payload hash, nguồn, thời điểm truy xuất) + audit log.
  */
-import type { Context } from 'hono';
 import type { Game } from '../../shared/game';
 import { validateDrawResult } from '../../engine/validation';
-import { auditStatement } from '../lib/audit';
+import { auditStatement, type ActorCtx } from '../lib/audit';
 import { sha256Hex } from '../lib/hash';
 import { badRequest } from '../lib/http';
-import type { AppEnv } from '../lib/types';
 import { composeDrawAt, drawSourceHash } from '../db/draws';
 
 export interface RawDraw {
@@ -139,8 +137,8 @@ export interface ImportResult {
   payloadHash: string;
 }
 
-export async function importDraws(c: Context<AppEnv>, req: ImportRequest): Promise<ImportResult> {
-  const db = c.env.DB;
+export async function importDraws(actor: ActorCtx, req: ImportRequest): Promise<ImportResult> {
+  const db = actor.db;
   const { game } = req;
   if (req.rows.length + req.parseErrors.length > MAX_IMPORT_ROWS) throw badRequest(`Tối đa ${MAX_IMPORT_ROWS} dòng mỗi lần nhập`);
   const today = new Date(Date.now() + 7 * 3600_000).toISOString().slice(0, 10);
@@ -193,13 +191,12 @@ export async function importDraws(c: Context<AppEnv>, req: ImportRequest): Promi
   const totalRows = req.rows.length + req.parseErrors.length;
   const status: ImportResult['status'] = toInsert.length === 0 && (invalid > 0 || conflicts > 0) ? 'failed' : invalid > 0 || conflicts > 0 ? 'partial' : 'completed';
   const payloadHash = await sha256Hex(req.payload);
-  const user = c.get('user');
   const job = await db
     .prepare(
       `INSERT INTO import_jobs (game_id, data_source_id, format, status, source_url, retrieved_at, payload_hash, total_rows, inserted, duplicates, conflicts, invalid, errors_json, created_by)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id`,
     )
-    .bind(game.id, req.dataSourceId, req.format, status, req.sourceUrl, req.retrievedAt, payloadHash, totalRows, toInsert.length, duplicates, conflicts, invalid, JSON.stringify(errors.slice(0, 500)), user.id)
+    .bind(game.id, req.dataSourceId, req.format, status, req.sourceUrl, req.retrievedAt, payloadHash, totalRows, toInsert.length, duplicates, conflicts, invalid, JSON.stringify(errors.slice(0, 500)), actor.actorId)
     .first<{ id: number }>();
   const jobId = job!.id;
   const stmts: D1PreparedStatement[] = [];
@@ -219,13 +216,14 @@ export async function importDraws(c: Context<AppEnv>, req: ImportRequest): Promi
     );
   }
   stmts.push(
-    auditStatement(c, {
+    auditStatement(actor, {
       action: 'draws.import',
       entityType: 'import_job',
       entityId: jobId,
       after: { game: game.code, format: req.format, dataSourceId: req.dataSourceId, totalRows, inserted: toInsert.length, duplicates, conflicts, invalid, payloadHash },
     }),
   );
-  for (let i = 0; i < stmts.length; i += 100) await db.batch(stmts.slice(i, i + 100));
+  // Lô chẵn để cặp (draws, draw_numbers) của mỗi kỳ luôn nằm cùng một batch (nguyên tử).
+  for (let i = 0; i < stmts.length; i += 400) await db.batch(stmts.slice(i, i + 400));
   return { jobId, status, totalRows, inserted: toInsert.length, duplicates, conflicts, invalid, errors, payloadHash };
 }
