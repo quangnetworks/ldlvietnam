@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { apiFetch } from '../lib/api';
 import { NavLink, useLocation } from 'react-router-dom';
-import { Activity, BarChart3, Brain, CalendarCheck, Database, Dices, FlaskConical, Layers, LayoutDashboard, Menu, Settings, ShieldCheck, Sparkles, Wallet, X } from 'lucide-react';
+import { Activity, BarChart3, Brain, CalendarCheck, Database, Dices, FlaskConical, Layers, LayoutDashboard, Menu, Microscope, Settings, ShieldCheck, Sparkles, Wallet, X } from 'lucide-react';
 import { useGame } from '../lib/game';
 import { useApi } from '../lib/hooks';
 import { Badge, Select, cx } from './ui';
@@ -12,6 +12,7 @@ export const NAV = [
   { to: '/bingo18', label: 'Bingo18', icon: Dices },
   { to: '/data', label: 'Data Center', icon: Database },
   { to: '/statistics', label: 'Thống kê', icon: BarChart3 },
+  { to: '/predictability', label: 'Kiểm định dự đoán', icon: Microscope },
   { to: '/research', label: 'AI Research', icon: Brain },
   { to: '/generator', label: 'Sinh bộ số', icon: Sparkles },
   { to: '/portfolio', label: 'Danh mục vé', icon: Layers },

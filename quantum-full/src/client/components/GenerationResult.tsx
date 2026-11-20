@@ -5,9 +5,10 @@ import { useGame } from '../lib/game';
 import { dateTime, num, oneIn, pct, todayVn, two, vnd } from '../lib/format';
 import { Badge, Balls, Button, Card, Field, Input, Kpi, Notice, Select } from './ui';
 import { useToast } from './toast';
+import { PortfolioOdds } from './PortfolioOdds';
 
-export function GenerationResult({ r, onSaved }: { r: any; onSaved?: () => void }) {
-  const { game } = useGame();
+export function GenerationResult({ r, onSaved, gameCode }: { r: any; onSaved?: () => void; gameCode?: string }) {
+  const { game, code } = useGame();
   const toast = useToast();
   const [saveOpen, setSaveOpen] = useState(false);
   const [save, setSave] = useState({ name: `Danh mục ${new Date().toLocaleDateString('vi-VN')}`, mode: 'simulated', date: r.target_draw_date ?? todayVn(), time: r.target_draw_time ?? '' });
@@ -87,6 +88,7 @@ export function GenerationResult({ r, onSaved }: { r: any; onSaved?: () => void 
           </div>
         )}
       </Card>
+      <PortfolioOdds game={gameCode ?? code} tickets={r.tickets} />
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <Kpi label="Tổng chi phí" value={vnd(r.totalCost)} hint={`${r.tickets.length} × ${vnd(game?.ticketPrice)}`} />
         <Kpi label="Xác suất Jackpot (danh mục)" value={oneIn(r.probability.jackpotOneIn)} hint={`= ${r.probability.jackpotExact}`} />

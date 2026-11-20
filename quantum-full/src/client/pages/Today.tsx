@@ -6,6 +6,8 @@ import { dateTime, num, pct, vnd } from '../lib/format';
 import { Badge, Button, Card, ErrorState, Field, Input, Kpi, LoadingBlock, Notice, PageHeader, Select, Table, Td } from '../components/ui';
 import { GenerationResult } from '../components/GenerationResult';
 import { useToast } from '../components/toast';
+import { PredictabilitySummary } from './Predictability';
+import { useGame } from '../lib/game';
 
 const MODE_LABEL: Record<string, string> = {
   discipline: 'Kỷ luật ngân sách — mua theo mức cho phép mỗi ngày',
@@ -63,6 +65,7 @@ function JackpotEditor({ games, jackpots, onSaved }: { games: any[]; jackpots: a
 
 export default function Today() {
   const toast = useToast();
+  const { code } = useGame();
   const [mode, setMode] = useState('');
   const [threshold, setThreshold] = useState('');
   const q = useApi<any>(`/decision/today?${mode ? `mode=${mode}&` : ''}${threshold ? `threshold=${Number(threshold) / 100}` : ''}`);
@@ -77,7 +80,7 @@ export default function Today() {
       const r = await apiFetch('/portfolio/optimize', {
         body: { game: d.pick.game, budget: d.cost, ticket_count: d.tickets, target_draw_date: d.pick.date, params: { avoidPopular: true, candidates: 300 } },
       });
-      setGen({ ...r.data, target_draw_date: d.pick.date, target_draw_time: d.pick.time });
+      setGen({ ...r.data, gameCode: d.pick.game, target_draw_date: d.pick.date, target_draw_time: d.pick.time });
     } catch (e) {
       toast('error', errMsg(e));
     } finally {
@@ -147,7 +150,7 @@ export default function Today() {
             <Kpi label="Ngân sách khả dụng hôm nay" value={vnd(d.allowance.available)} hint={`Đã chi hôm nay ${vnd(d.allowance.spentToday)}`} />
           </div>
 
-          {gen && <GenerationResult r={gen} />}
+          {gen && <GenerationResult r={gen} gameCode={gen.gameCode} />}
 
           <div className="grid gap-5 lg:grid-cols-3">
             <Card title="Các kỳ còn mở bán hôm nay" className="lg:col-span-2" subtitle="Xếp theo tỷ lệ hoàn vốn kỳ vọng (cao → thấp). Mọi tổ hợp số có xác suất như nhau.">
@@ -210,14 +213,17 @@ export default function Today() {
 
           <div className="grid gap-5 lg:grid-cols-2">
             <JackpotEditor games={q.data.games} jackpots={q.data.jackpots} onSaved={q.reload} />
-            <Card title="Nguyên tắc">
+            <div className="space-y-5">
+              <PredictabilitySummary game={d.pick?.game ?? d.candidates[0]?.game ?? code} />
+              <Card title="Nguyên tắc">
               <ul className="list-disc space-y-2 pl-4 text-xs text-slate-300">
                 {d.principles.map((p: string) => (
                   <li key={p}>{p}</li>
                 ))}
               </ul>
               <Notice tone="info">Bộ số được sinh bằng “Tối ưu danh mục” với ưu tiên bộ số ít phổ biến: không tăng xác suất trúng, nhưng giảm khả năng phải chia giải nếu trúng Jackpot.</Notice>
-            </Card>
+              </Card>
+            </div>
           </div>
         </div>
       )}
