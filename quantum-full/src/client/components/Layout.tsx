@@ -1,4 +1,5 @@
-import { useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { apiFetch } from '../lib/api';
 import { NavLink, useLocation } from 'react-router-dom';
 import { Activity, BarChart3, Brain, CalendarCheck, Database, Dices, FlaskConical, Layers, LayoutDashboard, Menu, Settings, ShieldCheck, Sparkles, Wallet, X } from 'lucide-react';
 import { useGame } from '../lib/game';
@@ -58,6 +59,25 @@ export function Layout({ children }: { children: ReactNode }) {
   const me = useApi<{ id: string; role: string; method: string }>('/me');
   const [open, setOpen] = useState(false);
   const loc = useLocation();
+  // Chế độ chạy cục bộ (không có Cron): tự đồng bộ dữ liệu nguồn mở khi mở app nếu lần cuối đã quá 60 phút.
+  const synced = useRef(false);
+  const [syncing, setSyncing] = useState(false);
+  useEffect(() => {
+    if (synced.current || me.data?.method !== 'dev' || me.data.role !== 'admin') return;
+    synced.current = true;
+    (async () => {
+      try {
+        const h = (await (await fetch('/api/v1/health')).json()) as { lastSyncAt: string | null };
+        if (h.lastSyncAt && Date.now() - new Date(h.lastSyncAt).getTime() < 60 * 60_000) return;
+        setSyncing(true);
+        await apiFetch('/admin/sync', { body: {} });
+      } catch {
+        /* bỏ qua — người dùng vẫn có thể bấm "Đồng bộ ngay" */
+      } finally {
+        setSyncing(false);
+      }
+    })();
+  }, [me.data]);
   const unauthorized = (error as { status?: number } | null)?.status === 401 && loc.pathname !== '/settings';
   return (
     <div className="min-h-screen lg:pl-60">
@@ -99,6 +119,8 @@ export function Layout({ children }: { children: ReactNode }) {
           </span>
         )}
         <div className="ml-auto flex items-center gap-2 text-xs text-muted">
+          {syncing && <Badge tone="info">Đang đồng bộ dữ liệu…</Badge>}
+          {me.data?.method === 'dev' && <Badge>Chạy cục bộ</Badge>}
           {me.data && (
             <>
               <span className="hidden max-w-[180px] truncate sm:inline">{me.data.id}</span>

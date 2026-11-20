@@ -18,6 +18,6 @@ if (!existsSync('.dev.vars')) {
   console.log('   Đã tạo .dev.vars với ALLOW_DEV_AUTH=true (chỉ dùng trên máy này).');
 } else console.log('   .dev.vars đã tồn tại — giữ nguyên.');
 console.log('2/3 Áp migration vào D1 cục bộ (.wrangler/state)…');
-run('npx wrangler d1 migrations apply quantum-full-db --local');
+run('node scripts/migrate-local.mjs');
 console.log('3/3 Xong. Chạy: npm run dev  →  mở http://localhost:5190');
 console.log('    Lần đầu: Data Center → Đồng bộ tự động → “Đồng bộ ngay” để tải dữ liệu thật từ nguồn mở.');
