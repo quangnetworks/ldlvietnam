@@ -12,6 +12,7 @@ import { backtestRoutes } from './routes/backtests';
 import { capitalRoutes } from './routes/capital';
 import { dashboardRoutes } from './routes/dashboard';
 import { decisionRoutes } from './routes/decision';
+import { bingoRoutes } from './routes/bingo18';
 import { drawRoutes } from './routes/draws';
 import { generatorRoutes } from './routes/generator';
 import { modelRoutes } from './routes/models';
@@ -43,7 +44,10 @@ export function createApp(options: { authenticate?: ReturnType<typeof authentica
       ).all<{ code: string; total: number; verified: number }>();
       const sync = await c.env.DB.prepare("SELECT MAX(created_at) AS at FROM audit_logs WHERE action = 'draws.sync'").first<{ at: string | null }>();
       // Chỉ số đếm tổng quát (không lộ dữ liệu) để giám sát đồng bộ.
-      data = { draws: Object.fromEntries(results.map((r) => [r.code, { total: r.total, verified: r.verified ?? 0 }])), lastSyncAt: sync?.at ?? null };
+      const bingo = await c.env.DB.prepare("SELECT COUNT(*) AS total, SUM(CASE WHEN verification_status = 'verified' THEN 1 ELSE 0 END) AS verified FROM bingo18_draws").first<{ total: number; verified: number | null }>();
+      const draws = Object.fromEntries(results.map((r) => [r.code, { total: r.total, verified: r.verified ?? 0 }]));
+      draws.bingo18 = { total: bingo?.total ?? 0, verified: bingo?.verified ?? 0 };
+      data = { draws, lastSyncAt: sync?.at ?? null };
     } catch {
       db = 'error';
     }
@@ -54,7 +58,7 @@ export function createApp(options: { authenticate?: ReturnType<typeof authentica
   api.use('*', rateLimit(1));
   api.use('*', writeRequiresAdmin);
 
-  for (const r of [systemRoutes, drawRoutes, statisticsRoutes, generatorRoutes, portfolioRoutes, modelRoutes, backtestRoutes, capitalRoutes, auditRoutes, dashboardRoutes, decisionRoutes]) api.route('/', r);
+  for (const r of [systemRoutes, drawRoutes, statisticsRoutes, generatorRoutes, portfolioRoutes, modelRoutes, backtestRoutes, capitalRoutes, auditRoutes, dashboardRoutes, decisionRoutes, bingoRoutes]) api.route('/', r);
 
   api.notFound((c) => c.json({ error: { code: 'not_found', message: 'Endpoint không tồn tại' } }, 404));
   api.onError((err, c) => {

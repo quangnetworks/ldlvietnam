@@ -91,15 +91,15 @@ function GameConfig({ game, onSaved }: { game: Game; onSaved: () => void }) {
 function Budget() {
   const toast = useToast();
   const q = useApi<any>('/settings');
-  const [f, setF] = useState({ per: 0, month: 0, year: 0, unverified: false });
+  const [f, setF] = useState({ per: 0, month: 0, year: 0, unverified: false, bingo: 50000, bingoMin: 30 });
   const [busy, setBusy] = useState(false);
   useEffect(() => {
-    if (q.data) setF({ per: Number(q.data.budget_per_draw.value), month: Number(q.data.monthly_budget.value), year: Number(q.data.annual_budget.value), unverified: Boolean(q.data.statistics_include_unverified?.value) });
+    if (q.data) setF({ per: Number(q.data.budget_per_draw.value), month: Number(q.data.monthly_budget.value), year: Number(q.data.annual_budget.value), unverified: Boolean(q.data.statistics_include_unverified?.value), bingo: Number(q.data.bingo18_daily_limit?.value ?? 50000), bingoMin: Number(q.data.bingo18_session_minutes?.value ?? 30) });
   }, [q.data]);
   const save = async () => {
     setBusy(true);
     try {
-      await apiFetch('/admin/settings', { method: 'PUT', body: { budget_per_draw: f.per, monthly_budget: f.month, annual_budget: f.year, statistics_include_unverified: f.unverified } });
+      await apiFetch('/admin/settings', { method: 'PUT', body: { budget_per_draw: f.per, monthly_budget: f.month, annual_budget: f.year, statistics_include_unverified: f.unverified, bingo18_daily_limit: f.bingo, bingo18_session_minutes: f.bingoMin } });
       toast('success', 'Đã lưu hạn mức');
       q.reload();
     } catch (e) {
@@ -121,6 +121,14 @@ function Budget() {
         </Field>
         <Field label="Hạn mức năm (VND)">
           <Input type="number" min={0} step={10000} value={f.year} onChange={(e) => setF({ ...f, year: Number(e.target.value) })} />
+        </Field>
+      </div>
+      <div className="mt-3 grid gap-3 sm:grid-cols-2">
+        <Field label="Hạn mức Bingo18 mỗi ngày (VND)">
+          <Input type="number" min={0} step={10000} value={f.bingo} onChange={(e) => setF({ ...f, bingo: Number(e.target.value) })} />
+        </Field>
+        <Field label="Giới hạn phiên Bingo18 (phút)">
+          <Input type="number" min={5} max={600} value={f.bingoMin} onChange={(e) => setF({ ...f, bingoMin: Number(e.target.value) })} />
         </Field>
       </div>
       <label className="mt-3 flex items-center gap-2 text-xs text-muted">

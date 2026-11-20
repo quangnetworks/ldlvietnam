@@ -79,6 +79,12 @@ vietlott.vn chặn mọi truy cập tự động bằng lớp chống bot (Cloud
 Thay vào đó, Cron Trigger mỗi giờ đọc kho dữ liệu mở [vietvudanh/vietlott-data](https://github.com/vietvudanh/vietlott-data) (giấy phép MIT, cập nhật hằng ngày): `power655.jsonl` → Power 6/55, `power535.jsonl` → Lotto 5/35.
 Dữ liệu là **nguồn bên thứ ba**: được kiểm tra hợp lệ, lưu ở trạng thái *chưa xác minh* kèm URL & mã băm; quản trị viên đối chiếu vietlott.vn rồi xác minh (Data Center → Đồng bộ tự động → “Xác minh cả lần nhập”). Bật/tắt bằng thiết lập `auto_sync_enabled`.
 
+## Bingo18
+
+Trò chơi trả thưởng cố định: 3 số kết quả 1–6 (có thể trùng), quay 6 phút/kỳ (159 kỳ/ngày, 06:00–21:48). Engine riêng `src/engine/bingo18.ts`:
+xác suất chính xác trên 216 kết quả, kỳ vọng & tỷ lệ hoàn trả từng cách chơi (≈ 50–57%), kiểm định ngẫu nhiên (χ² số 1–6, phân phối tổng, bộ ba, tự tương quan, “ngụy biện con bạc”), mô phỏng phiên chơi, kế hoạch hôm nay theo hạn mức riêng (`bingo18_daily_limit`, giới hạn phiên).
+Dữ liệu đồng bộ tự động từ `bingo18.jsonl` của nguồn mở bằng HTTP Range (đuôi tệp mỗi giờ + tải dần lịch sử ~400KB/lần). Lưu ý: nguồn mở thiếu dữ liệu ở một số ngày (chỉ 24–58 kỳ/ngày).
+
 ## Lệnh
 
 | Lệnh | Mô tả |
@@ -110,4 +116,4 @@ Dữ liệu là **nguồn bên thứ ba**: được kiểm tra hợp lệ, lưu 
 
 Cấu hình game nằm trong bảng `games` và chỉnh được tại **Cài đặt**. Cơ cấu giải được seed từ thông tin báo chí do trang vietlott.vn chặn truy cập tự động trong quá trình phát triển, nên ở trạng thái **`unverified`** — chủ dự án cần đối chiếu thể lệ chính thức và xác minh. Xem `docs/QA_REPORT.md`.
 
-Tài liệu khác: [API](docs/API.md) · [Triển khai](docs/DEPLOYMENT.md) · [Báo cáo nghiệm thu](docs/QA_REPORT.md)
+Chạy trên máy cá nhân: [docs/LOCAL.md](docs/LOCAL.md) · Tài liệu khác: [API](docs/API.md) · [Triển khai](docs/DEPLOYMENT.md) · [Báo cáo nghiệm thu](docs/QA_REPORT.md)

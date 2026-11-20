@@ -14,7 +14,9 @@
     "test:e2e": "playwright test --trace off",
     "db:migrate:local": "wrangler d1 migrations apply quantum-full-db --local",
     "db:migrate:remote": "wrangler d1 migrations apply quantum-full-db --remote",
-    "deploy": "npm run build && wrangler deploy"
+    "deploy": "npm run build && wrangler deploy",
+    "setup:local": "node scripts/setup-local.mjs",
+    "start:local": "vite --host 127.0.0.1"
   },
   "engines": {
     "node": ">=22"

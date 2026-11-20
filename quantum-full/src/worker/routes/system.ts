@@ -63,6 +63,8 @@ const SettingsUpdate = z.object({
   decision_mode: z.enum(['discipline', 'value', 'minimal']).optional(),
   decision_value_threshold: z.number().min(0).max(5).optional(),
   decision_apply_tax: z.boolean().optional(),
+  bingo18_daily_limit: z.number().int().min(0).max(10_000_000).optional(),
+  bingo18_session_minutes: z.number().int().min(5).max(600).optional(),
 });
 
 systemRoutes.put('/admin/settings', requireRole('admin'), async (c) => {

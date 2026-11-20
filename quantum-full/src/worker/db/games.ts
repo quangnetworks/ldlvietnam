@@ -1,5 +1,5 @@
 import { GameRulesSchema, type Game, type PrizeTier } from '../../shared/game';
-import { notFound } from '../lib/http';
+import { ApiError, notFound } from '../lib/http';
 
 interface GameRow {
   id: number;
@@ -20,6 +20,7 @@ interface GameRow {
   rules_verified_at: string | null;
   rules_note: string | null;
   is_active: number;
+  engine: 'pick' | 'dice3';
 }
 
 export function mapGame(r: GameRow): Game {
@@ -42,6 +43,7 @@ export function mapGame(r: GameRow): Game {
     rulesVerifiedAt: r.rules_verified_at,
     rulesNote: r.rules_note,
     isActive: r.is_active === 1,
+    engine: r.engine ?? 'pick',
   };
 }
 
@@ -50,8 +52,14 @@ export async function listGames(db: D1Database): Promise<Game[]> {
   return results.map(mapGame);
 }
 
-/** Tìm game theo mã (code) hoặc id. */
+/** Tìm game dạng "chọn K số trong N" theo mã (code) hoặc id. Bingo18 dùng getDiceGame. */
 export async function getGame(db: D1Database, key: string | number): Promise<Game> {
+  const g = await getAnyGame(db, key);
+  if (g.engine !== 'pick') throw new ApiError(422, 'unsupported_game', `${g.name} có engine riêng — dùng các endpoint /bingo18`);
+  return g;
+}
+
+export async function getAnyGame(db: D1Database, key: string | number): Promise<Game> {
   const row =
     typeof key === 'number' || /^\d+$/.test(key)
       ? await db.prepare('SELECT * FROM games WHERE id = ?').bind(Number(key)).first<GameRow>()

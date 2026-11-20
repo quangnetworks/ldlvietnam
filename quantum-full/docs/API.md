@@ -69,6 +69,17 @@ Quy tắc: không nhận ngày quay tương lai; kỳ trùng nội dung ⇒ `dup
 
 Ngân sách: `ticket_count × giá vé ≤ budget ≤ …` và `≤ budget_per_draw` (422 `budget_violation`). Ngày mục tiêu đã qua ⇒ 422.
 
+## Bingo18
+
+| Method | Path | Mô tả |
+| --- | --- | --- |
+| GET | `/bingo18/rules` | Cơ cấu giải, xác suất chính xác, kỳ vọng & hoàn trả từng cách chơi |
+| GET | `/bingo18/draws?date=&status=` | Kết quả (phân trang) |
+| GET | `/bingo18/statistics?last=&include_unverified=` | Kiểm định ngẫu nhiên |
+| POST | `/bingo18/simulate` | `{ bets:[{bet:{type,value?},stakeUnits}], drawsPerSession, sessions, stopLoss?, seed? }` |
+| GET | `/bingo18/decision` | Kế hoạch hôm nay theo hạn mức & lịch quay |
+| POST | `/bingo18/ledger` | Ghi nhận chi tiêu/thưởng thực tế `{ stake (bội số 10.000), prize, entry_date? }` (kiểm hạn mức) |
+
 ## Mô hình, backtest, vốn, kiểm toán
 
 | Method | Path | Mô tả |
