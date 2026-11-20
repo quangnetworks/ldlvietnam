@@ -1,13 +1,16 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
-import { Link, NavLink, Outlet, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
+import { Link, NavLink, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
+import { PageOutlet } from '../components/Boundary.jsx';
+import { SideToggle, useSideCollapsed } from '../components/Sidebar.jsx';
 import {
   Home, CheckSquare, FolderKanban, Building2, Users, BarChart3, PlusSquare, Copy, ListChecks, Settings, PlayCircle,
-  Search, ChevronDown, Menu, FileText,
+  Search, ChevronDown, Menu, FileText, Target, SlidersHorizontal,
 } from 'lucide-react';
 import { api } from '../api.js';
 import { useApp } from '../context.jsx';
 import { Avatar, useClickOutside } from '../components/ui.jsx';
 import { NotificationBell, AppSwitcher, UserMenu, useDebounced } from '../components/shell.jsx';
+import { ContactsButton } from '../components/Contact.jsx';
 import { cx } from '../utils.js';
 import TaskDrawer from './TaskDrawer.jsx';
 import TaskCreateModal from './TaskCreateModal.jsx';
@@ -16,7 +19,7 @@ import ProjectFormModal from './ProjectFormModal.jsx';
 const WeworkCtx = createContext(null);
 export const useWework = () => useContext(WeworkCtx);
 
-function QuickSearch() {
+function QuickSearch({ onExpand }) {
   const [q, setQ] = useState('');
   const [res, setRes] = useState(null);
   const [open, setOpen] = useState(false);
@@ -31,7 +34,7 @@ function QuickSearch() {
   }, [dq]);
   return (
     <div className="quick-search" ref={ref}>
-      <Search size={15} />
+      {onExpand ? <button type="button" className="qs-expand" onClick={onExpand} aria-label="Tìm nhanh"><Search size={16} /></button> : <Search size={15} />}
       <input value={q} onChange={(e) => { setQ(e.target.value); setOpen(true); }} onFocus={() => setOpen(true)} placeholder="Tìm nhanh" />
       {open && res && (
         <div className="qs-menu">
@@ -72,8 +75,11 @@ export default function WeworkLayout() {
   const location = useLocation();
   const navigate = useNavigate();
 
+  const [meta, setMeta] = useState({ can_view_reports: user.role === 'admin', is_admin: user.role === 'admin' });
   const loadProjects = useCallback(async () => setProjects(await api.get('/projects', { sort: 'name' })), []);
   useEffect(() => { loadProjects(); }, [loadProjects]);
+  const loadMeta = useCallback(() => api.get('/wework/meta').then(setMeta).catch(() => {}), []);
+  useEffect(() => { loadMeta(); }, [loadMeta]);
   useEffect(() => setMobileNav(false), [location.key]);
   useEffect(() => {
     if (params.get('create') === '1') {
@@ -87,19 +93,22 @@ export default function WeworkLayout() {
   const bump = useCallback(() => setVersion((v) => v + 1), []);
   const ctx = {
     projects, loadProjects, version, bump,
+    canReports: !!meta.can_view_reports, loadMeta,
+    isAdmin: !!meta.is_admin, // quản trị tối cao Wework (quản trị viên hệ thống hoặc chức danh quản trị)
     openTask: setTaskId,
     openCreate: (defaults = {}) => setCreateDefaults(defaults),
     openProjectForm: (opts) => setProjectForm(opts),
   };
+  const [collapsed, toggleCollapsed] = useSideCollapsed();
   const [sections, setSections] = useState({ sum: true, proj: true, dep: true, custom: true });
   const toggle = (k) => setSections((s) => ({ ...s, [k]: !s[k] }));
   const link = (to, label, Icon, end = true) => (
-    <NavLink to={to} end={end} className={({ isActive }) => cx('ww-link', isActive && 'active')}><Icon size={16} /> {label}</NavLink>
+    <NavLink to={to} end={end} className={({ isActive }) => cx('ww-link', isActive && 'active')}><Icon size={16} /> <span className="nav-label">{label}</span></NavLink>
   );
   const projectLink = (p) => (
     <NavLink key={p.id} to={`/wework/project/${p.id}`} className={({ isActive }) => cx('ww-link', isActive && 'active')}>
       <span className="proj-dot" style={{ background: p.color || '#2d7ff9' }}>{p.name.trim()[0]?.toUpperCase()}</span>
-      <span className="ellipsis">{p.name}</span>
+      <span className="nav-label ellipsis">{p.name}</span>
     </NavLink>
   );
   const onlyProjects = projects.filter((p) => p.kind === 'project');
@@ -107,62 +116,79 @@ export default function WeworkLayout() {
 
   return (
     <WeworkCtx.Provider value={ctx}>
-      <div className="wework">
-        <aside className={cx('ww-side', mobileNav && 'open')}>
-          <Link to="/" className="brand side-brand" title="Về trang chủ">
-            <img className="brand-logo" src="/logo-192.png" alt="LDL" />
-            <span className="brand-name">{company}</span>
-          </Link>
+      <div className={cx('wework', collapsed && 'side-collapsed')}>
+        {mobileNav && <div className="side-backdrop" onClick={() => setMobileNav(false)} />}
+        <aside className={cx('ww-side side-area', mobileNav && 'open')}>
+          <div className="ww-brandrow">
+            <Link to="/" className="brand side-brand" title="Về trang chủ">
+              <img className="brand-logo" src="/logo-rect.png" alt="LDL" />
+              <span className="brand-name">{company}</span>
+            </Link>
+            <AppSwitcher dark />
+          </div>
           <div className="ww-user">
             <UserMenu dark />
             <div className="grow" />
+            <ContactsButton dark />
             <NotificationBell app="wework" dark />
-            <AppSwitcher dark />
           </div>
-          <QuickSearch />
+          <QuickSearch onExpand={collapsed ? toggleCollapsed : null} />
           <div className="ww-scroll">
             <div className="ww-section">
               <button className="ww-title" onClick={() => toggle('sum')}>TỔNG HỢP <ChevronDown size={13} /></button>
-              {sections.sum && (
+              {(sections.sum || collapsed) && (
                 <>
                   {link('/wework', 'Công việc', Home)}
                   {link('/wework/my', 'Công việc của tôi', CheckSquare)}
-                  {link('/wework/projects', 'Dự án & phòng ban', FolderKanban)}
-                  {link('/wework/departments', 'Departments', Building2)}
+                  {link('/wework/projects', 'Dự án', FolderKanban)}
+                  {link('/wework/departments', 'Phòng ban', Building2)}
+                  {link('/wework/goals', 'Mục tiêu', Target)}
                   {link('/wework/members', 'Thành viên', Users)}
-                  {link('/wework/reports', 'Báo cáo', BarChart3)}
-                  <Link to="/office" className="ww-link"><FileText size={16} /> Văn bản (Office)</Link>
+                  {meta.can_view_reports && link('/wework/reports', 'Báo cáo', BarChart3)}
+                  <Link to="/office" className="ww-link"><FileText size={16} /> <span className="nav-label">Văn bản (Office)</span></Link>
                 </>
               )}
             </div>
             <div className="ww-section">
               <button className="ww-title" onClick={() => toggle('proj')}>DỰ ÁN <ChevronDown size={13} /></button>
-              {sections.proj && onlyProjects.map(projectLink)}
+              {(sections.proj || collapsed) && onlyProjects.map(projectLink)}
             </div>
             {deps.length > 0 && (
               <div className="ww-section">
                 <button className="ww-title" onClick={() => toggle('dep')}>PHÒNG BAN <ChevronDown size={13} /></button>
-                {sections.dep && deps.map(projectLink)}
+                {(sections.dep || collapsed) && deps.map(projectLink)}
               </div>
             )}
             <div className="ww-section">
               <button className="ww-title" onClick={() => toggle('custom')}>TÙY CHỈNH <ChevronDown size={13} /></button>
-              {sections.custom && (
+              {(sections.custom || collapsed) && (
                 <>
-                  <button className="ww-link" onClick={() => setProjectForm({ kind: 'project' })}><PlusSquare size={16} /> Tạo dự án mới</button>
-                  <button className="ww-link" onClick={() => setProjectForm({ kind: 'department' })}><PlusSquare size={16} /> Tạo phòng ban mới</button>
+                  <button className="ww-link" onClick={() => setProjectForm({ kind: 'project' })}><PlusSquare size={16} /> <span className="nav-label">Tạo dự án mới</span></button>
+                  <button className="ww-link" onClick={() => setProjectForm({ kind: 'department' })}><PlusSquare size={16} /> <span className="nav-label">Tạo phòng ban mới</span></button>
                   {link('/wework/templates', 'Tạo từ mẫu', Copy)}
-                  {link('/wework/bulk', 'Tác vụ hàng loạt', ListChecks)}
-                  {user.role === 'admin' && <Link to="/admin" className="ww-link"><Settings size={16} /> Cài đặt hệ thống</Link>}
+                  {meta.is_admin && link('/wework/bulk', 'Tác vụ hàng loạt', ListChecks)}
+                  {user.role === 'admin' && link('/wework/settings', 'Cài đặt Wework', SlidersHorizontal)}
+                  {user.role === 'admin' && <Link to="/admin" className="ww-link"><Settings size={16} /> <span className="nav-label">Cài đặt hệ thống</span></Link>}
                   {link('/wework/guide', 'Video hướng dẫn', PlayCircle)}
                 </>
               )}
             </div>
           </div>
+          <SideToggle collapsed={collapsed} onToggle={toggleCollapsed} dark />
         </aside>
         <div className="ww-content">
-          <button className="icon-btn mobile-only ww-burger" onClick={() => setMobileNav(!mobileNav)} aria-label="Menu"><Menu size={20} /></button>
-          <Outlet />
+          <header className="topbar ww-mobilebar">
+            <button className="icon-btn on-dark" onClick={() => setMobileNav(!mobileNav)} aria-label="Menu Wework"><Menu size={20} /></button>
+            <Link to="/" className="brand"><img className="brand-logo" src="/logo-rect.png" alt="LDL" /></Link>
+            <span className="topbar-title">Wework</span>
+            <div className="grow" />
+            <button className="icon-btn on-dark" onClick={() => ctx.openCreate({})} aria-label="Tạo công việc"><PlusSquare size={19} /></button>
+            <ContactsButton dark />
+            <NotificationBell app="wework" dark />
+            <AppSwitcher dark />
+            <UserMenu dark showName={false} />
+          </header>
+          <PageOutlet />
         </div>
       </div>
       {taskId && <TaskDrawer id={taskId} onClose={() => setTaskId(null)} onChanged={bump} />}

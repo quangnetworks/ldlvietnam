@@ -1,0 +1,12 @@
+**/node_modules
+client/dist
+server/data
+data
+release
+backups
+.git
+.github
+**/.wrangler
+*.log
+.env
+**/*.xlsx
