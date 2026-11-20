@@ -1,12 +1,13 @@
 import { useState, type ReactNode } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
-import { Activity, BarChart3, Brain, Database, FlaskConical, Layers, LayoutDashboard, Menu, Settings, ShieldCheck, Sparkles, Wallet, X } from 'lucide-react';
+import { Activity, BarChart3, Brain, CalendarCheck, Database, FlaskConical, Layers, LayoutDashboard, Menu, Settings, ShieldCheck, Sparkles, Wallet, X } from 'lucide-react';
 import { useGame } from '../lib/game';
 import { useApi } from '../lib/hooks';
 import { Badge, Select, cx } from './ui';
 
 export const NAV = [
   { to: '/', label: 'Tổng quan', icon: LayoutDashboard },
+  { to: '/today', label: 'Quyết định hôm nay', icon: CalendarCheck },
   { to: '/data', label: 'Data Center', icon: Database },
   { to: '/statistics', label: 'Thống kê', icon: BarChart3 },
   { to: '/research', label: 'AI Research', icon: Brain },

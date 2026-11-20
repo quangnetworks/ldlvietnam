@@ -6,6 +6,7 @@ import { LoadingBlock, EmptyState } from './components/ui';
 import { GameProvider } from './lib/game';
 
 const Overview = lazy(() => import('./pages/Overview'));
+const Today = lazy(() => import('./pages/Today'));
 const DataCenter = lazy(() => import('./pages/DataCenter'));
 const Statistics = lazy(() => import('./pages/Statistics'));
 const Research = lazy(() => import('./pages/Research'));
@@ -25,6 +26,7 @@ export function App() {
             <Suspense fallback={<LoadingBlock rows={6} />}>
               <Routes>
                 <Route path="/" element={<Overview />} />
+                <Route path="/today" element={<Today />} />
                 <Route path="/data" element={<DataCenter />} />
                 <Route path="/statistics" element={<Statistics />} />
                 <Route path="/research" element={<Research />} />

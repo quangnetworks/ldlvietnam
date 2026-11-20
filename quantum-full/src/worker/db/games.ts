@@ -14,6 +14,7 @@ interface GameRow {
   ticket_price: number;
   prize_tiers_json: string;
   schedule_note: string | null;
+  draw_schedule_json: string | null;
   rules_verification_status: Game['rulesVerificationStatus'];
   rules_source_url: string | null;
   rules_verified_at: string | null;
@@ -35,6 +36,7 @@ export function mapGame(r: GameRow): Game {
     ticketPrice: r.ticket_price,
     prizeTiers: JSON.parse(r.prize_tiers_json) as PrizeTier[],
     scheduleNote: r.schedule_note,
+    drawSchedule: r.draw_schedule_json ? JSON.parse(r.draw_schedule_json) : null,
     rulesVerificationStatus: r.rules_verification_status,
     rulesSourceUrl: r.rules_source_url,
     rulesVerifiedAt: r.rules_verified_at,
