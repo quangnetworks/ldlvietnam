@@ -116,4 +116,4 @@ Dữ liệu đồng bộ tự động từ `bingo18.jsonl` của nguồn mở b�
 
 Cấu hình game nằm trong bảng `games` và chỉnh được tại **Cài đặt**. Cơ cấu giải được seed từ thông tin báo chí do trang vietlott.vn chặn truy cập tự động trong quá trình phát triển, nên ở trạng thái **`unverified`** — chủ dự án cần đối chiếu thể lệ chính thức và xác minh. Xem `docs/QA_REPORT.md`.
 
-Tài liệu khác: [API](docs/API.md) · [Triển khai](docs/DEPLOYMENT.md) · [Báo cáo nghiệm thu](docs/QA_REPORT.md)
+Chạy trên máy cá nhân: [docs/LOCAL.md](docs/LOCAL.md) · Tài liệu khác: [API](docs/API.md) · [Triển khai](docs/DEPLOYMENT.md) · [Báo cáo nghiệm thu](docs/QA_REPORT.md)

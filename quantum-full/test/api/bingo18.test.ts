@@ -27,7 +27,7 @@ function rangeFetcher(file: Uint8Array) {
     let end = file.length - 1;
     const tail = /^bytes=-(\d+)$/.exec(range);
     const span = /^bytes=(\d+)-(\d+)$/.exec(range);
-    if (tail) start = Math.max(0, file.length - Number(tail[1]));
+    if (tail) return new Response('suffix range not supported', { status: 501 }); // mô phỏng proxy không hỗ trợ hậu tố
     else if (span) [start, end] = [Number(span[1]), Math.min(file.length - 1, Number(span[2]))];
     return new Response(file.slice(start, end + 1), { status: 206, headers: { 'content-range': `bytes ${start}-${end}/${file.length}` } });
   };

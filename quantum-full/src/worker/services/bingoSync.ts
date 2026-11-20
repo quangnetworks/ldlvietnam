@@ -132,8 +132,11 @@ export async function syncBingo(actor: ActorCtx, fetcher: Fetcher = fetch): Prom
     const src = await db.prepare('SELECT id FROM data_sources WHERE name = ?').bind(OPEN_SOURCE_NAME).first<{ id: number }>();
     if (!src) throw new Error('Chưa đăng ký nguồn dữ liệu mở');
     const state = await getSetting<{ backfillEndByte: number | null; done: boolean }>(db, 'bingo18_sync', { backfillEndByte: null, done: false });
-    // 1) Phần đuôi: kỳ mới nhất.
-    const tail = await fetchRange(fetcher, `bytes=-${TAIL_BYTES}`);
+    // 1) Phần đuôi: kỳ mới nhất. Lấy kích thước tệp trước rồi dùng khoảng tường minh
+    //    (một số proxy/CDN không hỗ trợ dạng hậu tố "bytes=-N").
+    const probe = await fetchRange(fetcher, 'bytes=0-0');
+    const size = probe.total;
+    const tail = size == null ? probe : await fetchRange(fetcher, `bytes=${Math.max(0, size - TAIL_BYTES)}-${size - 1}`);
     const tc = parseBingoChunk(tail.bytes, tail.start, tail.total);
     const maxRow = await db.prepare('SELECT MAX(CAST(draw_code AS INTEGER)) AS m FROM bingo18_draws').first<{ m: number | null }>();
     const fresh = maxRow?.m == null ? tc.rows : tc.rows.filter((r) => Number(r.code) > (maxRow.m as number));
