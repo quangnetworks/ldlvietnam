@@ -68,3 +68,37 @@ describe('Quyết định', () => {
     expect(decideToday({ ...base, now: '2026-11-20T14:00:00Z' }).action).toBe('skip');
   });
 });
+
+describe('Kỳ Chia giải Độc đắc trong quyết định', () => {
+  const split = { game: 'lotto535', date: '2026-11-20', time: '21:00', jackpot: 16e9, shares: { first: 2 / 6, second: 1 / 6, third: 1 / 6, fourth: 1 / 6, fifth: 1 / 6 }, tickets: 0.9e6, ticketsConservative: 1.2e6 };
+  const now = '2026-11-20T05:50:00Z'; // 12:50 giờ VN ⇒ còn kỳ 21:00
+
+  it('Kỳ chia giải có kỳ vọng thận trọng > 100% và được xếp đầu', () => {
+    const c = candidateDraws({ ...base, now, split });
+    expect(c[0].split).not.toBeNull();
+    expect(c[0].returnRatio).toBeGreaterThan(1);
+    expect(c[0].split!.returnRatioEstimate).toBeGreaterThan(c[0].returnRatio);
+    expect(c[0].expectedLossPerTicket).toBeLessThan(0);
+  });
+
+  it('Chế độ split_only: mua kỳ chia giải bằng ngân sách tích luỹ (không chia theo ngày)', () => {
+    const d = decideToday({ ...base, mode: 'split_only', now, split, monthRemaining: 300000 });
+    expect(d.action).toBe('buy');
+    expect(d.pick!.split).not.toBeNull();
+    expect(d.tickets).toBe(10); // min(100.000 hạn mức kỳ, 300.000 tháng còn lại) ⇒ 10 vé, không phải 27.272đ/ngày
+    expect(d.expectedReturn).toBeGreaterThan(d.cost);
+  });
+
+  it('Chế độ split_only: không có kỳ chia giải hoặc kỳ vọng thận trọng < 100% ⇒ không mua', () => {
+    expect(decideToday({ ...base, mode: 'split_only', now }).action).toBe('skip');
+    const crowded = { ...split, tickets: 3e6, ticketsConservative: 4e6 };
+    const d = decideToday({ ...base, mode: 'split_only', now, split: crowded });
+    expect(d.action).toBe('skip');
+    expect(d.reasons[0]).toMatch(/chưa vượt giá vé/);
+  });
+
+  it('Kỳ chia giải ngày khác không ảnh hưởng hôm nay', () => {
+    const c = candidateDraws({ ...base, now, split: { ...split, date: '2026-11-21' } });
+    expect(c.every((x) => x.split === null)).toBe(true);
+  });
+});

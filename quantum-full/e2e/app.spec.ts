@@ -132,6 +132,17 @@ test('Quyết định hôm nay: hiển thị khuyến nghị, cập nhật Jackp
   await expect(page.getByText('Đã cập nhật giá trị Jackpot')).toBeVisible();
   await page.getByRole('button', { name: 'Ghi nhận quyết định' }).click();
   await expect(page.getByText(/Đã ghi nhận quyết định/)).toBeVisible();
+  // Kỳ Chia giải Độc đắc: nhập số người trúng kỳ tham chiếu ⇒ hiển thị kỳ vọng ước tính / thận trọng
+  await expect(page.getByRole('heading', { name: 'Kỳ Chia giải Độc đắc — Lotto 5/35' })).toBeVisible();
+  await page.getByLabel('Độc đắc sẽ chia (tỷ)').fill('16,9');
+  await page.getByLabel('Giải Nhì').fill('24');
+  await page.getByLabel('Giải Ba').fill('490');
+  await page.getByLabel('Giải Tư').fill('765');
+  await page.getByLabel('Giải Năm').fill('11900');
+  await page.getByRole('button', { name: 'Lưu kỳ chia giải' }).click();
+  await expect(page.getByText('Đã lưu kỳ Chia giải Độc đắc')).toBeVisible();
+  await expect(page.getByText('Kỳ vọng / vé (thận trọng)')).toBeVisible();
+  await expect(page.getByText('Còn có lợi khi số vé dưới')).toBeVisible();
   const gen = page.getByRole('button', { name: /^Sinh \d+ bộ số/ });
   if (await gen.isVisible()) {
     await gen.click();

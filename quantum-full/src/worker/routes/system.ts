@@ -60,7 +60,7 @@ const SettingsUpdate = z.object({
   annual_budget: z.number().int().min(0).max(10_000_000_000).optional(),
   statistics_include_unverified: z.boolean().optional(),
   auto_sync_enabled: z.boolean().optional(),
-  decision_mode: z.enum(['discipline', 'value', 'minimal']).optional(),
+  decision_mode: z.enum(['discipline', 'value', 'minimal', 'split_only']).optional(),
   decision_value_threshold: z.number().min(0).max(5).optional(),
   decision_apply_tax: z.boolean().optional(),
   bingo18_daily_limit: z.number().int().min(0).max(10_000_000).optional(),
