@@ -7,7 +7,7 @@
  */
 import type { MiddlewareHandler } from 'hono';
 import { ApiError } from './http';
-import { timingSafeEqual } from './hash';
+import { sha256Hex, timingSafeEqual } from './hash';
 import type { AppEnv, AuthUser, Role } from './types';
 
 interface Jwk {
@@ -86,6 +86,8 @@ export function authenticate(fetcher: JwksFetcher = defaultJwksFetcher): Middlew
       const m = /^Bearer\s+(.+)$/i.exec(authz);
       const token = m?.[1]?.trim() ?? '';
       if (env.ADMIN_TOKEN && env.ADMIN_TOKEN.length >= 16 && timingSafeEqual(token, env.ADMIN_TOKEN)) user = { id: 'token:admin', email: null, role: 'admin', method: 'token' };
+      else if (env.ADMIN_TOKEN_SHA256 && /^[0-9a-f]{64}$/.test(env.ADMIN_TOKEN_SHA256) && token.length >= 32 && timingSafeEqual(await sha256Hex(token), env.ADMIN_TOKEN_SHA256))
+        user = { id: 'token:admin', email: null, role: 'admin', method: 'token' };
       else if (env.VIEWER_TOKEN && env.VIEWER_TOKEN.length >= 16 && timingSafeEqual(token, env.VIEWER_TOKEN)) user = { id: 'token:viewer', email: null, role: 'viewer', method: 'token' };
       else throw new ApiError(401, 'unauthorized', 'Token không hợp lệ');
     }

@@ -36,7 +36,10 @@
     // Danh sách email (phân cách bởi dấu phẩy) được quyền quản trị khi đăng nhập qua Access.
     "ADMIN_EMAILS": "",
     // Chỉ bật "true" trong .dev.vars khi phát triển cục bộ. KHÔNG bật ở production.
-    "ALLOW_DEV_AUTH": "false"
+    "ALLOW_DEV_AUTH": "false",
+    // SHA-256 của admin token (KHÔNG phải token). Token 256-bit ngẫu nhiên ⇒ không thể dò ngược từ hash.
+    // Đổi token: tạo chuỗi mới (openssl rand -hex 32), thay hash này bằng sha256 của chuỗi mới và deploy lại.
+    "ADMIN_TOKEN_SHA256": "19b49d805f109e1ba8683ab71efbdfa2d5fc8f2995f71c46b66806421c35173f"
   },
   // Secrets (đặt bằng `wrangler secret put`): ADMIN_TOKEN, VIEWER_TOKEN (tuỳ chọn)
   "routes": [{ "pattern": "quantum.vanquang.xyz", "custom_domain": true }],

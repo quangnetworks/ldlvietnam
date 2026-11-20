@@ -115,6 +115,19 @@ describe('Cloudflare Access JWT', () => {
   });
 });
 
+describe('Admin token dạng băm (ADMIN_TOKEN_SHA256)', () => {
+  it('Token khớp hash ⇒ admin; sai ⇒ 401', async () => {
+    const tok = 'a'.repeat(16) + 'b'.repeat(16) + 'c'.repeat(32);
+    const digest = [...new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(tok)))].map((b) => b.toString(16).padStart(2, '0')).join('');
+    const app = createApp();
+    const e = { ...env, ADMIN_TOKEN: undefined, ADMIN_TOKEN_SHA256: digest };
+    const ok = await app.request('/api/v1/me', { headers: { authorization: `Bearer ${tok}` } }, e);
+    expect(((await ok.json()) as { data: { role: string } }).data.role).toBe('admin');
+    const bad = await app.request('/api/v1/me', { headers: { authorization: `Bearer ${tok.slice(0, -1)}x` } }, e);
+    expect(bad.status).toBe(401);
+  });
+});
+
 describe('Rate limiting', () => {
   it('Vượt giới hạn ⇒ 429 (bộ đếm fallback khi không có binding)', async () => {
     const app = createApp();
