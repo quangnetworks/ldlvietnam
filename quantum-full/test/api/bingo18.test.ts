@@ -34,6 +34,23 @@ function rangeFetcher(file: Uint8Array) {
 }
 
 describe('Bingo18 — đồng bộ theo HTTP Range', () => {
+  it('Máy chủ bỏ qua Range (trả 200 toàn tệp): vẫn chỉ xử lý đoạn đuôi + 1 đoạn lịch sử, tải tệp 1 lần', async () => {
+    const file = makeFile(30000);
+    let calls = 0;
+    const ignoreRange = async () => {
+      calls++;
+      return new Response(file, { status: 200 });
+    };
+    const r = await syncBingo(actor, ignoreRange);
+    expect(r.error).toBeNull();
+    expect(calls).toBe(1);
+    expect(r.tail.inserted).toBeGreaterThan(500);
+    expect(r.tail.inserted).toBeLessThan(2000);
+    expect(r.backfill.inserted).toBeLessThan(4000);
+    await env.DB.prepare('DELETE FROM bingo18_draws').run();
+    await env.DB.prepare("UPDATE app_settings SET value_json = '{\"backfillEndByte\":null,\"done\":false}' WHERE key = 'bingo18_sync'").run();
+  });
+
   it('Parse đoạn: bỏ dòng cắt dở đầu/cuối, báo dòng sai', () => {
     const f = new TextEncoder().encode('{"date":"2025-01-01","id":"1","result":[1,2,3],"total":6}\n{"date":"2025-01-01","id":"2","result":[1,1,1],"total":3}\n{"date":"2025');
     const c = parseBingoChunk(f.slice(10), 10, f.length);

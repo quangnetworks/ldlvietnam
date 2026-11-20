@@ -67,13 +67,27 @@ export function parseBingoChunk(bytes: Uint8Array, start: number, totalSize: num
   return { rows, invalid, firstLineOffset: start + skip, totalSize };
 }
 
-async function fetchRange(fetcher: Fetcher, range: string): Promise<{ bytes: Uint8Array; start: number; total: number | null }> {
-  const res = await fetcher(BINGO_URL, { headers: { 'user-agent': USER_AGENT, range }, signal: AbortSignal.timeout(20_000) });
+/**
+ * Tải một khoảng byte. Nếu máy chủ/CDN bỏ qua Range và trả 200 (toàn bộ tệp), cắt đoạn cần dùng tại chỗ
+ * và giữ bản đầy đủ trong `cache` để các bước sau trong cùng lần chạy không tải lại.
+ */
+async function fetchRange(fetcher: Fetcher, range: string, cache: { full?: Uint8Array }): Promise<{ bytes: Uint8Array; start: number; total: number | null }> {
+  const m = /^bytes=(\d+)-(\d+)$/.exec(range);
+  const slice = (full: Uint8Array) => {
+    const a = m ? Math.min(Number(m[1]), full.length) : 0;
+    const b = m ? Math.min(Number(m[2]) + 1, full.length) : full.length;
+    return { bytes: full.subarray(a, b), start: a, total: full.length };
+  };
+  if (cache.full) return slice(cache.full);
+  const res = await fetcher(BINGO_URL, { headers: { 'user-agent': USER_AGENT, range, 'accept-encoding': 'identity' }, signal: AbortSignal.timeout(30_000) });
   if (res.status !== 206 && res.status !== 200) throw new Error(`Nguồn trả về HTTP ${res.status}`);
   const bytes = new Uint8Array(await res.arrayBuffer());
-  if (res.status === 200) return { bytes, start: 0, total: bytes.length };
-  const m = /bytes (\d+)-(\d+)\/(\d+|\*)/.exec(res.headers.get('content-range') ?? '');
-  return { bytes, start: m ? Number(m[1]) : 0, total: m && m[3] !== '*' ? Number(m[3]) : null };
+  if (res.status === 200) {
+    cache.full = bytes;
+    return slice(bytes);
+  }
+  const cr = /bytes (\d+)-(\d+)\/(\d+|\*)/.exec(res.headers.get('content-range') ?? '');
+  return { bytes, start: cr ? Number(cr[1]) : 0, total: cr && cr[3] !== '*' ? Number(cr[3]) : null };
 }
 
 const vnToday = () => new Date(Date.now() + 7 * 3600_000).toISOString().slice(0, 10);
@@ -134,9 +148,11 @@ export async function syncBingo(actor: ActorCtx, fetcher: Fetcher = fetch): Prom
     const state = await getSetting<{ backfillEndByte: number | null; done: boolean }>(db, 'bingo18_sync', { backfillEndByte: null, done: false });
     // 1) Phần đuôi: kỳ mới nhất. Lấy kích thước tệp trước rồi dùng khoảng tường minh
     //    (một số proxy/CDN không hỗ trợ dạng hậu tố "bytes=-N").
-    const probe = await fetchRange(fetcher, 'bytes=0-0');
+    const cache: { full?: Uint8Array } = {};
+    const probe = await fetchRange(fetcher, 'bytes=0-0', cache);
     const size = probe.total;
-    const tail = size == null ? probe : await fetchRange(fetcher, `bytes=${Math.max(0, size - TAIL_BYTES)}-${size - 1}`);
+    if (size == null) throw new Error('Không xác định được kích thước tệp nguồn');
+    const tail = await fetchRange(fetcher, `bytes=${Math.max(0, size - TAIL_BYTES)}-${size - 1}`, cache);
     const tc = parseBingoChunk(tail.bytes, tail.start, tail.total);
     const maxRow = await db.prepare('SELECT MAX(CAST(draw_code AS INTEGER)) AS m FROM bingo18_draws').first<{ m: number | null }>();
     const fresh = maxRow?.m == null ? tc.rows : tc.rows.filter((r) => Number(r.code) > (maxRow.m as number));
@@ -147,7 +163,7 @@ export async function syncBingo(actor: ActorCtx, fetcher: Fetcher = fetch): Prom
     let done = state.done || end <= 0;
     if (!done) {
       const start = Math.max(0, end - BACKFILL_BYTES);
-      const chunk = await fetchRange(fetcher, `bytes=${start}-${end - 1}`);
+      const chunk = await fetchRange(fetcher, `bytes=${start}-${end - 1}`, cache);
       const bc = parseBingoChunk(chunk.bytes, chunk.start, chunk.total);
       const br = await storeRows(actor, game.id, src.id, bc.rows, bc.invalid, `bytes=${start}-${end - 1}`);
       end = bc.firstLineOffset;
