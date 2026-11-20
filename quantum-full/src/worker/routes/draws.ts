@@ -3,11 +3,13 @@ import { z } from 'zod';
 import { validateDrawResult } from '../../engine/validation';
 import { DRAW_SELECT, composeDrawAt, drawSourceHash, getDraw, mapDraw, type DrawRow } from '../db/draws';
 import { getGame } from '../db/games';
-import { auditStatement } from '../lib/audit';
+import { actorFromContext, auditStatement } from '../lib/audit';
 import { requireRole } from '../lib/auth';
 import { ApiError, PaginationQuery, conflict, notFound, nowIso, pageMeta, parseId, parseJson, parseQuery, unprocessable } from '../lib/http';
 import type { AppEnv } from '../lib/types';
 import { importDraws, parseCsv, parseJsonPayload } from '../services/importer';
+import { OPEN_SOURCE_NAME, SYNC_SOURCES, syncAll } from '../services/sync';
+import { getSetting } from '../db/settings';
 
 export const drawRoutes = new Hono<AppEnv>();
 
@@ -100,7 +102,7 @@ drawRoutes.post('/admin/draws/import', requireRole('admin'), async (c) => {
   const src = await c.env.DB.prepare('SELECT id FROM data_sources WHERE id = ?').bind(b.data_source_id).first();
   if (!src) throw notFound('Nguồn dữ liệu');
   const parsed = b.format === 'csv' ? parseCsv(b.content) : { rows: parseJsonPayload(b.content), errors: [] };
-  const result = await importDraws(c, {
+  const result = await importDraws(actorFromContext(c), {
     game,
     dataSourceId: b.data_source_id,
     format: b.format,
@@ -129,7 +131,7 @@ drawRoutes.post('/admin/draws', requireRole('admin'), async (c) => {
   const game = await getGame(c.env.DB, b.game);
   const manual = await c.env.DB.prepare("SELECT id FROM data_sources WHERE kind = 'manual' ORDER BY id LIMIT 1").first<{ id: number }>();
   const sourceId = b.data_source_id ?? manual!.id;
-  const result = await importDraws(c, {
+  const result = await importDraws(actorFromContext(c), {
     game,
     dataSourceId: sourceId,
     format: 'manual',
@@ -223,4 +225,60 @@ drawRoutes.post('/admin/draws/:id/correct', requireRole('admin'), async (c) => {
     auditStatement(c, { action: 'draws.correct', entityType: 'draw', entityId: id, before, after: { main, special: b.special ?? null, drawDate: date, drawTime: time, reason: b.reason, sourceHash: hash } }),
   ]);
   return c.json({ data: { draw: await getDraw(c.env.DB, id), ledgerEntriesAffected: affected?.n ?? 0, note: (affected?.n ?? 0) > 0 ? 'Sổ quỹ đã có bút toán liên quan kỳ này — cần lập bút toán điều chỉnh.' : null } });
+});
+
+// ───────────── Đồng bộ tự động từ nguồn dữ liệu mở ─────────────
+
+drawRoutes.get('/sync/status', async (c) => {
+  const ds = await c.env.DB.prepare('SELECT * FROM data_sources WHERE name = ?').bind(OPEN_SOURCE_NAME).first<{ id: number }>();
+  const enabled = await getSetting<boolean>(c.env.DB, 'auto_sync_enabled', true);
+  const jobs = ds
+    ? (
+        await c.env.DB.prepare(
+          `SELECT j.id, j.status, j.inserted, j.duplicates, j.conflicts, j.invalid, j.created_at, j.created_by, g.code AS game_code,
+            (SELECT COUNT(*) FROM draws d WHERE d.import_job_id = j.id AND d.verification_status = 'unverified') AS unverified
+           FROM import_jobs j JOIN games g ON g.id = j.game_id WHERE j.data_source_id = ? ORDER BY j.id DESC LIMIT 20`,
+        )
+          .bind(ds.id)
+          .all()
+      ).results
+    : [];
+  const lastRun = await c.env.DB.prepare("SELECT created_at, actor, after_json FROM audit_logs WHERE action = 'draws.sync' ORDER BY id DESC LIMIT 1").first<{ created_at: string; actor: string; after_json: string }>();
+  return c.json({
+    data: {
+      enabled,
+      source: ds,
+      sources: SYNC_SOURCES.map((s) => ({ game: s.gameCode, url: s.url })),
+      schedule: 'Mỗi giờ (phút 05). Nguồn mở cập nhật khoảng 07:00 và 19:00 giờ Việt Nam',
+      lastRun: lastRun ? { at: lastRun.created_at, actor: lastRun.actor, results: JSON.parse(lastRun.after_json) } : null,
+      jobs,
+      officialSourceNote: 'vietlott.vn chặn truy cập tự động (lớp chống bot). Hệ thống không vượt cơ chế này; dữ liệu đồng bộ là nguồn bên thứ ba và cần xác minh.',
+    },
+  });
+});
+
+drawRoutes.post('/admin/sync', requireRole('admin'), async (c) => {
+  const b = await parseJson(c, z.object({ games: z.array(z.string()).optional() }));
+  const r = await syncAll(actorFromContext(c), { force: true, games: b.games });
+  return c.json({ data: r });
+});
+
+/** Xác minh toàn bộ kỳ CHƯA XÁC MINH của một lần nhập — quyết định có chủ đích của quản trị viên, có audit. */
+drawRoutes.post('/admin/import-jobs/:id/verify', requireRole('admin'), async (c) => {
+  const id = parseId(c);
+  const b = await parseJson(c, z.object({ note: z.string().min(10).max(1000) }));
+  const job = await c.env.DB.prepare('SELECT id FROM import_jobs WHERE id = ?').bind(id).first();
+  if (!job) throw notFound('Lần nhập');
+  const ts = nowIso();
+  const res = await c.env.DB.batch([
+    c.env.DB.prepare("UPDATE draws SET verification_status = 'verified', verified_at = ?, verified_by = ?, verification_note = ?, updated_at = ? WHERE import_job_id = ? AND verification_status = 'unverified'").bind(
+      ts,
+      c.get('user').id,
+      b.note,
+      ts,
+      id,
+    ),
+    auditStatement(c, { action: 'draws.verify_import_job', entityType: 'import_job', entityId: id, after: { note: b.note } }),
+  ]);
+  return c.json({ data: { importJobId: id, verified: res[0].meta.changes ?? 0 } });
 });

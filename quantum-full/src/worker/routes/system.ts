@@ -59,6 +59,7 @@ const SettingsUpdate = z.object({
   monthly_budget: z.number().int().min(0).max(1_000_000_000).optional(),
   annual_budget: z.number().int().min(0).max(10_000_000_000).optional(),
   statistics_include_unverified: z.boolean().optional(),
+  auto_sync_enabled: z.boolean().optional(),
 });
 
 systemRoutes.put('/admin/settings', requireRole('admin'), async (c) => {

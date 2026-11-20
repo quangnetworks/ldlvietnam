@@ -42,6 +42,8 @@
     "ADMIN_TOKEN_SHA256": "19b49d805f109e1ba8683ab71efbdfa2d5fc8f2995f71c46b66806421c35173f"
   },
   // Secrets (đặt bằng `wrangler secret put`): ADMIN_TOKEN, VIEWER_TOKEN (tuỳ chọn)
+  // Đồng bộ dữ liệu mở mỗi giờ (phút 05). Nguồn cập nhật ~00:00 và ~12:00 UTC; mỗi lần chỉ 2 request nhẹ.
+  "triggers": { "crons": ["5 * * * *"] },
   "routes": [{ "pattern": "quantum.vanquang.xyz", "custom_domain": true }],
   "workers_dev": false,
   "observability": { "enabled": true }

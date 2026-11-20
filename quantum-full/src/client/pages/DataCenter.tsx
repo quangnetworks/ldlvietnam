@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { CheckCheck, FileUp, ShieldCheck, ShieldX, Wrench } from 'lucide-react';
+import { CheckCheck, FileUp, RefreshCw, ShieldCheck, ShieldX, Wrench } from 'lucide-react';
 import { apiFetch, ApiClientError } from '../lib/api';
 import { useGame } from '../lib/game';
 import { useApi } from '../lib/hooks';
@@ -7,7 +7,7 @@ import { dateOnly, dateTime, num, todayVn } from '../lib/format';
 import { Badge, Balls, Button, Card, EmptyState, ErrorState, Field, Input, LoadingBlock, Notice, PageHeader, Pagination, Select, Table, Tabs, Td, Textarea } from '../components/ui';
 import { useToast } from '../components/toast';
 
-type Tab = 'draws' | 'import' | 'manual' | 'jobs' | 'sources';
+type Tab = 'sync' | 'draws' | 'import' | 'manual' | 'jobs' | 'sources';
 
 function statusBadge(s: string) {
   return s === 'verified' ? <Badge tone="good">Đã xác minh</Badge> : s === 'rejected' ? <Badge tone="bad">Từ chối</Badge> : <Badge tone="warn">Chưa xác minh</Badge>;
@@ -408,8 +408,149 @@ function SourcesTab() {
   );
 }
 
+function SyncTab() {
+  const toast = useToast();
+  const q = useApi<any>('/sync/status');
+  const [busy, setBusy] = useState(false);
+  const [note, setNote] = useState('');
+  const [verifying, setVerifying] = useState<number | null>(null);
+  const syncNow = async () => {
+    setBusy(true);
+    try {
+      const r = await apiFetch('/admin/sync', { body: {} });
+      const msg = r.data.results.map((x: any) => (x.error ? `${x.game}: lỗi — ${x.error}` : `${x.game}: +${x.import?.inserted ?? 0} kỳ mới`)).join(' · ');
+      toast(r.data.results.some((x: any) => x.error) ? 'error' : 'success', msg || 'Không có dữ liệu mới');
+      q.reload();
+    } catch (e) {
+      toast('error', errMsg(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+  const toggle = async (enabled: boolean) => {
+    try {
+      await apiFetch('/admin/settings', { method: 'PUT', body: { auto_sync_enabled: enabled } });
+      toast('success', enabled ? 'Đã bật đồng bộ tự động' : 'Đã tắt đồng bộ tự động');
+      q.reload();
+    } catch (e) {
+      toast('error', errMsg(e));
+    }
+  };
+  const verifyJob = async (id: number) => {
+    setVerifying(id);
+    try {
+      const r = await apiFetch(`/admin/import-jobs/${id}/verify`, { body: { note } });
+      toast('success', `Đã xác minh ${r.data.verified} kỳ của lần nhập #${id}`);
+      q.reload();
+    } catch (e) {
+      toast('error', errMsg(e));
+    } finally {
+      setVerifying(null);
+    }
+  };
+  if (q.error) return <ErrorState error={q.error} onRetry={q.reload} />;
+  if (!q.data) return <LoadingBlock />;
+  const d = q.data;
+  return (
+    <div className="space-y-5">
+      <Notice tone="warn">{d.officialSourceNote}</Notice>
+      <div className="grid gap-5 lg:grid-cols-3">
+        <Card
+          title="Nguồn dữ liệu mở"
+          className="lg:col-span-2"
+          actions={
+            <Button variant="primary" loading={busy} onClick={syncNow}>
+              <RefreshCw className="h-4 w-4" aria-hidden /> Đồng bộ ngay
+            </Button>
+          }
+        >
+          <dl className="grid grid-cols-[140px_1fr] gap-x-3 gap-y-2 text-sm">
+            <dt className="text-muted">Nguồn</dt>
+            <dd>
+              {d.source?.name} <Badge tone="warn">Bên thứ ba</Badge>
+            </dd>
+            <dt className="text-muted">Kho dữ liệu</dt>
+            <dd className="break-all text-xs">{d.source?.url}</dd>
+            <dt className="text-muted">Tệp đồng bộ</dt>
+            <dd className="space-y-0.5 text-xs">
+              {d.sources.map((s: any) => (
+                <div key={s.game}>
+                  {s.game}: <span className="break-all text-muted">{s.url}</span>
+                </div>
+              ))}
+            </dd>
+            <dt className="text-muted">Lịch tự động</dt>
+            <dd>{d.schedule}</dd>
+            <dt className="text-muted">Lần chạy gần nhất</dt>
+            <dd>
+              {d.lastRun ? (
+                <>
+                  {dateTime(d.lastRun.at)} <span className="text-xs text-muted">({d.lastRun.actor})</span>
+                  <ul className="mt-1 text-xs text-muted">
+                    {d.lastRun.results.map((r: any) => (
+                      <li key={r.game}>
+                        {r.game}: {r.error ? <span className="text-red-300">{r.error}</span> : `+${r.inserted} kỳ, lỗi ${r.invalid}, xung đột ${r.conflicts}`}
+                      </li>
+                    ))}
+                  </ul>
+                </>
+              ) : (
+                'Chưa chạy'
+              )}
+            </dd>
+          </dl>
+          <label className="mt-4 flex items-center gap-2 text-sm">
+            <input type="checkbox" className="h-4 w-4 accent-blue-500" checked={!!d.enabled} onChange={(e) => toggle(e.target.checked)} />
+            Bật đồng bộ tự động theo lịch
+          </label>
+        </Card>
+        <Card title="Quy trình">
+          <ol className="list-decimal space-y-2 pl-4 text-xs text-slate-300">
+            <li>Hệ thống tải dữ liệu mới từ nguồn mở (1 request/tệp/lần, định danh trung thực).</li>
+            <li>Mỗi kỳ được kiểm tra miền số, trùng số, số đặc biệt, ngày; kỳ lỗi bị từ chối và ghi lại.</li>
+            <li>Kỳ hợp lệ được lưu ở trạng thái CHƯA XÁC MINH, kèm mã băm nguồn.</li>
+            <li>Bạn đối chiếu với kết quả chính thức trên vietlott.vn, rồi xác minh cả lần nhập.</li>
+            <li>Chỉ dữ liệu đã xác minh được dùng cho thống kê và backtest (mặc định).</li>
+          </ol>
+        </Card>
+      </div>
+      <Card title="Các lần đồng bộ">
+        <div className="mb-3 max-w-xl">
+          <Field label="Ghi chú xác minh (bắt buộc ≥ 10 ký tự khi xác minh cả lần nhập)">
+            <Input value={note} onChange={(e) => setNote(e.target.value)} placeholder="vd: Đã đối chiếu kết quả trên vietlott.vn ngày …" />
+          </Field>
+        </div>
+        {d.jobs.length === 0 ? (
+          <EmptyState title="Chưa có lần đồng bộ nào" description="Bấm “Đồng bộ ngay” để tải dữ liệu lần đầu." />
+        ) : (
+          <Table head={['#', 'Thời điểm', 'Game', 'Kết quả', 'Chưa xác minh', '']}>
+            {d.jobs.map((j: any) => (
+              <tr key={j.id}>
+                <Td>{j.id}</Td>
+                <Td className="whitespace-nowrap text-xs text-muted">{dateTime(j.created_at)}</Td>
+                <Td>{j.game_code}</Td>
+                <Td className="text-xs">
+                  <Badge tone={j.status === 'completed' ? 'good' : j.status === 'partial' ? 'warn' : 'bad'}>{j.status}</Badge> +{j.inserted} · lỗi {j.invalid} · xung đột {j.conflicts}
+                </Td>
+                <Td className="tabular">{num(j.unverified)}</Td>
+                <Td>
+                  {j.unverified > 0 && (
+                    <Button variant="secondary" disabled={note.trim().length < 10} loading={verifying === j.id} onClick={() => verifyJob(j.id)}>
+                      <CheckCheck className="h-4 w-4" aria-hidden /> Xác minh cả lần nhập
+                    </Button>
+                  )}
+                </Td>
+              </tr>
+            ))}
+          </Table>
+        )}
+      </Card>
+    </div>
+  );
+}
+
 export default function DataCenter() {
-  const [tab, setTab] = useState<Tab>('draws');
+  const [tab, setTab] = useState<Tab>('sync');
   return (
     <>
       <PageHeader title="Data Center" description="Nhập, kiểm tra hợp lệ, xác minh và theo dõi nguồn gốc kết quả quay. Không có dữ liệu lịch sử dựng sẵn." />
@@ -417,6 +558,7 @@ export default function DataCenter() {
         value={tab}
         onChange={setTab}
         items={[
+          { value: 'sync', label: 'Đồng bộ tự động' },
           { value: 'draws', label: 'Kết quả quay' },
           { value: 'import', label: 'Nhập dữ liệu' },
           { value: 'manual', label: 'Nhập tay' },
@@ -424,6 +566,7 @@ export default function DataCenter() {
           { value: 'sources', label: 'Nguồn dữ liệu' },
         ]}
       />
+      {tab === 'sync' && <SyncTab />}
       {tab === 'draws' && <DrawsTab />}
       {tab === 'import' && <ImportTab />}
       {tab === 'manual' && <ManualTab />}

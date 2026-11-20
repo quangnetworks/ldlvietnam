@@ -37,6 +37,9 @@ Viewer chỉ được gọi `GET`. Mọi `POST/PUT` cần admin. `401` thiếu/s
 | POST | `/admin/draws/verify-batch` | `{ ids[≤500], note? }` |
 | POST | `/admin/draws/:id/correct` | Điều chỉnh có kiểm soát `{ main[], special?, draw_date?, draw_time?, reason(≥10) }` |
 | GET | `/import-jobs?game=` | Lịch sử nhập (payload hash, nguồn, lỗi) |
+| GET | `/sync/status` | Trạng thái đồng bộ tự động (nguồn, lịch, lần chạy cuối, các lần nhập + số kỳ chưa xác minh) |
+| POST | `/admin/sync` | Đồng bộ ngay `{ games?: string[] }` |
+| POST | `/admin/import-jobs/:id/verify` | Xác minh toàn bộ kỳ chưa xác minh của một lần nhập `{ note(≥10) }` |
 | GET | `/data-sources` · POST `/admin/data-sources` | Nguồn dữ liệu `{ name, kind: official|third_party|manual, url? }` |
 
 Quy tắc: không nhận ngày quay tương lai; kỳ trùng nội dung ⇒ `duplicates`; kỳ đã có nhưng khác nội dung ⇒ `conflicts`, **không ghi đè**.

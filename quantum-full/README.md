@@ -73,6 +73,12 @@ draw_code,draw_date,draw_time,numbers,special
 
 `numbers` cách nhau bằng khoảng trắng/gạch/chấm phẩy (hoặc dùng cột `n1..nK`). `draw_time` tuỳ chọn (cần cho Lotto 5/35 vì quay 2 kỳ/ngày). Power 6/55: `special` là số đặc biệt quay từ các số còn lại.
 
+## Đồng bộ dữ liệu tự động
+
+vietlott.vn chặn mọi truy cập tự động bằng lớp chống bot (Cloudflare challenge, HTTP 403 — kể cả `robots.txt`). Hệ thống **không** giả mạo trình duyệt hay vượt cơ chế này.
+Thay vào đó, Cron Trigger mỗi giờ đọc kho dữ liệu mở [vietvudanh/vietlott-data](https://github.com/vietvudanh/vietlott-data) (giấy phép MIT, cập nhật hằng ngày): `power655.jsonl` → Power 6/55, `power535.jsonl` → Lotto 5/35.
+Dữ liệu là **nguồn bên thứ ba**: được kiểm tra hợp lệ, lưu ở trạng thái *chưa xác minh* kèm URL & mã băm; quản trị viên đối chiếu vietlott.vn rồi xác minh (Data Center → Đồng bộ tự động → “Xác minh cả lần nhập”). Bật/tắt bằng thiết lập `auto_sync_enabled`.
+
 ## Lệnh
 
 | Lệnh | Mô tả |

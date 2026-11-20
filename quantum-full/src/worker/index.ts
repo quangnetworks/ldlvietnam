@@ -17,6 +17,7 @@ import { modelRoutes } from './routes/models';
 import { portfolioRoutes } from './routes/portfolios';
 import { statisticsRoutes } from './routes/statistics';
 import { systemRoutes } from './routes/system';
+import { syncAll } from './services/sync';
 
 export const APP_VERSION = '1.0.0';
 
@@ -34,12 +35,18 @@ export function createApp(options: { authenticate?: ReturnType<typeof authentica
   // Public: chỉ kiểm tra sức khoẻ (không lộ dữ liệu).
   api.get('/health', async (c) => {
     let db = 'ok';
+    let data: Record<string, unknown> = {};
     try {
-      await c.env.DB.prepare('SELECT 1').first();
+      const { results } = await c.env.DB.prepare(
+        "SELECT g.code, COUNT(d.id) AS total, SUM(CASE WHEN d.verification_status = 'verified' THEN 1 ELSE 0 END) AS verified FROM games g LEFT JOIN draws d ON d.game_id = g.id GROUP BY g.code",
+      ).all<{ code: string; total: number; verified: number }>();
+      const sync = await c.env.DB.prepare("SELECT MAX(created_at) AS at FROM audit_logs WHERE action = 'draws.sync'").first<{ at: string | null }>();
+      // Chỉ số đếm tổng quát (không lộ dữ liệu) để giám sát đồng bộ.
+      data = { draws: Object.fromEntries(results.map((r) => [r.code, { total: r.total, verified: r.verified ?? 0 }])), lastSyncAt: sync?.at ?? null };
     } catch {
       db = 'error';
     }
-    return c.json({ status: db === 'ok' ? 'ok' : 'degraded', version: APP_VERSION, db, time: new Date().toISOString() }, db === 'ok' ? 200 : 503);
+    return c.json({ status: db === 'ok' ? 'ok' : 'degraded', version: APP_VERSION, db, ...data, time: new Date().toISOString() }, db === 'ok' ? 200 : 503);
   });
 
   api.use('*', options.authenticate ?? authenticate());
@@ -68,4 +75,8 @@ const app = createApp();
 
 export default {
   fetch: app.fetch,
+  /** Cron Trigger: đồng bộ kết quả từ nguồn dữ liệu mở (nếu bật auto_sync_enabled). */
+  async scheduled(event, env, ctx) {
+    ctx.waitUntil(syncAll({ db: env.DB, actorId: 'system:cron', actorRole: 'system', requestId: `cron:${event.scheduledTime}`, ip: null }));
+  },
 } satisfies ExportedHandler<AppEnv['Bindings']>;

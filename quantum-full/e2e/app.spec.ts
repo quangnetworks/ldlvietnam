@@ -32,6 +32,7 @@ test('Mọi trang trong sidebar hiển thị, không lỗi console, không có s
 test('Data Center: nhập CSV, báo lỗi dòng sai, xác minh dữ liệu', async ({ page }) => {
   await login(page);
   await page.goto('/data');
+  await expect(page.getByText('Nguồn dữ liệu mở')).toBeVisible();
   await page.getByRole('tab', { name: 'Nhập dữ liệu' }).click();
   const csv = `${syntheticCsv(160)}\nBAD-1,2024-12-01,13:00,01 02 03 04 99,01`;
   await page.getByRole('textbox', { name: /Nội dung/ }).fill(csv);
