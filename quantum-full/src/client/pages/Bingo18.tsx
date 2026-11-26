@@ -8,7 +8,7 @@ import { Chart, CHART, axis } from '../components/Chart';
 import { ObservedExpectedBar } from '../components/charts';
 import { useToast } from '../components/toast';
 
-type Tab = 'today' | 'bets' | 'stats' | 'simulate' | 'results';
+type Tab = 'today' | 'models' | 'bets' | 'stats' | 'simulate' | 'results';
 const errMsg = (e: unknown) => (e instanceof ApiClientError ? e.message : 'Có lỗi xảy ra');
 
 function Dice({ v }: { v: number }) {
@@ -60,6 +60,27 @@ function TodayTab() {
         <Kpi label="Lỗ kỳ vọng nếu chơi hết" value={vnd(d.expectedLoss)} tone="warn" />
         <Kpi label="Khả năng kết thúc ngày có lãi" value={d.outlook ? pct(d.outlook.probabilityProfit, 1) : '—'} hint={d.outlook ? `Trung vị ${vnd(d.outlook.median)} · 90% trong [${vnd(d.outlook.p5)}; ${vnd(d.outlook.p95)}]` : 'Mô phỏng 4.000 ngày'} />
       </div>
+      {d.model && (
+        <Notice tone={d.model.verdict === 'edge' ? 'warn' : 'info'}>
+          <b>Mô hình dự báo:</b> {d.model.headline}
+          {d.model.bestModel ? ` — tốt nhất: ${d.model.bestModel.name}, hoàn trả thực tế khi cược theo mô hình ${pct(d.model.bestModel.singleReturn, 1)}.` : ''} Đã chấm {num(d.model.scoredDraws)} kỳ{d.model.includeUnverified ? ' (gồm dữ liệu chưa xác minh)' : ''}.
+        </Notice>
+      )}
+      {d.comparison && (
+        <Card title="Mỗi 10.000đ trả lại bao nhiêu? — so sánh các trò chơi" subtitle="Kỳ vọng sau thuế. Trò chơi trả lại nhiều hơn = lỗ kỳ vọng ít hơn cho cùng số tiền.">
+          <Table head={['Trò chơi', 'Cách chơi', 'Hoàn trả kỳ vọng', 'Lỗ kỳ vọng / 10.000đ', 'Ghi chú']}>
+            {d.comparison.map((x: any) => (
+              <tr key={`${x.game}-${x.option}`}>
+                <Td className="whitespace-nowrap">{x.game}</Td>
+                <Td className="text-xs">{x.option}</Td>
+                <Td className="tabular">{pct(x.returnRatio, 1)}</Td>
+                <Td className="tabular">{vnd(x.expectedLossPer10k)}</Td>
+                <Td className="text-xs text-muted">{x.note}</Td>
+              </tr>
+            ))}
+          </Table>
+        </Card>
+      )}
       <div className="grid gap-5 lg:grid-cols-2">
         <Card title="Ghi nhận chi tiêu thực tế" subtitle="Sau khi bạn tự chơi qua Vietlott SMS. Hạn mức được kiểm tra trước khi ghi.">
           <div className="grid gap-3 sm:grid-cols-3">
@@ -86,6 +107,82 @@ function TodayTab() {
           <p className="mt-3 text-xs text-muted">Đổi hạn mức Bingo18 mỗi ngày và thời gian phiên tại Cài đặt.</p>
         </Card>
       </div>
+    </div>
+  );
+}
+
+function ModelsTab() {
+  const [win, setWin] = useState('100');
+  const [last, setLast] = useState('30000');
+  const [inc, setInc] = useState('true');
+  const q = useApi<any>(`/bingo18/models?last=${last}&window=${win}&include_unverified=${inc}`);
+  return (
+    <div className="space-y-5">
+      <div className="grid gap-3 sm:grid-cols-3 lg:w-2/3">
+        <Field label="Số kỳ dùng để chấm">
+          <Select value={last} onChange={(e) => setLast(e.target.value)}>
+            <option value="10000">10.000</option>
+            <option value="30000">30.000</option>
+            <option value="100000">Toàn bộ</option>
+          </Select>
+        </Field>
+        <Field label="Cửa sổ Nóng/Lạnh (kỳ)">
+          <Select value={win} onChange={(e) => setWin(e.target.value)}>
+            <option value="30">30</option>
+            <option value="100">100</option>
+            <option value="500">500</option>
+          </Select>
+        </Field>
+        <Field label="Dữ liệu">
+          <Select value={inc} onChange={(e) => setInc(e.target.value)}>
+            <option value="false">Chỉ đã xác minh</option>
+            <option value="true">Gồm chưa xác minh</option>
+          </Select>
+        </Field>
+      </div>
+      {q.error && <ErrorState error={q.error} onRetry={q.reload} />}
+      {!q.data && !q.error && <LoadingBlock rows={6} />}
+      {q.data && (
+        <>
+          <section className={`rounded-xl border p-5 ${q.data.verdict === 'edge' ? 'border-warn/40 bg-warn/5' : 'border-line bg-surface'}`}>
+            <Badge tone={q.data.verdict === 'edge' ? 'warn' : q.data.verdict === 'no_edge' ? 'info' : 'default'}>Kết luận</Badge>
+            <h2 className="mt-2 text-lg font-semibold sm:text-xl">{q.data.headline}</h2>
+            <ul className="mt-3 list-disc space-y-1 pl-5 text-sm text-slate-300">
+              {q.data.explanation.map((x: string) => (
+                <li key={x}>{x}</li>
+              ))}
+            </ul>
+            <p className="mt-2 text-xs text-muted">
+              {q.meta?.dataNotice} {q.meta?.cached ? 'Kết quả lưu đệm — tự tính lại khi có kỳ mới.' : ''}
+            </p>
+          </section>
+          <Card title="Bảng chấm mô hình (walk-forward, Benjamini–Hochberg)" subtitle="Mỗi kỳ chỉ dùng dữ liệu các kỳ trước. Log-loss càng thấp càng tốt; ngẫu nhiên = ln 6 ≈ 1,7918.">
+            <Table head={['Mô hình', 'Log-loss', 'Cải thiện', 'q', 'Vượt ngẫu nhiên', '“Chọn 1 số” theo mô hình', 'Lớn/Nhỏ theo mô hình']}>
+              {q.data.models.map((m: any) => (
+                <tr key={m.code}>
+                  <Td className="whitespace-nowrap">
+                    {m.name}
+                    <div className="text-[11px] text-muted">{m.description}</div>
+                  </Td>
+                  <Td className="tabular">{num(m.logLoss, 5)}</Td>
+                  <Td className="tabular">{m.code === 'uniform' ? '—' : `${m.improvement >= 0 ? '+' : ''}${num(m.improvement * 1000, 3)}‰`}</Td>
+                  <Td className="tabular">{m.code === 'uniform' ? '—' : pv(m.qValue)}</Td>
+                  <Td>{m.code === 'uniform' ? <Badge tone="info">Chuẩn</Badge> : m.beatsBaseline ? <Badge tone="warn">Có</Badge> : <Badge>Không</Badge>}</Td>
+                  <Td className="tabular whitespace-nowrap">
+                    {pct(m.single.returnRatio, 1)} <span className="text-xs text-muted">· trúng {pct(m.single.winRate, 1)}</span>
+                  </Td>
+                  <Td className="tabular whitespace-nowrap">
+                    {pct(m.bigSmall.returnRatio, 1)} <span className="text-xs text-muted">· trúng {pct(m.bigSmall.winRate, 1)}</span>
+                  </Td>
+                </tr>
+              ))}
+            </Table>
+            <p className="mt-3 text-xs text-muted">
+              Lý thuyết cho mọi lựa chọn: “Chọn 1 số” hoàn trả {pct(q.data.theory.single.returnRatio, 2)} (trúng {pct(q.data.theory.single.winRate, 1)}); Lớn/Nhỏ hoàn trả {pct(q.data.theory.bigSmall.returnRatio, 2)} (trúng {pct(q.data.theory.bigSmall.winRate, 1)}). Để có lời cần hoàn trả trên 100%.
+            </p>
+          </Card>
+        </>
+      )}
     </div>
   );
 }
@@ -352,6 +449,7 @@ export default function Bingo18() {
         onChange={setTab}
         items={[
           { value: 'today', label: 'Hôm nay' },
+          { value: 'models', label: 'Mô hình dự báo' },
           { value: 'bets', label: 'Bảng cược & xác suất' },
           { value: 'stats', label: 'Kiểm định ngẫu nhiên' },
           { value: 'simulate', label: 'Mô phỏng phiên chơi' },
@@ -359,6 +457,7 @@ export default function Bingo18() {
         ]}
       />
       {tab === 'today' && <TodayTab />}
+      {tab === 'models' && <ModelsTab />}
       {tab === 'bets' && <BetsTab />}
       {tab === 'stats' && <StatsTab />}
       {tab === 'simulate' && <SimulateTab />}

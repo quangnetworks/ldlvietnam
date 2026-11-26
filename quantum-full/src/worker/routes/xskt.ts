@@ -1,4 +1,5 @@
 import { Hono } from 'hono';
+import { cached } from '../lib/cache';
 import { z } from 'zod';
 import { evaluateTicketValue, type DecisionGame } from '../../engine/decision';
 import { LOTTO535_SPLIT_SHARES, estimateTickets, splitDrawEV } from '../../engine/splitDraw';
@@ -31,18 +32,6 @@ async function fingerprint(db: D1Database, region: Region, station?: string): Pr
   return `${r?.n ?? 0}:${r?.d ?? ''}`;
 }
 
-/** Kết quả phân tích nặng được lưu đệm theo fingerprint dữ liệu; tính lại khi có kỳ mới. */
-async function cached<T>(db: D1Database, key: string, fp: string, compute: () => Promise<T>): Promise<{ result: T; cached: boolean; computedAt: string }> {
-  const row = await db.prepare('SELECT fingerprint, result_json, computed_at FROM xskt_cache WHERE cache_key = ?').bind(key).first<{ fingerprint: string; result_json: string; computed_at: string }>();
-  if (row && row.fingerprint === fp) return { result: JSON.parse(row.result_json) as T, cached: true, computedAt: row.computed_at };
-  const result = await compute();
-  const at = new Date().toISOString();
-  await db
-    .prepare('INSERT INTO xskt_cache (cache_key, fingerprint, result_json, computed_at) VALUES (?, ?, ?, ?) ON CONFLICT(cache_key) DO UPDATE SET fingerprint = excluded.fingerprint, result_json = excluded.result_json, computed_at = excluded.computed_at')
-    .bind(key, fp, JSON.stringify(result), at)
-    .run();
-  return { result, cached: false, computedAt: at };
-}
 
 const WEEKDAYS = ['Chủ nhật', 'Thứ Hai', 'Thứ Ba', 'Thứ Tư', 'Thứ Năm', 'Thứ Sáu', 'Thứ Bảy'];
 

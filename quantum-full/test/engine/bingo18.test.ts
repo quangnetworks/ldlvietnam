@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { allOutcomes, analyzeBet, betCatalog, bingoStatistics, exactSumCounts, payout, simulateSessions, type BingoResult } from '../../src/engine/bingo18';
+import { allOutcomes, analyzeBet, betCatalog, bingoModels, bingoStatistics, exactSumCounts, payout, simulateSessions, type BingoResult } from '../../src/engine/bingo18';
 import { createRng } from '../../src/engine/rng';
 
 describe('Bingo18 — xác suất chính xác (216 kết quả)', () => {
@@ -60,5 +60,35 @@ describe('Bingo18 — thống kê & mô phỏng', () => {
     expect(a.meanNet.high).toBeGreaterThan(ev);
     expect(() => simulateSessions({ bets: [{ bet: { type: 'big' }, stakeUnits: 1 }], drawsPerSession: 1000, sessions: 3000, seed: 'x' })).toThrow();
     expect(() => simulateSessions({ bets: [{ bet: { type: 'sum', value: 2 }, stakeUnits: 1 }], drawsPerSession: 1, sessions: 10, seed: 'x' })).toThrow();
+  });
+});
+
+describe('Bingo18 — mô hình dự báo walk-forward', () => {
+  it('Dữ liệu đồng đều: không mô hình nào vượt baseline; hoàn trả cược theo mô hình ≈ lý thuyết', () => {
+    const rng = createRng('bingo-models');
+    const res: BingoResult[] = Array.from({ length: 6000 }, () => [rng.int(1, 6), rng.int(1, 6), rng.int(1, 6)]);
+    const m = bingoModels(res, { window: 100, warmup: 200 });
+    expect(m.scoredDraws).toBe(5800);
+    expect(m.verdict).toBe('no_edge');
+    expect(m.models.every((x) => !x.beatsBaseline)).toBe(true);
+    expect(m.models[0].logLoss).toBeCloseTo(Math.log(6), 12);
+    for (const x of m.models) expect(Math.abs(x.single.returnRatio - m.theory.single.returnRatio)).toBeLessThan(0.05);
+  });
+  it('Dữ liệu cố tình lệch (số 6 có xác suất 30%): mô hình Bayes/Nóng phát hiện được', () => {
+    const rng = createRng('biased');
+    const face = () => (rng.next() < 0.3 ? 6 : rng.int(1, 5));
+    const res: BingoResult[] = Array.from({ length: 4000 }, () => [face(), face(), face()]);
+    const m = bingoModels(res);
+    expect(m.verdict).toBe('edge');
+    expect(m.models.find((x) => x.code === 'bayes')!.beatsBaseline).toBe(true);
+    // Cược "Chọn 1 số" theo mô hình chọn số 6 ⇒ hoàn trả cao hơn hẳn lý thuyết
+    expect(m.models.find((x) => x.code === 'bayes')!.single.returnRatio).toBeGreaterThan(0.7);
+  });
+  it('Không rò rỉ tương lai: thay đổi các kỳ sau không đổi điểm của các kỳ trước', () => {
+    const rng = createRng('leak');
+    const res: BingoResult[] = Array.from({ length: 1500 }, () => [rng.int(1, 6), rng.int(1, 6), rng.int(1, 6)]);
+    const a = bingoModels(res.slice(0, 1000));
+    const b = bingoModels([...res.slice(0, 1000)]);
+    expect(b).toEqual(a);
   });
 });

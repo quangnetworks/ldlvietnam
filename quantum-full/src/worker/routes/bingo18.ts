@@ -1,12 +1,15 @@
 import { Hono } from 'hono';
 import { z } from 'zod';
-import { BINGO_STAKE, OFFICIAL_PAYTABLE, analyzeBet, betCatalog, betLabel, bingoStatistics, exactSumCounts, simulateSessions, type BingoBet, type BingoResult } from '../../engine/bingo18';
-import { daysLeftInMonth, vnClock } from '../../engine/decision';
+import { BINGO_STAKE, OFFICIAL_PAYTABLE, analyzeBet, betCatalog, betLabel, bingoModels, bingoStatistics, exactSumCounts, simulateSessions, type BingoBet, type BingoResult } from '../../engine/bingo18';
+import { daysLeftInMonth, evaluateTicketValue, vnClock } from '../../engine/decision';
+import { REGION_CODES, regionValue } from '../../engine/xskt';
+import { listGames } from '../db/games';
 import { randomSeed } from '../../engine/rng';
 import { getAnyGame } from '../db/games';
 import { insertModelRun } from '../db/models';
 import { getSetting } from '../db/settings';
 import { auditStatement } from '../lib/audit';
+import { cached } from '../lib/cache';
 import { ApiError, PaginationQuery, nowIso, pageMeta, parseJson, parseQuery } from '../lib/http';
 import { rateLimit } from '../lib/observability';
 import type { AppEnv } from '../lib/types';
@@ -67,6 +70,40 @@ bingoRoutes.get('/bingo18/statistics', async (c) => {
     data: { ...stats, range: { from: results[0]?.draw_date ?? null, to: results.at(-1)?.draw_date ?? null, firstCode: results[0]?.draw_code ?? null, lastCode: results.at(-1)?.draw_code ?? null } },
     meta: { includeUnverified: inc, dataNotice: inc ? 'Có bao gồm dữ liệu CHƯA XÁC MINH.' : 'Chỉ dùng dữ liệu đã xác minh.' },
   });
+});
+
+const ModelsQuery = z.object({
+  last: z.coerce.number().int().min(1000).max(100000).default(30000),
+  window: z.coerce.number().int().min(10).max(2000).default(100),
+  include_unverified: z.enum(['true', 'false']).optional(),
+});
+
+async function loadResults(db: D1Database, last: number, includeUnverified: boolean) {
+  const { results } = await db
+    .prepare(`SELECT d1, d2, d3 FROM bingo18_draws WHERE verification_status ${includeUnverified ? "IN ('verified','unverified')" : "= 'verified'"} ORDER BY CAST(draw_code AS INTEGER) DESC LIMIT ?`)
+    .bind(last)
+    .all<{ d1: number; d2: number; d3: number }>();
+  return results.reverse().map((r) => [r.d1, r.d2, r.d3] as BingoResult);
+}
+
+async function bingoFingerprint(db: D1Database, includeUnverified: boolean): Promise<string> {
+  const r = await db
+    .prepare(`SELECT COUNT(*) AS n, MAX(CAST(draw_code AS INTEGER)) AS hi FROM bingo18_draws WHERE verification_status ${includeUnverified ? "IN ('verified','unverified')" : "= 'verified'"}`)
+    .first<{ n: number; hi: number | null }>();
+  return `${r?.n ?? 0}:${r?.hi ?? 0}`;
+}
+
+/** Mô hình dự báo Bingo18 chấm walk-forward (cùng khung XSKT), lưu đệm theo dữ liệu. */
+export async function bingoModelsCached(db: D1Database, q: { last: number; window: number; includeUnverified: boolean }) {
+  const fp = await bingoFingerprint(db, q.includeUnverified);
+  return cached(db, `bingo18:models:${q.last}:${q.window}:${q.includeUnverified ? 'all' : 'verified'}`, fp, async () => bingoModels(await loadResults(db, q.last, q.includeUnverified), { window: q.window }));
+}
+
+bingoRoutes.get('/bingo18/models', rateLimit(3), async (c) => {
+  const q = parseQuery(c, ModelsQuery);
+  const inc = q.include_unverified === 'true';
+  const r = await bingoModelsCached(c.env.DB, { last: q.last, window: q.window, includeUnverified: inc });
+  return c.json({ data: r.result, meta: { cached: r.cached, computedAt: r.computedAt, includeUnverified: inc, dataNotice: inc ? 'Có bao gồm dữ liệu CHƯA XÁC MINH.' : 'Chỉ dùng dữ liệu đã xác minh.' } });
 });
 
 const SimBody = z.object({
@@ -149,6 +186,41 @@ bingoRoutes.get('/bingo18/decision', async (c) => {
     action === 'play'
       ? simulateSessions({ bets: [{ bet: best.bet, stakeUnits: 1 }], drawsPerSession: plays, sessions: 4000, seed: `decision:${today}:${plays}` })
       : null;
+
+  // Kết luận mô hình dự báo (walk-forward). Ưu tiên dữ liệu đã xác minh; nếu chưa đủ thì dùng cả dữ liệu chưa xác minh và ghi rõ.
+  const verifiedCount = (await db.prepare("SELECT COUNT(*) AS n FROM bingo18_draws WHERE verification_status = 'verified'").first<{ n: number }>())?.n ?? 0;
+  const useAll = verifiedCount < 1000;
+  let model: Record<string, unknown> | null = null;
+  try {
+    const m = (await bingoModelsCached(db, { last: 30000, window: 100, includeUnverified: useAll })).result;
+    const bestModel = m.models.filter((x) => x.code !== 'uniform').sort((a, b) => b.improvement - a.improvement)[0];
+    model = { verdict: m.verdict, headline: m.headline, scoredDraws: m.scoredDraws, includeUnverified: useAll, bestModel: bestModel ? { name: bestModel.name, improvement: bestModel.improvement, qValue: bestModel.qValue, singleReturn: bestModel.single.returnRatio } : null };
+    if (action === 'play') {
+      if (m.verdict === 'edge') reasons.push(`Mô hình ${bestModel.name} nhỉnh hơn ngẫu nhiên trên dữ liệu cũ nhưng hoàn trả thực tế vẫn ${(bestModel.single.returnRatio * 100).toFixed(1)}% (< 100%) — không đổi kế hoạch.`);
+      else if (m.verdict === 'no_edge') reasons.push(`Đã chấm ${m.scoredDraws.toLocaleString('vi-VN')} kỳ: không mô hình dự báo nào tốt hơn chọn ngẫu nhiên ⇒ chọn số nào trong 1–6 cũng như nhau.`);
+    }
+  } catch {
+    model = null;
+  }
+
+  // So sánh giá trị kỳ vọng mỗi 10.000đ giữa các trò chơi (sau thuế), để chọn nơi chi tiền ít lỗ nhất.
+  const jackpots = await getSetting<Record<string, { values: Record<string, number> }>>(db, 'current_jackpots', {});
+  const pickGames = (await listGames(db)).filter((g) => g.engine === 'pick' && g.isActive);
+  const bigBet = analyzeBet({ type: 'big' });
+  const comparison = [
+    { game: 'Bingo18', option: best.label, returnRatio: best.returnRatio, note: '6 phút/kỳ — dễ chơi quá mức' },
+    { game: 'Bingo18', option: 'Lớn / Nhỏ', returnRatio: bigBet.returnRatio, note: '' },
+    ...REGION_CODES.map((r) => {
+      const v = regionValue(r);
+      return { game: v.name, option: 'Vé 10.000đ', returnRatio: v.returnRatioAfterTax, note: 'Xổ số kiến thiết' };
+    }),
+    ...pickGames.map((g) => {
+      const v = evaluateTicketValue({ ...g, schedule: null, jackpots: jackpots[g.code]?.values ?? {}, jackpotsUpdatedAt: null }, true);
+      return { game: g.name, option: v.jackpotIsMinimum ? 'Jackpot mức tối thiểu' : 'Jackpot hiện tại', returnRatio: v.returnRatio, note: 'Kỳ “chia giải Độc đắc” (Lotto 5/35) có thể cao hơn nhiều' };
+    }),
+  ]
+    .map((x) => ({ ...x, expectedLossPer10k: Math.round(BINGO_STAKE * (1 - x.returnRatio)) }))
+    .sort((a, b) => b.returnRatio - a.returnRatio);
   return c.json({
     data: {
       action,
@@ -161,6 +233,8 @@ bingoRoutes.get('/bingo18/decision', async (c) => {
       schedule,
       allowance: { dailyLimit, dailyFromMonth: Math.floor(capital.monthRemaining / daysLeft), yearRemaining: capital.yearRemaining, spentToday, wonToday: spent?.won ?? 0, available, daysLeftInMonth: daysLeft },
       outlook: sim && { probabilityProfit: sim.probabilityProfit, median: sim.percentiles.p50, p5: sim.percentiles.p5, p95: sim.percentiles.p95 },
+      model,
+      comparison,
       sessionMinutes,
       reasons,
       warnings: [
