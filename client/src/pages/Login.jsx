@@ -30,7 +30,7 @@ export default function Login() {
     <div className="login-page">
       <form className="login-card" onSubmit={submit}>
         <div className="login-logo">
-          <img className="login-logo-img" src="/logo-192.png" alt="LDL Vietnam Distribution Center" />
+          <img className="login-logo-img" src="/logo-rect.png" alt="LDL Vietnam Distribution Center" />
           <div>
             <b>Công ty LDL Việt Nam</b>
             <small>Văn bản · Công việc · Dự án</small>

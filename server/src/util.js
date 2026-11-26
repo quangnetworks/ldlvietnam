@@ -75,20 +75,39 @@ export function removeFile(key) {
   return getStorage().remove(key).catch(() => {});
 }
 
-/** Stream an attachment back to the client. */
+/** Parse a single "bytes=a-b" Range header against the object size (null = whole file / unsupported). */
+function parseRange(header, size) {
+  const m = /^bytes=(\d*)-(\d*)$/.exec(header || '');
+  if (!m || (!m[1] && !m[2]) || !size) return null;
+  let start; let end;
+  if (!m[1]) { start = Math.max(0, size - Number(m[2])); end = size - 1; } // suffix: last N bytes
+  else { start = Number(m[1]); end = m[2] ? Math.min(Number(m[2]), size - 1) : size - 1; }
+  if (start > end || start >= size) return { invalid: true };
+  return { offset: start, length: end - start + 1 };
+}
+
+/** Types that are safe to render directly in the browser (no script execution possible). */
+const SAFE_INLINE = /^(image\/(png|jpe?g|gif|webp|bmp|avif)|application\/pdf|text\/plain|video\/(mp4|webm|ogg|quicktime)|audio\/(mpeg|mp3|mp4|aac|ogg|wav|x-wav|webm|flac))/;
+
+/** Stream an attachment back to the client (supports byte ranges so videos can be seeked). */
 export async function sendFile(c, att, inline = false) {
-  const obj = await getStorage().get(att.filename);
+  const storage = getStorage();
+  const range = c.req.header('range') && storage.size ? parseRange(c.req.header('range'), await storage.size(att.filename)) : null;
+  if (range?.invalid) return new Response(null, { status: 416 });
+  const obj = await storage.get(att.filename, range || undefined);
   if (!obj) throw notFound('Tệp không tồn tại trên máy chủ');
   // Only render known-safe types inline; everything else (HTML, SVG...) is forced to download.
-  const safeInline = inline && /^(image\/(png|jpe?g|gif|webp)|application\/pdf|text\/plain)/.test(att.mime || '');
+  const safeInline = inline && SAFE_INLINE.test(att.mime || '');
   const disp = `${safeInline ? 'inline' : 'attachment'}; filename*=UTF-8''${encodeURIComponent(att.original_name)}`;
   const headers = {
     'Content-Type': att.mime || 'application/octet-stream',
     'Content-Disposition': disp,
-    'Content-Length': String(obj.size),
+    'Content-Length': String(range ? range.length : obj.size),
+    'Accept-Ranges': 'bytes',
     'X-Content-Type-Options': 'nosniff',
   };
+  if (range) headers['Content-Range'] = `bytes ${range.offset}-${range.offset + range.length - 1}/${obj.size}`;
   // Chrome refuses to render PDFs in a sandboxed document, so only sandbox other types.
-  if (att.mime !== 'application/pdf') headers['Content-Security-Policy'] = "sandbox; default-src 'none'; img-src 'self'";
-  return new Response(obj.body, { headers });
+  if (att.mime !== 'application/pdf') headers['Content-Security-Policy'] = "sandbox; default-src 'none'; img-src 'self'; media-src 'self'";
+  return new Response(obj.body, { status: range ? 206 : 200, headers });
 }

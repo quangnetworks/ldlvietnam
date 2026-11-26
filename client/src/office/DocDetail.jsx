@@ -2,13 +2,15 @@ import { useState } from 'react';
 import { Link, useNavigate, useOutletContext, useParams } from 'react-router-dom';
 import {
   ArrowLeft, Star, Pin, Pencil, Send, Archive, Trash2, Link2, Download, Eye, CheckCircle2, XCircle, Clock, Hash,
-  Printer, History, MessageSquare,
+  Printer, History, Replace, AlertTriangle, CalendarClock, GitCommitVertical,
 } from 'lucide-react';
+import FileViewer, { InlinePreview } from '../components/FileViewer.jsx';
 import { api } from '../api.js';
 import { useFetch, useToast } from '../context.jsx';
-import { Avatar, Spinner, SafeHtml, FileChip, Modal, Field, Tabs, Empty } from '../components/ui.jsx';
-import { DOC_KINDS, fmtDate, fmtDateTime, timeAgo, cx } from '../utils.js';
+import { Avatar, Spinner, SafeHtml, FileChip, Modal, Field, Tabs } from '../components/ui.jsx';
+import { DOC_KINDS, fmtDate, fmtDateTime, cx } from '../utils.js';
 import { StatusBadge } from './DocList.jsx';
+import CommentBox, { CommentList } from '../components/CommentBox.jsx';
 
 function ApproveModal({ decision, onClose, onSubmit }) {
   const [comment, setComment] = useState('');
@@ -35,10 +37,10 @@ export default function DocDetail() {
   const [doc, reload, loading, error] = useFetch(() => api.get(`/documents/${id}`), [id]);
   const [tab, setTab] = useState('comments');
   const [approve, setApprove] = useState(null);
-  const [comment, setComment] = useState('');
   const [comments, reloadComments] = useFetch(() => api.get(`/documents/${id}/comments`), [id]);
   const [activity, reloadActivity] = useFetch(() => api.get(`/documents/${id}/activity`), [id]);
   const [viewers] = useFetch(() => api.get(`/documents/${id}/viewers`), [id]);
+  const [viewing, setViewing] = useState(null);
 
   if (error) return <div className="page"><div className="alert alert-error">{error.message}</div></div>;
   if (loading && !doc) return <div className="page"><Spinner /></div>;
@@ -54,13 +56,6 @@ export default function DocDetail() {
     } catch (e) {
       toast(e.message, 'error');
     }
-  };
-  const sendComment = async (e) => {
-    e.preventDefault();
-    if (!comment.trim()) return;
-    await api.post(`/documents/${id}/comments`, { content: comment });
-    setComment('');
-    reloadComments();
   };
   const assignNumber = () => {
     const code = window.prompt('Nhập số hiệu văn bản (để trống để hệ thống tự cấp số):', '');
@@ -93,8 +88,11 @@ export default function DocDetail() {
               <Send size={15} /> {doc.approvers.length ? 'Gửi duyệt' : 'Ban hành'}
             </button>
           )}
-          {doc.can_number && doc.need_numbering && !doc.code && doc.status !== 'draft' && (
+          {doc.can_number && !!doc.need_numbering && !doc.code && doc.status !== 'draft' && (
             <button className="btn" onClick={assignNumber}><Hash size={15} /> Cấp số</button>
+          )}
+          {doc.can_manage && ['issued', 'archived'].includes(doc.status) && !doc.superseded_by && (
+            <Link className="btn" to={`/office/new?replaces=${id}`} title="Soạn văn bản / chính sách mới thay thế văn bản này"><Replace size={15} /> Ban hành bản thay thế</Link>
           )}
           {doc.can_manage && ['issued', 'archived'].includes(doc.status) && (
             <button className="btn" onClick={() => act(() => api.post(`/documents/${id}/archive`), doc.status === 'archived' ? 'Đã bỏ cất giữ' : 'Đã cất giữ văn bản')}>
@@ -121,23 +119,56 @@ export default function DocDetail() {
         </div>
       )}
 
+      {doc.is_superseded && doc.superseded_doc && (
+        <div className="supersede-banner old" role="alert">
+          <AlertTriangle size={20} className="text-orange" />
+          <div className="grow"><b>Văn bản này đã bị thay thế — không còn áp dụng</b>
+            <p>Thay thế bởi <Link to={`/office/doc/${doc.superseded_doc.id}`}><b>{doc.superseded_doc.code && `[${doc.superseded_doc.code}] `}{doc.superseded_doc.title}</b></Link>, áp dụng từ {fmtDate(doc.superseded_at)}. Vui lòng thực hiện theo văn bản mới.</p></div>
+          <Link className="btn btn-sm btn-primary" to={`/office/doc/${doc.superseded_doc.id}`}>Xem văn bản mới</Link>
+        </div>
+      )}
+      {doc.supersede_scheduled && doc.superseded_doc && (
+        <div className="supersede-banner scheduled">
+          <CalendarClock size={20} />
+          <div className="grow"><b>Sắp được thay thế từ {fmtDate(doc.superseded_at)}</b>
+            <p>Văn bản vẫn áp dụng đến hết ngày trước đó; sau đó thực hiện theo <Link to={`/office/doc/${doc.superseded_doc.id}`}><b>{doc.superseded_doc.title}</b></Link>.</p></div>
+        </div>
+      )}
+      {doc.replaces && (
+        <div className="supersede-banner new">
+          <Replace size={20} className="text-blue" />
+          <div className="grow"><b>Văn bản này thay thế {doc.replaces.code ? `[${doc.replaces.code}] ` : ''}{doc.replaces.title}</b>
+            <p>{doc.status === 'issued' || doc.status === 'archived'
+              ? `Văn bản cũ ${doc.replaces.is_superseded ? 'đã hết áp dụng' : `hết áp dụng từ ${fmtDate(doc.effective_date || doc.issued_at)}`}. `
+              : 'Văn bản cũ sẽ hết áp dụng khi văn bản này được ban hành và có hiệu lực. '}
+              <Link to={`/office/doc/${doc.replaces.id}`}>Xem văn bản cũ</Link></p></div>
+        </div>
+      )}
+
       <div className="detail-grid">
         <div>
           <div className="card">
             {doc.description && <p className="lead">{doc.description}</p>}
-            {doc.content ? <SafeHtml html={doc.content} /> : <p className="muted">Văn bản không có nội dung soạn thảo — xem tệp đính kèm.</p>}
+            {doc.content ? <SafeHtml html={doc.content} /> : !doc.attachments.length && <p className="muted">Văn bản không có nội dung soạn thảo.</p>}
+            <InlinePreview files={doc.attachments} title="Xem trước tệp" height={doc.content ? 560 : 760}
+              urlOf={(f) => api.url(`/documents/${id}/attachments/${f.id}`)}
+              publicUrlOf={async (f, share) => (await api.post(`/documents/${id}/attachments/${f.id}/link${share ? '?share=1' : ''}`)).url} />
             {doc.attachments.length > 0 && (
               <>
                 <h3 className="card-title">Tệp đính kèm ({doc.attachments.length})</h3>
                 <div className="attach-list">
-                  {doc.attachments.map((a) => (
+                  {doc.attachments.map((a, i) => (
                     <div key={a.id} className="attach-row">
-                      <FileChip file={a} href={api.url(`/documents/${id}/attachments/${a.id}`, { inline: 1 })} />
+                      <FileChip file={a} onOpen={() => setViewing(i)} />
                       <a className="btn btn-sm" href={api.url(`/documents/${id}/attachments/${a.id}`)}><Download size={14} /> Tải về</a>
                     </div>
                   ))}
                 </div>
               </>
+            )}
+            {viewing != null && (
+              <FileViewer files={doc.attachments} index={viewing} urlOf={(f) => api.url(`/documents/${id}/attachments/${f.id}`)} onClose={() => setViewing(null)}
+                publicUrlOf={async (f, share) => (await api.post(`/documents/${id}/attachments/${f.id}/link${share ? '?share=1' : ''}`)).url} />
             )}
           </div>
 
@@ -149,23 +180,8 @@ export default function DocDetail() {
             ]} />
             {tab === 'comments' && (
               <div>
-                <div className="comments">
-                  {comments?.map((c) => (
-                    <div key={c.id} className="comment">
-                      <Avatar name={c.user_name} color={c.user_color} size={32} />
-                      <div className="grow">
-                        <div><b>{c.user_name}</b> <small className="muted">{timeAgo(c.created_at)}</small></div>
-                        <div className="pre">{c.content}</div>
-                      </div>
-                    </div>
-                  ))}
-                  {comments && !comments.length && <Empty icon={MessageSquare} title="Chưa có thảo luận" />}
-                </div>
-                <form className="comment-form" onSubmit={sendComment}>
-                  <textarea className="input" rows={2} value={comment} onChange={(e) => setComment(e.target.value)} placeholder="Viết bình luận..."
-                    onKeyDown={(e) => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) sendComment(e); }} />
-                  <button className="btn btn-primary" disabled={!comment.trim()}>Gửi</button>
-                </form>
+                <CommentList base={`/documents/${id}`} comments={comments} size={32} onChanged={reloadComments} />
+                <CommentBox base={`/documents/${id}`} onSent={reloadComments} />
               </div>
             )}
             {tab === 'activity' && (
@@ -206,9 +222,33 @@ export default function DocDetail() {
             <div className="info-row"><span>Ngày tạo</span><b>{fmtDate(doc.created_at)}</b></div>
             {doc.issued_at && <div className="info-row"><span>Ngày ban hành</span><b>{fmtDate(doc.issued_at)}</b></div>}
             {doc.effective_date && <div className="info-row"><span>Hiệu lực từ</span><b>{fmtDate(doc.effective_date)}</b></div>}
+            {doc.replaces && <div className="info-row"><span>Thay thế cho</span><Link to={`/office/doc/${doc.replaces.id}`}>{doc.replaces.code || doc.replaces.title}</Link></div>}
+            {doc.superseded_doc && <div className="info-row"><span>Bị thay thế bởi</span><Link to={`/office/doc/${doc.superseded_doc.id}`}>{doc.superseded_doc.code || doc.superseded_doc.title}</Link></div>}
             {doc.expire_date && <div className="info-row"><span>Hết hạn</span><b className={doc.is_expired ? 'text-red' : ''}>{fmtDate(doc.expire_date)}</b></div>}
             <div className="info-row"><span>Lượt xem</span><b><Eye size={13} /> {doc.view_count}</b></div>
           </div>
+
+          {doc.versions?.length > 1 && (
+            <div className="card">
+              <h3 className="card-title"><GitCommitVertical size={15} /> Các phiên bản ({doc.versions.length})</h3>
+              <ol className="versions">
+                {doc.versions.map((v) => {
+                  const valid = ['issued', 'archived'].includes(v.status) && !v.is_superseded;
+                  return (
+                    <li key={v.id} className={cx(v.current && 'current', valid && 'valid')}>
+                      <div className="grow">
+                        {v.current ? <b>{v.code && `[${v.code}] `}{v.title}</b> : <Link to={`/office/doc/${v.id}`}>{v.code && `[${v.code}] `}{v.title}</Link>}
+                        <small className="muted block">
+                          {v.is_superseded ? `Hết áp dụng từ ${fmtDate(v.superseded_at)}` : valid ? `Đang áp dụng${v.effective_date ? ` từ ${fmtDate(v.effective_date)}` : ''}` : 'Chưa ban hành'}
+                          {v.current && ' · đang xem'}
+                        </small>
+                      </div>
+                    </li>
+                  );
+                })}
+              </ol>
+            </div>
+          )}
 
           {doc.approvers.length > 0 && (
             <div className="card">

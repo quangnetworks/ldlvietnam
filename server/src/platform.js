@@ -1,6 +1,7 @@
 /** Platform-level helpers shared by every module: app catalog, per-user app access, audit log. */
 import { all, get, run, batch, logActivity } from './db.js';
 import { forbidden } from './util.js';
+import { clientIp } from './security.js';
 
 /** Modules implemented in this code base that can be granted per user. */
 export const MODULES = {
@@ -12,7 +13,18 @@ export const MODULES = {
   hrm: 'LDL HRM',
   drive: 'LDL Drive',
   message: 'LDL Message',
+  asset: 'LDL Asset',
+  npp: 'Distribution Control Tower',
 };
+
+/**
+ * Apps granted one by one, never by default (new accounts, imports, "grant all"):
+ * NPP Control Tower shows sales data by territory, so access is opt-in.
+ */
+export const OPT_IN_MODULES = ['npp'];
+/** "Grant every default app to user ?" -- used when an account is created. */
+export const DEFAULT_GRANT_SQL = `INSERT OR IGNORE INTO app_access(app_key, user_id) SELECT key, ? FROM apps
+  WHERE enabled = 1 AND key NOT IN (${OPT_IN_MODULES.map((k) => `'${k}'`).join(',')})`;
 
 /** API path prefixes owned by each module (used to enforce app access). */
 const PREFIXES = [
@@ -21,6 +33,8 @@ const PREFIXES = [
   ['/api/filters', 'wework'], ['/api/search', 'wework'],
   ['/api/requests', 'request'], ['/api/request-groups', 'request'], ['/api/request', 'request'], ['/api/webhooks', 'request'],
   ['/api/checkin', 'checkin'], ['/api/timeoff', 'timeoff'], ['/api/hrm', 'hrm'], ['/api/drive', 'drive'], ['/api/chat', 'message'],
+  ['/api/assets', 'asset'], ['/api/asset', 'asset'],
+  ['/api/sso/npp', 'npp'],
 ];
 
 export function moduleForPath(path) {
@@ -51,7 +65,7 @@ export async function requireModule(c, next) {
 
 /** Grant the given modules (default: every enabled module) to a user. */
 export async function grantApps(userId, keys = null) {
-  const list = keys ?? (await all('SELECT key FROM apps WHERE enabled = 1')).map((a) => a.key);
+  const list = keys ?? (await all('SELECT key FROM apps WHERE enabled = 1')).map((a) => a.key).filter((k) => !OPT_IN_MODULES.includes(k));
   await batch([
     ['DELETE FROM app_access WHERE user_id = ?', [userId]],
     ...list.filter((k) => MODULES[k]).map((k) => ['INSERT OR IGNORE INTO app_access(app_key, user_id) VALUES (?,?)', [k, userId]]),
@@ -62,7 +76,7 @@ export async function grantApps(userId, keys = null) {
 export const audit = (actorId, action, detail) => logActivity('system', 0, actorId, action, detail);
 
 export async function recordLogin(c, user, username, success) {
-  const ip = c.req.header('cf-connecting-ip') || c.req.header('x-forwarded-for')?.split(',')[0]?.trim() || null;
+  const ip = clientIp(c);
   await run('INSERT INTO login_logs(user_id, username, success, ip, user_agent) VALUES (?,?,?,?,?)',
     user?.id ?? null, username, success ? 1 : 0, ip, (c.req.header('user-agent') || '').slice(0, 300));
   if (success) await run("UPDATE users SET last_login_at = datetime('now') WHERE id = ?", user.id);
