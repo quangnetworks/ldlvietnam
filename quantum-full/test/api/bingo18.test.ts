@@ -76,7 +76,16 @@ describe('Bingo18 — đồng bộ theo HTTP Range', () => {
     expect(sim.status).toBe(201);
     expect(sim.body.data.costPerDraw).toBe(20000);
     expect((await api('/bingo18/simulate', { body: { bets: [{ bet: { type: 'sum', value: 25 }, stakeUnits: 1 }], drawsPerSession: 3, sessions: 10 } })).status).toBe(422);
+    const models = await api('/bingo18/models?last=30000');
+    expect(models.status).toBe(200);
+    expect(models.body.data.models.length).toBe(6);
+    expect(['no_edge', 'edge']).toContain(models.body.data.verdict);
+    expect((await api('/bingo18/models?last=30000')).body.meta.cached).toBe(true);
     const dec = await api('/bingo18/decision?now=2026-11-20T03:00:00Z'); // 10:00 VN
+    expect(dec.body.data.model.verdict).toBeTruthy();
+    const cmp = dec.body.data.comparison;
+    expect(cmp.map((x: any) => x.game)).toEqual(expect.arrayContaining(['Bingo18', 'Lotto 5/35', 'Power 6/55']));
+    expect(cmp[0].returnRatio).toBeGreaterThanOrEqual(cmp[cmp.length - 1].returnRatio);
     expect(dec.body.data.action).toBe('play');
     expect(dec.body.data.plays).toBe(5); // hạn mức mặc định 50.000đ/ngày
     expect(dec.body.data.bestBet.bet.type).toBe('single');

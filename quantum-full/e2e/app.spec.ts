@@ -155,6 +155,9 @@ test('Bingo18: bảng cược, mô phỏng phiên chơi, kế hoạch hôm nay',
   await login(page);
   await page.goto('/bingo18');
   await expect(page.getByRole('heading', { level: 2, name: /^(TỐI ĐA|KHÔNG CHƠI)/ })).toBeVisible();
+  await expect(page.getByText('Mỗi 10.000đ trả lại bao nhiêu?')).toBeVisible();
+  await page.getByRole('tab', { name: 'Mô hình dự báo' }).click();
+  await expect(page.getByRole('heading', { level: 2, name: /CHƯA ĐỦ DỮ LIỆU|KHÔNG MÔ HÌNH|CÓ MÔ HÌNH/ })).toBeVisible();
   await page.getByRole('tab', { name: 'Bảng cược & xác suất' }).click();
   await expect(page.getByText('Hoàn trả cao nhất')).toBeVisible();
   await expect(page.getByRole('cell', { name: '56,94%' }).first()).toBeVisible();
