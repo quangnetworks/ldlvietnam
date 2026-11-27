@@ -208,3 +208,14 @@ test('Bingo18: chiến thuật kiểm soát lỗ (không có chiến thuật th�
   await expect(page.getByText('Gấp thếp (Martingale)')).toBeVisible();
   await expect(page.getByText('Điều bảo đảm được khi chơi Bingo18')).toBeVisible();
 });
+
+test('Bingo18: phiên trực tiếp mở được và chốt phương án cho kỳ kế tiếp', async ({ page }) => {
+  await login(page);
+  await page.goto('/bingo18');
+  await page.getByRole('tab', { name: 'Phiên trực tiếp' }).click();
+  await expect(page.getByText('Kết quả Bingo18 không tự về theo từng kỳ')).toBeVisible();
+  await page.getByRole('button', { name: 'Mở phiên' }).click();
+  await expect(page.getByRole('heading', { level: 2, name: /^(KỲ \d{2}:\d{2}: CHƠI|DỪNG)/ })).toBeVisible({ timeout: 30_000 });
+  await page.getByRole('button', { name: 'Kết thúc phiên' }).click();
+  await expect(page.getByText('Đã kết thúc phiên')).toBeVisible();
+});
