@@ -182,3 +182,20 @@ test('Xổ số kiến thiết: 4 tab hiển thị, giá trị vé 3 miền', as
   await expect(page.getByText('Mỗi 10.000đ nhận lại trung bình bao nhiêu?')).toBeVisible();
   await expect(page.getByText('Cơ cấu giải — Miền Nam')).toBeVisible();
 });
+
+test('Danh mục: nhập vé tay (bắt buộc giờ quay với Lotto) rồi sửa giờ quay', async ({ page }) => {
+  await login(page);
+  await page.goto('/portfolio');
+  await page.getByRole('tab', { name: 'Nhập vé tay' }).click();
+  await page.getByLabel(/Vé, mỗi dòng một vé/).fill('02 05 08 23 26 | 08\n06 10 26 29 35 | 05');
+  await expect(page.getByText('Xem trước:')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Lưu vé đã nhập' })).toBeDisabled();
+  await page.getByLabel(/^Giờ quay/).selectOption('21:00');
+  await page.getByRole('button', { name: 'Lưu vé đã nhập' }).click();
+  await expect(page.getByText(/Đã lưu danh mục #\d+/)).toBeVisible();
+  await page.getByRole('button', { name: 'Chi tiết' }).first().click();
+  await page.getByRole('button', { name: 'Sửa' }).click();
+  await page.getByLabel(/^Giờ quay/).selectOption('13:00');
+  await page.getByRole('button', { name: 'Lưu thay đổi' }).click();
+  await expect(page.getByText('Đã lưu thay đổi danh mục')).toBeVisible();
+});

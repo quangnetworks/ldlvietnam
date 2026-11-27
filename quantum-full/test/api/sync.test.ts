@@ -26,7 +26,8 @@ describe('Parser nguồn dữ liệu mở', () => {
     const p = parseOpenDataJsonl(lotto, LOTTO535, ['13:00', '21:00']);
     expect(p.rows[0]).toMatchObject({ draw_code: '00001', main: [7, 9, 10, 16, 19], special: 9, draw_time: '13:00' });
     expect(p.rows[1].draw_time).toBe('21:00');
-    expect(p.rows[2].draw_time).toBeNull(); // ngày chỉ có 1 kỳ ⇒ không đoán giờ
+    // Ngày mới có 1 kỳ (đồng bộ trước kỳ 21:00): mã 00003 liền sau kỳ 21:00 hôm trước ⇒ là kỳ 13:00 (suy ra, không đoán).
+    expect(p.rows[2].draw_time).toBe('13:00');
     const q = parseOpenDataJsonl(power, POWER655, ['18:00']);
     expect(q.rows.map((r) => r.draw_code)).toEqual(['00942', '00943']);
     expect(q.errors.map((e) => e.code)).toEqual(['shape', 'parse_error']);

@@ -36,6 +36,7 @@ Viewer chỉ được gọi `GET`. Mọi `POST/PUT` cần admin. `401` thiếu/s
 | POST | `/admin/draws/:id/verify` | `{ status: verified|rejected|unverified, note? }` (bỏ xác minh cần lý do) |
 | POST | `/admin/draws/verify-batch` | `{ ids[≤500], note? }` |
 | POST | `/admin/draws/:id/correct` | Điều chỉnh có kiểm soát `{ main[], special?, draw_date?, draw_time?, reason(≥10) }` |
+| POST | `/admin/draws/:id/time` | Điền giờ quay còn trống `{ draw_time }` (phải thuộc lịch quay; chỉ khi đang trống; được phép cả với kỳ đã xác minh theo migration 0008). Đồng bộ cũng tự điền khi suy ra được từ mã kỳ |
 | GET | `/import-jobs?game=` | Lịch sử nhập (payload hash, nguồn, lỗi) |
 | GET | `/sync/status` | Trạng thái đồng bộ tự động (nguồn, lịch, lần chạy cuối, các lần nhập + số kỳ chưa xác minh) |
 | POST | `/admin/sync` | Đồng bộ ngay `{ games?: string[] }` |
@@ -64,6 +65,8 @@ Quy tắc: không nhận ngày quay tương lai; kỳ trùng nội dung ⇒ `dup
 | POST | `/portfolio/odds` | `{ game, tickets: [{ main, special }] (1–50) }` → xác suất CHÍNH XÁC của cả danh mục trong một kỳ (liệt kê mọi kết quả khi C(N,K) ≤ 600.000, ngược lại Monte Carlo có seed): P(≥1 vé trúng) so với chọn độc lập, P(hoàn vốn), kỳ vọng, phân phối. Tính toán thuần, không ghi dữ liệu (quyền admin như mọi POST) |
 | POST | `/portfolio/optimize` | Như trên với chiến lược `portfolio_optimized` (`params.maxOverlap`, `avoidPopular`, `candidates`) |
 | GET | `/recommendations` · `/recommendations/:id` | Lịch sử sinh số |
+| POST | `/portfolios/manual` | Nhập danh mục bằng tay `{ game, name, mode, target_draw_date, target_draw_time?, tickets: [{ main, special }] (1 đến 200), notes? }`. Game nhiều kỳ/ngày bắt buộc giờ quay. Mô phỏng không được nhắm kỳ đã quay; vé thật nhập sau giờ quay được ghi chú "Nhập sau giờ quay" |
+| PUT | `/portfolios/:id` | Sửa `{ name?, target_draw_date?, target_draw_time?, notes?, tickets? }`: nháp sửa được vé; đã mua chỉ sửa tên, ghi chú, ngày và giờ quay; đã chấm hoặc đã huỷ thì không sửa được (409). Đổi kỳ mục tiêu bỏ liên kết kỳ cũ |
 | POST | `/portfolios` | Lưu danh mục từ bản ghi `{ recommendation_id, name, mode: simulated|real, target_draw_date, target_draw_time? }` |
 | GET | `/portfolios` · `/portfolios/:id` | Danh mục, vé, kết quả chấm |
 | POST | `/portfolios/:id/purchase` | Ghi nhận **đã tự mua** (chỉ `real`, kiểm hạn mức kỳ/tháng/năm) |

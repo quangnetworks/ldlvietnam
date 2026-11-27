@@ -7,6 +7,7 @@
  * User-Agent định danh trung thực. Dữ liệu nhập ở trạng thái CHƯA XÁC MINH.
  */
 import type { Game } from '../../shared/game';
+import { composeDrawAt } from '../db/draws';
 import { getGame } from '../db/games';
 import { getSetting } from '../db/settings';
 import { auditStatement, type ActorCtx } from '../lib/audit';
@@ -65,15 +66,59 @@ export function parseOpenDataJsonl(text: string, game: Pick<Game, 'mainPicks' | 
       rows.pop();
     }
   });
-  // Gán giờ quay theo thứ tự mã kỳ trong cùng ngày khi số kỳ/ngày khớp lịch quay.
-  const byDate = new Map<string, (RawDraw & { line: number })[]>();
-  for (const r of rows) byDate.set(r.draw_date, [...(byDate.get(r.draw_date) ?? []), r]);
-  for (const list of byDate.values()) {
-    list.sort((a, b) => a.draw_code.localeCompare(b.draw_code, 'en', { numeric: true }));
-    // Chỉ gán giờ khi số kỳ trong ngày khớp đúng lịch quay; nếu thiếu kỳ thì không đoán (để null).
-    if (list.length === timesPerDay.length) list.forEach((r, i) => (r.draw_time = timesPerDay[i]));
-  }
+  assignDrawTimes(rows, timesPerDay);
   return { rows: rows.map(({ line: _line, ...r }) => r), errors };
+}
+
+/**
+ * Gán giờ quay theo mã kỳ (mã kỳ Vietlott tăng liên tiếp 1 đơn vị mỗi kỳ).
+ * - Ngày đủ số kỳ theo lịch: gán theo thứ tự.
+ * - Ngày CHƯA đủ kỳ (vd đồng bộ lúc 15:00 mới có kỳ 13:00, hoặc nguồn thiếu một kỳ): suy ra vị trí trong ngày từ kỳ cuối
+ *   đã biết giờ của ngày trước: kỳ ngay sau kỳ 21:00 hôm trước là kỳ 13:00 hôm nay. Không suy ra được ⇒ để null (không đoán).
+ */
+export function assignDrawTimes(rows: RawDraw[], timesPerDay: string[]): void {
+  const n = timesPerDay.length;
+  const byDate = new Map<string, RawDraw[]>();
+  for (const r of rows) byDate.set(r.draw_date, [...(byDate.get(r.draw_date) ?? []), r]);
+  let prev: { code: number; slot: number } | null = null;
+  for (const date of [...byDate.keys()].sort()) {
+    const list = byDate.get(date)!.sort((a, b) => a.draw_code.localeCompare(b.draw_code, 'en', { numeric: true }));
+    const codes = list.map((r) => Number(r.draw_code));
+    const numeric = codes.every((c) => Number.isInteger(c));
+    const consecutive = numeric && codes.every((c, i) => i === 0 || c === codes[i - 1] + 1);
+    if (list.length === n) list.forEach((r, i) => (r.draw_time = timesPerDay[i]));
+    else if (list.length < n && consecutive && prev) {
+      // Mã kỳ đầu tiên của ngày nếu không thiếu kỳ nào = kỳ cuối đã biết + số kỳ còn lại của ngày đó + 1.
+      const firstOfDay = prev.code + (n - 1 - prev.slot) + 1;
+      const offset = codes[0] - firstOfDay;
+      if (offset >= 0 && offset + list.length <= n) list.forEach((r, i) => (r.draw_time = timesPerDay[offset + i]));
+    }
+    const last = list[list.length - 1];
+    const slot = last.draw_time ? timesPerDay.indexOf(last.draw_time) : -1;
+    prev = numeric && slot >= 0 ? { code: codes[codes.length - 1], slot } : null;
+  }
+}
+
+/**
+ * Bổ sung giờ quay cho các kỳ đã lưu mà còn thiếu (draw_time NULL), khi nguồn nay suy ra được giờ.
+ * Chỉ ĐIỀN giờ đang trống: không đổi số, ngày hay mã kỳ (trigger 0008 cho phép đúng thao tác này với kỳ đã xác minh).
+ */
+export async function fillMissingDrawTimes(actor: ActorCtx, gameId: number, rows: RawDraw[]): Promise<number> {
+  const db = actor.db;
+  const { results } = await db.prepare('SELECT id, draw_code, draw_date FROM draws WHERE game_id = ? AND draw_time IS NULL').bind(gameId).all<{ id: number; draw_code: string; draw_date: string }>();
+  if (!results.length) return 0;
+  const known = new Map(rows.filter((r) => r.draw_time).map((r) => [r.draw_code, r]));
+  const fills = results.flatMap((d) => {
+    const r = known.get(d.draw_code);
+    return r && r.draw_date === d.draw_date ? [{ id: d.id, code: d.draw_code, date: d.draw_date, time: r.draw_time as string }] : [];
+  });
+  if (!fills.length) return 0;
+  const ts = new Date().toISOString();
+  await db.batch([
+    ...fills.map((f) => db.prepare('UPDATE draws SET draw_time = ?, draw_at = ?, updated_at = ? WHERE id = ? AND draw_time IS NULL').bind(f.time, composeDrawAt(f.date, f.time), ts, f.id)),
+    auditStatement(actor, { action: 'draws.fill_time', entityType: 'draw', after: fills.map((f) => ({ id: f.id, drawCode: f.code, drawDate: f.date, drawTime: f.time })) }),
+  ]);
+  return fills.length;
 }
 
 export type Fetcher = (url: string, init?: RequestInit) => Promise<Response>;
@@ -86,6 +131,8 @@ export interface SyncResult {
   skippedExisting: number;
   import: ImportResult | null;
   error: string | null;
+  /** Số kỳ đã lưu trước đó còn thiếu giờ quay, nay được bổ sung từ nguồn. */
+  timesFilled?: number;
 }
 
 export async function syncGame(actor: ActorCtx, source: SyncSource, fetcher: Fetcher = fetch): Promise<SyncResult> {
@@ -106,9 +153,10 @@ export async function syncGame(actor: ActorCtx, source: SyncSource, fetcher: Fet
   const parsed = parseOpenDataJsonl(text, game, source.timesPerDay);
   const { results } = await db.prepare('SELECT draw_code FROM draws WHERE game_id = ?').bind(game.id).all<{ draw_code: string }>();
   const existing = new Set(results.map((r) => r.draw_code));
+  const timesFilled = await fillMissingDrawTimes(actor, game.id, parsed.rows);
   const fresh = parsed.rows.filter((r) => !existing.has(r.draw_code));
   const freshErrors = parsed.errors.filter((e) => !e.drawCode || !existing.has(e.drawCode));
-  const out: SyncResult = { ...base, fetched: parsed.rows.length + parsed.errors.length, newRows: fresh.length, skippedExisting: parsed.rows.length - fresh.length };
+  const out: SyncResult = { ...base, fetched: parsed.rows.length + parsed.errors.length, newRows: fresh.length, skippedExisting: parsed.rows.length - fresh.length, timesFilled };
   if (!fresh.length && !freshErrors.length) return out; // không có gì mới — không tạo import job rác
   // Chỉ ghi lỗi định dạng một lần: những kỳ lỗi đã báo ở lần đồng bộ trước sẽ không lặp lại.
   const reported = await db.prepare('SELECT errors_json FROM import_jobs WHERE data_source_id = ? AND game_id = ?').bind(ds.id, game.id).all<{ errors_json: string }>();

@@ -15,6 +15,40 @@ function statusBadge(s: string) {
 
 const errMsg = (e: unknown) => (e instanceof ApiClientError ? e.message : 'Có lỗi xảy ra');
 
+/** Kỳ thiếu giờ quay (đồng bộ trước khi đủ kỳ trong ngày): quản trị viên điền giờ để danh mục chấm được. */
+function MissingTime({ drawId, times, onDone }: { drawId: number; times: string[]; onDone: () => void }) {
+  const toast = useToast();
+  const [busy, setBusy] = useState(false);
+  const fill = async (t: string) => {
+    if (!t) return;
+    setBusy(true);
+    try {
+      await apiFetch(`/admin/draws/${drawId}/time`, { body: { draw_time: t } });
+      toast('success', `Đã điền giờ quay ${t}`);
+      onDone();
+    } catch (e) {
+      toast('error', e instanceof ApiClientError ? e.message : 'Không điền được giờ quay');
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <span className="ml-2 inline-flex items-center gap-1.5 align-middle">
+      <Badge tone="warn">Thiếu giờ</Badge>
+      <Select aria-label="Điền giờ quay" disabled={busy} defaultValue="" onChange={(e) => fill(e.target.value)} className="h-7 w-24 px-2 text-xs">
+        <option value="" disabled>
+          Điền giờ
+        </option>
+        {times.map((t) => (
+          <option key={t} value={t}>
+            {t}
+          </option>
+        ))}
+      </Select>
+    </span>
+  );
+}
+
 function DrawsTab() {
   const { code, game } = useGame();
   const toast = useToast();
@@ -85,6 +119,7 @@ function DrawsTab() {
               <Td className="measured">#{d.drawCode}</Td>
               <Td className="whitespace-nowrap text-muted">
                 {dateOnly(d.drawDate)} {d.drawTime ?? ''}
+                {!d.drawTime && (game?.drawSchedule?.times?.length ?? 0) > 1 && <MissingTime drawId={d.id} times={game!.drawSchedule!.times} onDone={q.reload} />}
               </Td>
               <Td>
                 <Balls main={d.main} special={d.special} size="sm" />
