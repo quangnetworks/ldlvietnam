@@ -90,6 +90,10 @@ Ngân sách: `ticket_count × giá vé ≤ budget ≤ …` và `≤ budget_per_d
 
 | Method | Path | Mô tả |
 | --- | --- | --- |
+| GET | `/bingo18/live` | Phiên trực tiếp đang mở (hoặc phiên gần nhất trong ngày), phương án chốt cho kỳ kế tiếp (CHƠI mức gốc hoặc DỪNG kèm lý do), lịch quay (kỳ kế tiếp, số giây đến lúc ngừng bán), các kỳ đã ghi |
+| POST | `/bingo18/live/start` | `{ bet, base_units, budget?, take_profit?, max_minutes? }`; một phiên mở tại một thời điểm; lỗ tối đa mặc định = hạn mức Bingo18/ngày |
+| POST | `/bingo18/live/:id/round` | `{ draw_at: "HH:MM", played, stake?, result?: [a,b,c] \| prize? }`; tự tính thưởng từ 3 số, ghi sổ quỹ thực tế ngay; mỗi kỳ ghi một lần, không sửa/xoá |
+| POST | `/bingo18/live/:id/close` | `{ reason? }` kết thúc phiên |
 | GET | `/bingo18/strategy?bet_type=&bet_value=&base_units=&budget=&take_profit=&rounds=&sessions=&seed=` | Chiến thuật kiểm soát lỗ: chứng minh không tổ hợp cược nào lãi chắc chắn (cận trên = kỳ vọng cửa tốt nhất, cận dưới = tổ hợp phòng thủ tốt nhất trên 216 kết quả) và so sánh cược đều / gấp thếp / Paroli với cùng quy tắc dừng (lỗ tối đa = ngân sách, mặc định hạn mức Bingo18/ngày). Chỉ tính toán |
 | GET | `/bingo18/rules` | Cơ cấu giải, xác suất chính xác, kỳ vọng & hoàn trả từng cách chơi |
 | GET | `/bingo18/draws?date=&status=` | Kết quả (phân trang) |

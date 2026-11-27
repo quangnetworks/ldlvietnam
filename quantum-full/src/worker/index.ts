@@ -19,6 +19,7 @@ import { modelRoutes } from './routes/models';
 import { portfolioRoutes } from './routes/portfolios';
 import { predictabilityRoutes } from './routes/predictability';
 import { xsktRoutes } from './routes/xskt';
+import { bingoLiveRoutes } from './routes/bingoLive';
 import { statisticsRoutes } from './routes/statistics';
 import { systemRoutes } from './routes/system';
 import { syncAll } from './services/sync';
@@ -60,7 +61,7 @@ export function createApp(options: { authenticate?: ReturnType<typeof authentica
   api.use('*', rateLimit(1));
   api.use('*', writeRequiresAdmin);
 
-  for (const r of [systemRoutes, drawRoutes, statisticsRoutes, generatorRoutes, portfolioRoutes, modelRoutes, backtestRoutes, capitalRoutes, auditRoutes, dashboardRoutes, decisionRoutes, bingoRoutes, predictabilityRoutes, xsktRoutes]) api.route('/', r);
+  for (const r of [systemRoutes, drawRoutes, statisticsRoutes, generatorRoutes, portfolioRoutes, modelRoutes, backtestRoutes, capitalRoutes, auditRoutes, dashboardRoutes, decisionRoutes, bingoRoutes, predictabilityRoutes, xsktRoutes, bingoLiveRoutes]) api.route('/', r);
 
   api.notFound((c) => c.json({ error: { code: 'not_found', message: 'Endpoint không tồn tại' } }, 404));
   api.onError((err, c) => {

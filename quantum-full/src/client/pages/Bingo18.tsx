@@ -8,8 +8,9 @@ import { Chart, CHART, axis } from '../components/Chart';
 import { ObservedExpectedBar } from '../components/charts';
 import { useToast } from '../components/toast';
 import { BingoStrategyTab } from '../components/BingoStrategyTab';
+import { BingoLiveTab } from '../components/BingoLiveTab';
 
-type Tab = 'today' | 'strategy' | 'models' | 'bets' | 'stats' | 'simulate' | 'results';
+type Tab = 'today' | 'live' | 'strategy' | 'models' | 'bets' | 'stats' | 'simulate' | 'results';
 const errMsg = (e: unknown) => (e instanceof ApiClientError ? e.message : 'Có lỗi xảy ra');
 
 function Dice({ v }: { v: number }) {
@@ -458,12 +459,13 @@ export default function Bingo18() {
   const [tab, setTab] = useState<Tab>('today');
   return (
     <>
-      <PageHeader title="Bingo18" description="3 số kết quả từ 1 đến 6, quay mỗi 6 phút. Trò chơi trả thưởng cố định: mọi cách chơi đều có tỷ lệ hoàn trả kỳ vọng khoảng 50–57%." />
+      <PageHeader title="Bingo18" description="3 số kết quả từ 1 đến 6, quay mỗi 6 phút. Trò chơi trả thưởng cố định: mọi cách chơi đều có tỷ lệ hoàn trả kỳ vọng khoảng 50 đến 57%." />
       <Tabs
         value={tab}
         onChange={setTab}
         items={[
           { value: 'today', label: 'Hôm nay' },
+          { value: 'live', label: 'Phiên trực tiếp' },
           { value: 'strategy', label: 'Chiến thuật kiểm soát lỗ' },
           { value: 'models', label: 'Mô hình dự báo' },
           { value: 'bets', label: 'Bảng cược & xác suất' },
@@ -473,6 +475,7 @@ export default function Bingo18() {
         ]}
       />
       {tab === 'today' && <TodayTab />}
+      {tab === 'live' && <BingoLiveTab />}
       {tab === 'strategy' && <BingoStrategyTab />}
       {tab === 'models' && <ModelsTab />}
       {tab === 'bets' && <BetsTab />}
