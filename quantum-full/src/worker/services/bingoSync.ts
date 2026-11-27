@@ -51,7 +51,7 @@ export function parseBingoChunk(bytes: Uint8Array, start: number, totalSize: num
       const code = String(o.id ?? '');
       const date = String(o.date ?? '');
       if (!/^\d{1,12}$/.test(code) || !/^\d{4}-\d{2}-\d{2}$/.test(date) || !isValidResult(o.result)) {
-        invalid.push({ line: line.slice(0, 120), reason: 'Sai định dạng hoặc số ngoài miền 1–6' });
+        invalid.push({ line: line.slice(0, 120), reason: 'Sai định dạng hoặc số ngoài miền 1 đến 6' });
         continue;
       }
       const r = o.result as BingoResult;

@@ -80,9 +80,9 @@ function DrawsTab() {
           {q.data.map((d) => (
             <tr key={d.id}>
               <Td>
-                <input type="checkbox" aria-label={`Chọn kỳ ${d.drawCode}`} disabled={d.verificationStatus !== 'unverified'} checked={selected.has(d.id)} onChange={() => toggle(d.id)} className="h-4 w-4 accent-blue-500" />
+                <input type="checkbox" aria-label={`Chọn kỳ ${d.drawCode}`} disabled={d.verificationStatus !== 'unverified'} checked={selected.has(d.id)} onChange={() => toggle(d.id)} className="h-4 w-4 accent-accent" />
               </Td>
-              <Td className="tabular">#{d.drawCode}</Td>
+              <Td className="measured">#{d.drawCode}</Td>
               <Td className="whitespace-nowrap text-muted">
                 {dateOnly(d.drawDate)} {d.drawTime ?? ''}
               </Td>
@@ -91,7 +91,7 @@ function DrawsTab() {
               </Td>
               <Td className="text-xs text-muted">
                 {d.sourceName}
-                <div className="font-mono text-[10px] text-slate-600" title={d.sourceHash}>
+                <div className="measured text-[10px] text-rule-2" title={d.sourceHash}>
                   {d.sourceHash.slice(0, 12)}…
                 </div>
               </Td>
@@ -119,7 +119,7 @@ function DrawsTab() {
       )}
       <Pagination meta={q.meta as any} onPage={setPage} />
       {correcting && (
-        <div className="mt-4 rounded-lg border border-warn/30 bg-warn/5 p-4">
+        <div className="mt-4 rounded-[var(--radius-pill)] border border-warn/30 bg-warn/5 p-4">
           <div className="mb-3 text-sm font-medium">Điều chỉnh kỳ #{correcting.drawCode}</div>
           <Notice tone="warn">Điều chỉnh sẽ đưa kỳ về trạng thái “chưa xác minh”, xoá kết quả chấm vé phát sinh, và ghi audit log trước/sau. Dự báo đã lưu không bị thay đổi.</Notice>
           <div className="mt-3 grid gap-3 sm:grid-cols-3">
@@ -222,7 +222,7 @@ function ImportTab() {
           </Field>
         </div>
         <div className="mt-3 flex flex-wrap items-center gap-2">
-          <label className="inline-flex h-9 cursor-pointer items-center gap-2 rounded-lg border border-line bg-surface-2 px-3.5 text-sm hover:border-slate-500">
+          <label className="inline-flex h-9 cursor-pointer items-center gap-2 rounded-[var(--radius-pill)] border border-rule bg-paper-3 px-3.5 text-sm hover:border-rule-2">
             <FileUp className="h-4 w-4" aria-hidden /> Chọn tệp
             <input type="file" accept=".csv,.json,text/csv,application/json" className="sr-only" onChange={(e) => onFile(e.target.files?.[0])} />
           </label>
@@ -240,10 +240,10 @@ function ImportTab() {
               <Badge tone="bad">Không hợp lệ {result.invalid}</Badge>
             </div>
             {result.errors.length > 0 && (
-              <ul className="max-h-48 overflow-auto rounded-lg border border-line bg-bg p-2 text-xs">
+              <ul className="max-h-48 overflow-auto rounded-[var(--radius-pill)] border border-rule bg-paper p-2 text-xs">
                 {result.errors.slice(0, 100).map((e: any, i: number) => (
                   <li key={i} className="py-0.5">
-                    Dòng {e.row} {e.drawCode ? `(kỳ ${e.drawCode})` : ''}: <span className="text-red-300">{e.message}</span>
+                    Dòng {e.row} {e.drawCode ? `(kỳ ${e.drawCode})` : ''}: <span className="text-bad">{e.message}</span>
                   </li>
                 ))}
               </ul>
@@ -257,7 +257,7 @@ function ImportTab() {
           <li>Ưu tiên nguồn chính thức Vietlott; nguồn bên thứ ba chỉ là tham khảo.</li>
           <li>Hệ thống không tự thu thập (scrape) website, không vượt giới hạn truy cập.</li>
           <li>Mỗi kỳ lưu nguồn, mã băm SHA-256, thời điểm nhập và trạng thái xác minh.</li>
-          <li>Kỳ đã tồn tại với nội dung khác bị đánh dấu xung đột — không ghi đè.</li>
+          <li>Kỳ đã tồn tại với nội dung khác bị đánh dấu xung đột, không ghi đè.</li>
           <li>Không nhận kết quả có ngày quay trong tương lai.</li>
         </ul>
       </Card>
@@ -333,9 +333,9 @@ function JobsTab() {
                 {j.source_url && <div className="max-w-[200px] truncate text-muted">{j.source_url}</div>}
               </Td>
               <Td className="text-xs">
-                <Badge tone={j.status === 'completed' ? 'good' : j.status === 'partial' ? 'warn' : 'bad'}>{j.status}</Badge> +{j.inserted} · trùng {j.duplicates} · xung đột {j.conflicts} · lỗi {j.invalid}
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-1"><Badge tone={j.status === 'completed' ? 'good' : j.status === 'partial' ? 'warn' : 'bad'}>{j.status}</Badge><span>thêm <span className="measured text-ok">{j.inserted}</span></span><span>trùng <span className="measured">{j.duplicates}</span></span><span>xung đột <span className="measured">{j.conflicts}</span></span><span>lỗi <span className="measured">{j.invalid}</span></span></div>
               </Td>
-              <Td className="font-mono text-[10px] text-muted" title={j.payload_hash}>
+              <Td className="measured text-[10px] text-muted" title={j.payload_hash}>
                 {j.payload_hash.slice(0, 16)}…
               </Td>
               <Td className="text-xs text-muted">{j.created_by}</Td>
@@ -489,7 +489,7 @@ function SyncTab() {
                   <ul className="mt-1 text-xs text-muted">
                     {d.lastRun.results.map((r: any) => (
                       <li key={r.game}>
-                        {r.game}: {r.error ? <span className="text-red-300">{r.error}</span> : `+${r.inserted} kỳ, lỗi ${r.invalid}, xung đột ${r.conflicts}`}
+                        {r.game}: {r.error ? <span className="text-bad">{r.error}</span> : `+${r.inserted} kỳ, lỗi ${r.invalid}, xung đột ${r.conflicts}`}
                       </li>
                     ))}
                   </ul>
@@ -500,12 +500,12 @@ function SyncTab() {
             </dd>
           </dl>
           <label className="mt-4 flex items-center gap-2 text-sm">
-            <input type="checkbox" className="h-4 w-4 accent-blue-500" checked={!!d.enabled} onChange={(e) => toggle(e.target.checked)} />
+            <input type="checkbox" className="h-4 w-4 accent-accent" checked={!!d.enabled} onChange={(e) => toggle(e.target.checked)} />
             Bật đồng bộ tự động theo lịch
           </label>
         </Card>
         <Card title="Quy trình">
-          <ol className="list-decimal space-y-2 pl-4 text-xs text-slate-300">
+          <ol className="list-decimal space-y-2 pl-4 text-xs text-ink-2">
             <li>Hệ thống tải dữ liệu mới từ nguồn mở (1 request/tệp/lần, định danh trung thực).</li>
             <li>Mỗi kỳ được kiểm tra miền số, trùng số, số đặc biệt, ngày; kỳ lỗi bị từ chối và ghi lại.</li>
             <li>Kỳ hợp lệ được lưu ở trạng thái CHƯA XÁC MINH, kèm mã băm nguồn.</li>
@@ -530,9 +530,9 @@ function SyncTab() {
                 <Td className="whitespace-nowrap text-xs text-muted">{dateTime(j.created_at)}</Td>
                 <Td>{j.game_code}</Td>
                 <Td className="text-xs">
-                  <Badge tone={j.status === 'completed' ? 'good' : j.status === 'partial' ? 'warn' : 'bad'}>{j.status}</Badge> +{j.inserted} · lỗi {j.invalid} · xung đột {j.conflicts}
+                  <div className="flex flex-wrap items-center gap-x-3 gap-y-1"><Badge tone={j.status === 'completed' ? 'good' : j.status === 'partial' ? 'warn' : 'bad'}>{j.status}</Badge><span>thêm <span className="measured text-ok">{j.inserted}</span></span><span>lỗi <span className="measured">{j.invalid}</span></span><span>xung đột <span className="measured">{j.conflicts}</span></span></div>
                 </Td>
-                <Td className="tabular">{num(j.unverified)}</Td>
+                <Td className="measured">{num(j.unverified)}</Td>
                 <Td>
                   {j.unverified > 0 && (
                     <Button variant="secondary" disabled={note.trim().length < 10} loading={verifying === j.id} onClick={() => verifyJob(j.id)}>

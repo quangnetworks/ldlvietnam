@@ -25,7 +25,7 @@ async function continueRun(id: number): Promise<any> {
   }
 }
 
-const COLORS = [CHART.muted, CHART.primary, CHART.accent, CHART.warn, '#A78BFA'];
+const COLORS = [CHART.muted, CHART.primary, CHART.accent, CHART.warn, CHART.ink];
 
 function RunDetail({ id }: { id: number }) {
   const q = useApi<any>(`/backtests/${id}`);
@@ -51,7 +51,7 @@ function RunDetail({ id }: { id: number }) {
       yAxis: { type: 'value', name: 'Quan sát', scale: true, ...axis() },
       series: [
         ...withCal.map((s: any, i: number) => ({ name: STRATEGY_LABEL[s.strategy], type: 'scatter', symbolSize: 9, data: s.calibration.map((c: any) => [Number(c.predicted.toFixed(4)), Number(c.observed.toFixed(4))]), itemStyle: { color: COLORS[(i + 1) % COLORS.length] } })),
-        { type: 'line', name: 'Hiệu chỉnh hoàn hảo', data: [[0, 0], [0.4, 0.4]], showSymbol: false, lineStyle: { type: 'dashed', color: '#475569' } },
+        { type: 'line', name: 'Hiệu chỉnh hoàn hảo', data: [[0, 0], [0.4, 0.4]], showSymbol: false, lineStyle: { type: 'dashed', color: CHART.faint } },
       ],
     };
   }, [d]);
@@ -70,7 +70,7 @@ function RunDetail({ id }: { id: number }) {
             </Notice>
           </div>
         )}
-        <p className="mt-2 font-mono text-[10px] text-muted">dataset {d.run.datasetHash}</p>
+        <p className="mt-2 text-xs text-muted">Mã băm dữ liệu <span className="measured break-all text-ink-2">{d.run.datasetHash}</span></p>
       </Card>
       {s && (
         <Card title="So sánh chiến lược với baseline Random Uniform">
@@ -80,18 +80,18 @@ function RunDetail({ id }: { id: number }) {
                 <Td className="whitespace-nowrap">
                   {STRATEGY_LABEL[x.strategy] ?? x.strategy} {x.strategy === 'random_uniform' && <Badge tone="info">Baseline</Badge>}
                 </Td>
-                <Td className="tabular">{x.steps}</Td>
-                <Td className="tabular whitespace-nowrap">
+                <Td className="measured">{x.steps}</Td>
+                <Td className="measured whitespace-nowrap">
                   {num(x.meanMatches.mean, 4)} <span className="text-xs text-muted">[{num(x.meanMatches.low, 4)}; {num(x.meanMatches.high, 4)}]</span>
                 </Td>
-                <Td className="tabular text-muted">{num(x.theoreticalMeanMatches, 4)}</Td>
-                <Td className="tabular whitespace-nowrap">
+                <Td className="measured text-muted">{num(x.theoreticalMeanMatches, 4)}</Td>
+                <Td className="measured whitespace-nowrap">
                   {pct(x.hitRate.rate, 2)} <span className="text-xs text-muted">[{pct(x.hitRate.low, 2)}; {pct(x.hitRate.high, 2)}]</span>
                 </Td>
-                <Td className="tabular">{x.jackpotHits}</Td>
-                <Td className="tabular">{pct(x.roi, 1)}</Td>
-                <Td className="tabular">{x.brier == null ? '—' : num(x.brier, 5)}</Td>
-                <Td className="tabular whitespace-nowrap text-xs">{x.vsBaseline ? `${num(x.vsBaseline.meanMatchesDiff.mean, 4)} [${num(x.vsBaseline.meanMatchesDiff.low, 4)}; ${num(x.vsBaseline.meanMatchesDiff.high, 4)}]` : '—'}</Td>
+                <Td className="measured">{x.jackpotHits}</Td>
+                <Td className="measured">{pct(x.roi, 1)}</Td>
+                <Td className="measured">{x.brier == null ? '—' : num(x.brier, 5)}</Td>
+                <Td className="measured whitespace-nowrap text-xs">{x.vsBaseline ? `${num(x.vsBaseline.meanMatchesDiff.mean, 4)} [${num(x.vsBaseline.meanMatchesDiff.low, 4)}; ${num(x.vsBaseline.meanMatchesDiff.high, 4)}]` : '—'}</Td>
                 <Td>{x.vsBaseline && (x.vsBaseline.significant ? <Badge tone="warn">Vượt (cần xác nhận)</Badge> : <Badge>Không vượt</Badge>)}</Td>
               </tr>
             ))}
@@ -124,15 +124,15 @@ function RunDetail({ id }: { id: number }) {
                     <Td>{w.index}</Td>
                     <Td className="text-xs text-muted">{dateTime(w.from)}</Td>
                     <Td className="text-xs text-muted">{dateTime(w.to)}</Td>
-                    <Td className="tabular">{num(w.meanMatches, 4)}</Td>
-                    <Td className="tabular">{pct(w.hitRate, 2)}</Td>
+                    <Td className="measured">{num(w.meanMatches, 4)}</Td>
+                    <Td className="measured">{pct(w.hitRate, 2)}</Td>
                   </tr>
                 )),
               )}
             </Table>
           </Card>
           <Card title="Kiểm soát sai lệch">
-            <ul className="list-disc space-y-1.5 pl-4 text-xs text-slate-300">
+            <ul className="list-disc space-y-1.5 pl-4 text-xs text-ink-2">
               {s.biasControls.map((b: string) => (
                 <li key={b}>{b}</li>
               ))}
@@ -209,7 +209,7 @@ export default function Backtesting() {
                 <div className="space-y-1.5">
                   {['balanced', 'statistical', 'bayesian', 'portfolio_optimized'].map((s) => (
                     <label key={s} className="flex items-center gap-2 text-sm">
-                      <input type="checkbox" className="h-4 w-4 accent-blue-500" checked={f.strategies.includes(s)} onChange={() => toggle(s)} />
+                      <input type="checkbox" className="h-4 w-4 accent-accent" checked={f.strategies.includes(s)} onChange={() => toggle(s)} />
                       {STRATEGY_LABEL[s]}
                     </label>
                   ))}
@@ -230,7 +230,7 @@ export default function Backtesting() {
                 <Input value={f.seed} onChange={(e) => setF({ ...f, seed: e.target.value })} />
               </Field>
               <label className="flex items-center gap-2 text-xs text-muted">
-                <input type="checkbox" className="h-4 w-4 accent-blue-500" checked={f.unverified} onChange={(e) => setF({ ...f, unverified: e.target.checked })} />
+                <input type="checkbox" className="h-4 w-4 accent-accent" checked={f.unverified} onChange={(e) => setF({ ...f, unverified: e.target.checked })} />
                 Dùng cả dữ liệu chưa xác minh (không khuyến nghị)
               </label>
               <Button variant="primary" className="w-full" loading={!!progress} disabled={!f.strategies.length} onClick={start}>
@@ -238,8 +238,8 @@ export default function Backtesting() {
               </Button>
               {progress && (
                 <div>
-                  <div className="h-2 overflow-hidden rounded-full bg-surface-2" role="progressbar" aria-valuenow={Math.round(progress.ratio * 100)} aria-valuemin={0} aria-valuemax={100}>
-                    <div className="h-full bg-primary" style={{ width: `${progress.ratio * 100}%` }} />
+                  <div className="h-2 overflow-hidden rounded-full bg-paper-3" role="progressbar" aria-valuenow={Math.round(progress.ratio * 100)} aria-valuemin={0} aria-valuemax={100}>
+                    <div className="h-full bg-accent" style={{ width: `${progress.ratio * 100}%` }} />
                   </div>
                   <div className="mt-1 flex justify-between text-xs text-muted">
                     <span>Phiên #{progress.id}: {pct(progress.ratio, 0)}</span>
@@ -255,10 +255,10 @@ export default function Backtesting() {
             {runs.error && <ErrorState error={runs.error} onRetry={runs.reload} />}
             {runs.loading && !runs.data && <LoadingBlock />}
             {runs.data?.length === 0 && <EmptyState title="Chưa có phiên nào" />}
-            <ul className="divide-y divide-line/60">
+            <ul className="divide-y divide-rule/60">
               {(runs.data ?? []).map((r) => (
                 <li key={r.id} className="flex items-center justify-between gap-2 py-2 text-sm">
-                  <button className={selected === r.id ? 'text-primary' : 'hover:underline'} onClick={() => setParams({ id: String(r.id) })}>
+                  <button className={selected === r.id ? 'text-accent' : 'hover:underline'} onClick={() => setParams({ id: String(r.id) })}>
                     #{r.id} · {r.totalDraws} kỳ
                   </button>
                   <span className="flex items-center gap-1">

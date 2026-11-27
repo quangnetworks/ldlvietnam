@@ -292,7 +292,7 @@ function digitTests(draws: XsktDraw[], scope: string): RawTest[] {
   for (const d of draws) for (const n of d.numbers) if (n.length >= 2) (c2[Number(n.slice(-2))]++, n2++);
   if (n2 >= 500) {
     const x2 = chi(c2, n2 / 100);
-    out.push({ code: 'last2_uniform', name: 'Hai chữ số cuối (00–99)', scope, statistic: x2, df: 99, pValue: chiSquareSurvival(x2, 99), detail: `${n2.toLocaleString('vi-VN')} số; kỳ vọng ${f(n2 / 100, 1)} lần mỗi đuôi.` });
+    out.push({ code: 'last2_uniform', name: 'Hai chữ số cuối (00 đến 99)', scope, statistic: x2, df: 99, pValue: chiSquareSurvival(x2, 99), detail: `${n2.toLocaleString('vi-VN')} số; kỳ vọng ${f(n2 / 100, 1)} lần mỗi đuôi.` });
   }
   // 3) Chữ số của giải đặc biệt (mọi vị trí gộp).
   const cs = new Array<number>(10).fill(0);
@@ -469,12 +469,12 @@ export function xsktAudit(region: Region, draws: XsktDraw[], alpha = 0.05): Xskt
   let headline: string;
   if (flagged.length) {
     verdict = 'anomaly';
-    headline = 'CÓ ĐỘ LỆCH THỐNG KÊ — CẦN RÀ SOÁT';
+    headline = 'CÓ ĐỘ LỆCH THỐNG KÊ: CẦN RÀ SOÁT';
     explanation.push(`Lệch sau hiệu chỉnh đa kiểm định: ${flagged.slice(0, 6).map((t) => `${t.scope} · ${t.name} (q = ${f(t.qValue, 3)})`).join('; ')}${flagged.length > 6 ? '…' : ''}.`);
     explanation.push('Độ lệch có thể do lỗi dữ liệu nguồn (nhập sai, đổi định dạng) hoặc thiết bị quay. Đối chiếu kết quả chính thức của công ty XSKT trước khi kết luận. Xem tab Mô hình dự báo để biết độ lệch có khai thác được không.');
   } else {
     verdict = 'random';
-    headline = 'KẾT QUẢ KHỚP NGẪU NHIÊN — KHÔNG CÓ QUY LUẬT';
+    headline = 'KẾT QUẢ KHỚP NGẪU NHIÊN: KHÔNG CÓ QUY LUẬT';
     explanation.push(`${all.length} kiểm định (miền và ${stationAudits.length} đài) đều không có ý nghĩa sau hiệu chỉnh Benjamini–Hochberg (p nhỏ nhất ${f(minP, 4)}).`);
   }
   const rule = tests.find((t) => t.structural);
@@ -488,7 +488,7 @@ export function xsktAudit(region: Region, draws: XsktDraw[], alpha = 0.05): Xskt
 export type XsktModelCode = 'uniform' | 'hot' | 'cold' | 'bayes' | 'markov' | 'ensemble';
 
 export const XSKT_MODELS: Record<XsktModelCode, { name: string; description: string }> = {
-  uniform: { name: 'Đồng đều (baseline)', description: 'Mỗi chữ số 0–9 xác suất 1/10 ở mọi vị trí.' },
+  uniform: { name: 'Đồng đều (baseline)', description: 'Mỗi chữ số 0 đến 9 xác suất 1/10 ở mọi vị trí.' },
   hot: { name: 'Số nóng', description: 'Tần suất chữ số theo vị trí trong W kỳ gần nhất của đài (làm trơn Laplace).' },
   cold: { name: 'Số lạnh', description: 'Ưu tiên chữ số ít xuất hiện trong W kỳ gần nhất (giả thuyết “sắp về”).' },
   bayes: { name: 'Bayes Dirichlet', description: 'Posterior Dirichlet theo toàn bộ lịch sử của đài, prior đồng đều độ mạnh 100.' },
@@ -683,9 +683,9 @@ export function xsktModels(region: Region, draws: XsktDraw[], opts: { window?: n
   const explanation = [
     `Đã chấm ${scored.toLocaleString('vi-VN')} kỳ (${models[0].digits.toLocaleString('vi-VN')} chữ số) theo walk-forward: mỗi kỳ chỉ dùng dữ liệu trước đó của chính đài.`,
     `Thước đo: log-loss từng chữ số; chọn ngẫu nhiên = ln 10 ≈ 2,3026. Mô hình tốt nhất: ${best.name} với ${f(best.logLoss, 5)} (cải thiện ${best.improvement >= 0 ? '+' : ''}${f(best.improvement * 1000, 3)}‰ nats/chữ số, q = ${f(best.qValue, 3)}).`,
-    `Vé gợi ý của các mô hình trúng ít nhất một giải ở ${models.map((m) => `${m.name} ${f(m.ticketWinRate * 100, 2)}%`).join(' · ')} số kỳ — lý thuyết của MỌI vé là ${f(rv.pAnyPrize * 100, 2)}%. Tiền thưởng trung bình dao động rất mạnh vì giải lớn hiếm; kỳ vọng của mọi vé là ${Math.round(expected).toLocaleString('vi-VN')}đ.`,
+    `Vé gợi ý của các mô hình trúng ít nhất một giải ở ${models.map((m) => `${m.name} ${f(m.ticketWinRate * 100, 2)}%`).join(' · ')} số kỳ, lý thuyết của MỌI vé là ${f(rv.pAnyPrize * 100, 2)}%. Tiền thưởng trung bình dao động rất mạnh vì giải lớn hiếm; kỳ vọng của mọi vé là ${Math.round(expected).toLocaleString('vi-VN')}đ.`,
   ];
   if (winners.length)
-    return { region, window: W, warmup: warm, expectedPayout: expected, expectedWinRate: rv.pAnyPrize, models, verdict: 'edge', headline: 'CÓ MÔ HÌNH VƯỢT NGẪU NHIÊN — CẦN KIỂM CHỨNG TRÊN DỮ LIỆU MỚI', explanation: [...explanation, `Vượt chuẩn: ${winners.map((w) => w.name).join(', ')}. Kiểm tra lỗi dữ liệu nguồn và chấm lại trên các kỳ quay sau ngày hôm nay trước khi tin.`] };
+    return { region, window: W, warmup: warm, expectedPayout: expected, expectedWinRate: rv.pAnyPrize, models, verdict: 'edge', headline: 'CÓ MÔ HÌNH VƯỢT NGẪU NHIÊN: CẦN KIỂM CHỨNG TRÊN DỮ LIỆU MỚI', explanation: [...explanation, `Vượt chuẩn: ${winners.map((w) => w.name).join(', ')}. Kiểm tra lỗi dữ liệu nguồn và chấm lại trên các kỳ quay sau ngày hôm nay trước khi tin.`] };
   return { region, window: W, warmup: warm, expectedPayout: expected, expectedWinRate: rv.pAnyPrize, models, verdict: 'no_edge', headline: 'KHÔNG MÔ HÌNH NÀO DỰ BÁO TỐT HƠN CHỌN NGẪU NHIÊN', explanation: [...explanation, 'Vì vậy hệ thống không đưa ra “số dự báo”: mọi vé có cùng giá trị kỳ vọng.'] };
 }

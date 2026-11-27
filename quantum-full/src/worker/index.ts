@@ -66,7 +66,7 @@ export function createApp(options: { authenticate?: ReturnType<typeof authentica
   api.onError((err, c) => {
     if (err instanceof ApiError) return c.json({ error: { code: err.code, message: err.message, details: err.details ?? null } }, err.status);
     const msg = String((err as Error).message ?? err);
-    if (/immutable/.test(msg)) return c.json({ error: { code: 'immutable', message: 'Dữ liệu đã khoá (bất biến) — dùng quy trình điều chỉnh có audit.' } }, 409);
+    if (/immutable/.test(msg)) return c.json({ error: { code: 'immutable', message: 'Dữ liệu đã khoá (bất biến), dùng quy trình điều chỉnh có audit.' } }, 409);
     if (/UNIQUE constraint failed/.test(msg)) return c.json({ error: { code: 'conflict', message: 'Dữ liệu bị trùng (ràng buộc duy nhất)' } }, 409);
     if (/FOREIGN KEY constraint failed/.test(msg)) return c.json({ error: { code: 'foreign_key', message: 'Tham chiếu không hợp lệ' } }, 409);
     console.error(JSON.stringify({ level: 'error', msg: 'unhandled', error: msg, stack: (err as Error).stack, requestId: c.get('requestId') }));

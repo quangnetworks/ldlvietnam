@@ -3,7 +3,7 @@ import { RefreshCw } from 'lucide-react';
 import { apiFetch, ApiClientError } from '../lib/api';
 import { useApi } from '../lib/hooks';
 import { dateOnly, dateTime, num, pct, pv, vnd } from '../lib/format';
-import { Badge, Button, Card, EmptyState, ErrorState, Field, Kpi, LoadingBlock, Notice, PageHeader, Pagination, Select, Table, Tabs, Td } from '../components/ui';
+import { Badge, RecordLead, Button, Card, EmptyState, ErrorState, Field, Kpi, LoadingBlock, Notice, PageHeader, Pagination, Select, Table, Tabs, Td } from '../components/ui';
 import { useToast } from '../components/toast';
 
 type Region = 'mb' | 'mt' | 'mn';
@@ -26,16 +26,16 @@ const oneIn = (p: number) => (p > 0 ? `1 / ${num(1 / p)}` : '—');
 function Verdict({ d, meta }: { d: any; meta?: any }) {
   const v = VERDICT[d.verdict] ?? VERDICT.insufficient;
   return (
-    <section className="rounded-xl border border-line bg-surface p-5" aria-live="polite">
-      <Badge tone={v.tone}>{v.label}</Badge>
-      <h2 className="mt-2 text-xl font-semibold tracking-tight sm:text-2xl">{d.headline}</h2>
-      <ul className="mt-3 list-disc space-y-1 pl-5 text-sm text-slate-300">
-        {d.explanation.map((e: string) => (
-          <li key={e}>{e}</li>
-        ))}
-      </ul>
-      {meta && <p className="mt-3 text-xs text-muted">{meta.cached ? 'Kết quả lưu đệm' : 'Vừa tính'} lúc {dateTime(meta.computedAt)} · {meta.dataNotice}</p>}
-    </section>
+    <RecordLead
+      badge={<Badge tone={v.tone}>{v.label}</Badge>}
+      headline={d.headline}
+      reasons={d.explanation}
+      reading={{
+        label: d.models ? 'Số kỳ đã chấm walk-forward' : 'Số kỳ đã kiểm định',
+        value: num(d.models ? d.models[0]?.draws ?? 0 : d.draws),
+        note: meta ? `${meta.cached ? 'Kết quả lưu đệm' : 'Vừa tính'} lúc ${dateTime(meta.computedAt)}. ${meta.dataNotice}` : undefined,
+      }}
+    />
   );
 }
 
@@ -56,8 +56,8 @@ function Results({ region, summary }: { region: Region; summary: any }) {
         <Card title="Lịch quay theo thứ" subtitle="Suy ra từ dữ liệu 120 ngày gần nhất (tự cập nhật khi đài đổi lịch / sáp nhập).">
           <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
             {r.schedule.map((d: any) => (
-              <div key={d.weekday} className="rounded-lg border border-line p-2 text-xs">
-                <div className="font-medium text-text">{d.name}</div>
+              <div key={d.weekday} className="rounded-[var(--radius-pill)] border border-rule p-2 text-xs">
+                <div className="font-medium text-ink">{d.name}</div>
                 <div className="text-muted">{d.stations.join(', ') || '—'}</div>
               </div>
             ))}
@@ -84,7 +84,7 @@ function Results({ region, summary }: { region: Region; summary: any }) {
         {q.data?.length === 0 && <EmptyState title="Chưa có dữ liệu" description="Bấm “Đồng bộ XSKT” để tải kết quả từ nguồn mở." />}
         <div className="grid gap-3 lg:grid-cols-2">
           {q.data?.map((d: any) => (
-            <div key={d.id} className="rounded-lg border border-line p-3">
+            <div key={d.id} className="rounded-[var(--radius-pill)] border border-rule p-3">
               <div className="mb-2 flex items-center justify-between text-sm">
                 <span className="font-medium">{d.station}</span>
                 <span className="text-xs text-muted">{dateOnly(d.date)}</span>
@@ -93,7 +93,7 @@ function Results({ region, summary }: { region: Region; summary: any }) {
                 {d.prizes.map((p: any) => (
                   <div key={p.code} className="contents">
                     <dt className="text-muted">{p.name}</dt>
-                    <dd className={`tabular font-mono ${p.code === 'special' ? 'font-semibold text-amber-300' : ''}`}>{p.numbers.join(' · ')}</dd>
+                    <dd className={`measured flex flex-wrap gap-x-3 gap-y-0.5 ${p.code === 'special' ? 'font-medium text-accent' : 'text-ink-2'}`}>{p.numbers.map((n: string, i: number) => <span key={i}>{n}</span>)}</dd>
                   </div>
                 ))}
               </dl>
@@ -124,12 +124,12 @@ function Audit({ region }: { region: Region }) {
                     <div className="font-medium">{t.name}</div>
                     <div className="text-xs text-muted">{t.detail}</div>
                   </Td>
-                  <Td className="tabular whitespace-nowrap">
+                  <Td className="measured whitespace-nowrap">
                     {num(t.statistic, 2)}
                     {t.df != null && <span className="text-xs text-muted"> (df {t.df})</span>}
                   </Td>
-                  <Td className="tabular">{pv(t.pValue)}</Td>
-                  <Td className="tabular">{t.structural ? '—' : pv(t.qValue)}</Td>
+                  <Td className="measured">{pv(t.pValue)}</Td>
+                  <Td className="measured">{t.structural ? '—' : pv(t.qValue)}</Td>
                   <Td>{t.structural ? <Badge tone="info">Quy tắc quay</Badge> : t.significant ? <Badge tone="warn">Lệch</Badge> : <Badge tone="good">Khớp ngẫu nhiên</Badge>}</Td>
                 </tr>
               ))}
@@ -144,11 +144,11 @@ function Audit({ region }: { region: Region }) {
                   return (
                     <tr key={s.station}>
                       <Td>{s.station}</Td>
-                      <Td className="tabular">{num(s.draws)}</Td>
+                      <Td className="measured">{num(s.draws)}</Td>
                       <Td className="whitespace-nowrap text-xs">
-                        {dateOnly(s.firstDate)} – {dateOnly(s.lastDate)}
+                        từ {dateOnly(s.firstDate)} đến {dateOnly(s.lastDate)}
                       </Td>
-                      <Td className="tabular">{pv(minQ)}</Td>
+                      <Td className="measured">{pv(minQ)}</Td>
                       <Td>{s.flagged ? <Badge tone="warn">{`Lệch: ${bad.map((t: any) => t.name).join(', ')}`}</Badge> : <Badge tone="good">Khớp ngẫu nhiên</Badge>}</Td>
                     </tr>
                   );
@@ -203,14 +203,14 @@ function Models({ region, summary }: { region: Region; summary: any }) {
                     <div className="font-medium">{m.name}</div>
                     <div className="text-xs text-muted">{m.description}</div>
                   </Td>
-                  <Td className="tabular">{num(m.draws)}</Td>
-                  <Td className="tabular">{num(m.logLoss, 5)}</Td>
-                  <Td className={`tabular ${m.improvement > 0 ? 'text-accent' : m.code === 'uniform' ? '' : 'text-amber-300'}`}>{m.code === 'uniform' ? '—' : `${m.improvement >= 0 ? '+' : ''}${num(m.improvement * 1000, 3)}‰`}</Td>
-                  <Td className="tabular">{m.code === 'uniform' ? '—' : num(m.z, 2)}</Td>
-                  <Td className="tabular">{m.code === 'uniform' ? '—' : pv(m.qValue)}</Td>
-                  <Td className="tabular">{pct(m.unitsHitRate, 2)}</Td>
-                  <Td className="tabular">{pct(m.ticketWinRate, 2)}</Td>
-                  <Td className="tabular">{vnd(m.ticketMeanPayout)}</Td>
+                  <Td className="measured">{num(m.draws)}</Td>
+                  <Td className="measured">{num(m.logLoss, 5)}</Td>
+                  <Td className={`measured ${m.improvement > 0 ? 'text-ok' : m.code === 'uniform' ? '' : 'text-warn'}`}>{m.code === 'uniform' ? '—' : `${m.improvement >= 0 ? '+' : ''}${num(m.improvement * 1000, 3)}‰`}</Td>
+                  <Td className="measured">{m.code === 'uniform' ? '—' : num(m.z, 2)}</Td>
+                  <Td className="measured">{m.code === 'uniform' ? '—' : pv(m.qValue)}</Td>
+                  <Td className="measured">{pct(m.unitsHitRate, 2)}</Td>
+                  <Td className="measured">{pct(m.ticketWinRate, 2)}</Td>
+                  <Td className="measured">{vnd(m.ticketMeanPayout)}</Td>
                 </tr>
               ))}
             </Table>
@@ -240,13 +240,13 @@ function Value() {
           {rows.map((r) => (
             <tr key={r.key}>
               <Td className="font-medium">{r.name}</Td>
-              <Td className="tabular">{Number.isNaN(r.pre) ? '—' : pct(r.pre, 1)}</Td>
-              <Td className={`tabular ${r.post >= 1 ? 'text-accent' : ''}`}>{Number.isNaN(r.post) ? '—' : pct(r.post, 1)}</Td>
+              <Td className="measured">{Number.isNaN(r.pre) ? '—' : pct(r.pre, 1)}</Td>
+              <Td className={`measured ${r.post >= 1 ? 'text-ok' : ''}`}>{Number.isNaN(r.post) ? '—' : pct(r.post, 1)}</Td>
               <Td className="text-xs text-muted">{r.note}</Td>
             </tr>
           ))}
         </Table>
-        <ul className="mt-3 list-disc space-y-1 pl-4 text-xs text-slate-300">
+        <ul className="mt-3 list-disc space-y-1 pl-4 text-xs text-ink-2">
           {d.insights.map((i: string) => (
             <li key={i}>{i}</li>
           ))}
@@ -263,9 +263,9 @@ function Value() {
               {x.tiers.map((t: any) => (
                 <tr key={t.code}>
                   <Td>{t.name}</Td>
-                  <Td className="tabular whitespace-nowrap">{vnd(t.amount)}</Td>
-                  <Td className="tabular whitespace-nowrap">{oneIn(t.probability)}</Td>
-                  <Td className="tabular">{num(t.perSeries, t.perSeries % 1 ? 1 : 0)}</Td>
+                  <Td className="measured whitespace-nowrap">{vnd(t.amount)}</Td>
+                  <Td className="measured whitespace-nowrap">{oneIn(t.probability)}</Td>
+                  <Td className="measured">{num(t.perSeries, t.perSeries % 1 ? 1 : 0)}</Td>
                 </tr>
               ))}
             </Table>
@@ -308,9 +308,9 @@ export default function Xskt() {
         }
       />
       <div className="mb-4 flex flex-wrap items-center gap-3">
-        <div role="radiogroup" aria-label="Chọn miền" className="flex gap-1 rounded-lg border border-line bg-surface p-1">
+        <div role="radiogroup" aria-label="Chọn miền" className="flex gap-1 rounded-[var(--radius-pill)] border border-rule bg-paper-2 p-1">
           {REGION_ITEMS.map((r) => (
-            <button key={r.value} role="radio" aria-checked={region === r.value} onClick={() => setRegion(r.value)} className={`rounded-md px-3 py-1.5 text-sm ${region === r.value ? 'bg-primary/20 text-text' : 'text-muted hover:text-text'}`}>
+            <button key={r.value} role="radio" aria-checked={region === r.value} onClick={() => setRegion(r.value)} className={`rounded-[var(--radius-pill)] px-3 py-1.5 text-sm ${region === r.value ? 'bg-accent/20 text-ink' : 'text-muted hover:text-ink'}`}>
               {r.label}
             </button>
           ))}

@@ -34,7 +34,7 @@ export async function insertModelRun(db: D1Database, r: ModelRunInput): Promise<
 
 /** Trạng thái kiểm định của chiến lược dựa trên backtest hoàn tất gần nhất. */
 export async function strategyValidationStatus(db: D1Database, gameId: number, strategy: string): Promise<{ status: string; backtestId: number | null }> {
-  if (strategy === 'random_uniform') return { status: 'Baseline khoa học (đối chứng) — không tuyên bố lợi thế.', backtestId: null };
+  if (strategy === 'random_uniform') return { status: 'Baseline khoa học (đối chứng), không tuyên bố lợi thế.', backtestId: null };
   const r = await db
     .prepare(
       `SELECT m.backtest_run_id AS id, m.metrics_json FROM backtest_metrics m JOIN backtest_runs b ON b.id = m.backtest_run_id
@@ -42,7 +42,7 @@ export async function strategyValidationStatus(db: D1Database, gameId: number, s
     )
     .bind(gameId, strategy)
     .first<{ id: number; metrics_json: string }>();
-  if (!r) return { status: 'CHƯA KIỂM ĐỊNH — chưa có backtest hoàn tất cho chiến lược này.', backtestId: null };
+  if (!r) return { status: 'CHƯA KIỂM ĐỊNH, chưa có backtest hoàn tất cho chiến lược này.', backtestId: null };
   const m = JSON.parse(r.metrics_json) as { vsBaseline?: { significant?: boolean } | null };
   return m.vsBaseline?.significant
     ? { status: `Vượt baseline trong backtest #${r.id} (cần xác nhận trên dữ liệu mới).`, backtestId: r.id }

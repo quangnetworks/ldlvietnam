@@ -33,13 +33,13 @@ export function sampleInfo(rules: GameRules, draws: DrawRecord[]): SampleInfo {
     note = 'Chưa có dữ liệu. Hãy import kết quả quay tại Data Center.';
   } else if (expectedPerNumber < 5) {
     reliability = 'insufficient';
-    note = `Kỳ vọng mỗi số chỉ ${expectedPerNumber.toFixed(1)} lần (< 5) — kiểm định χ² không đáng tin cậy.`;
+    note = `Kỳ vọng mỗi số chỉ ${expectedPerNumber.toFixed(1)} lần (< 5), kiểm định χ² không đáng tin cậy.`;
   } else if (expectedPerNumber < 20) {
     reliability = 'low';
-    note = `Kỳ vọng mỗi số ${expectedPerNumber.toFixed(1)} lần — độ biến động ngẫu nhiên còn rất lớn.`;
+    note = `Kỳ vọng mỗi số ${expectedPerNumber.toFixed(1)} lần, độ biến động ngẫu nhiên còn rất lớn.`;
   } else if (expectedPerNumber < 100) {
     reliability = 'moderate';
-    note = `Kỳ vọng mỗi số ${expectedPerNumber.toFixed(1)} lần — đủ cho kiểm định tổng thể, chưa đủ cho kết luận từng số.`;
+    note = `Kỳ vọng mỗi số ${expectedPerNumber.toFixed(1)} lần, đủ cho kiểm định tổng thể, chưa đủ cho kết luận từng số.`;
   } else {
     reliability = 'good';
     note = `Kỳ vọng mỗi số ${expectedPerNumber.toFixed(1)} lần.`;
@@ -77,8 +77,8 @@ export interface FrequencyResult {
 }
 
 function chiConclusion(p: number): string {
-  if (p < 0.001) return 'Bác bỏ H0 ở mức 0,1% — cần kiểm tra chất lượng dữ liệu trước khi diễn giải.';
-  if (p < 0.05) return 'Bác bỏ H0 ở mức 5% — có thể do ngẫu nhiên (đa kiểm định) hoặc lỗi dữ liệu; chưa đủ để kết luận có quy luật.';
+  if (p < 0.001) return 'Bác bỏ H0 ở mức 0,1%, cần kiểm tra chất lượng dữ liệu trước khi diễn giải.';
+  if (p < 0.05) return 'Bác bỏ H0 ở mức 5%, có thể do ngẫu nhiên (đa kiểm định) hoặc lỗi dữ liệu; chưa đủ để kết luận có quy luật.';
   return 'Không bác bỏ H0: phân bố tần suất phù hợp với quay ngẫu nhiên đồng đều.';
 }
 
@@ -358,7 +358,7 @@ export function comboFrequency(rules: GameRules, draws: DrawRecord[], size: 2 | 
     note:
       significant === 0
         ? `Không có ${size === 2 ? 'cặp' : 'bộ ba'} nào lệch có ý nghĩa sau hiệu chỉnh đa kiểm định (FDR 5%, m=${totalCombos}).`
-        : `${significant} tổ hợp lệch có ý nghĩa sau FDR 5% — cần kiểm tra dữ liệu và kiểm định lại trên dữ liệu mới (out-of-sample).`,
+        : `${significant} tổ hợp lệch có ý nghĩa sau FDR 5%, cần kiểm tra dữ liệu và kiểm định lại trên dữ liệu mới (out-of-sample).`,
   };
 }
 

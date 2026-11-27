@@ -62,14 +62,14 @@ export default function Overview() {
             </div>
           )}
           <div className="grid gap-5 lg:grid-cols-3">
-            <Card title="Lịch sử kỳ quay" className="lg:col-span-2" actions={<Link className="text-xs text-primary hover:underline" to="/data">Xem tất cả</Link>}>
+            <Card title="Lịch sử kỳ quay" className="lg:col-span-2" actions={<Link className="text-xs text-accent hover:underline" to="/data">Xem tất cả</Link>}>
               {d.recentDraws.length === 0 ? (
                 <EmptyState title="Chưa có kỳ quay nào" />
               ) : (
                 <Table head={['Kỳ', 'Ngày', 'Kết quả', 'Trạng thái']}>
                   {d.recentDraws.map((r: any) => (
                     <tr key={r.id}>
-                      <Td className="tabular text-muted">#{r.drawCode}</Td>
+                      <Td className="measured text-muted">#{r.drawCode}</Td>
                       <Td className="whitespace-nowrap text-muted">
                         {dateOnly(r.drawDate)} {r.drawTime ?? ''}
                       </Td>
@@ -82,7 +82,7 @@ export default function Overview() {
                 </Table>
               )}
             </Card>
-            <Card title="Ngân sách" actions={<Link className="text-xs text-primary hover:underline" to="/capital">Chi tiết</Link>}>
+            <Card title="Ngân sách" actions={<Link className="text-xs text-accent hover:underline" to="/capital">Chi tiết</Link>}>
               <dl className="space-y-2 text-sm">
                 {[
                   ['Ngân sách / kỳ', vnd(d.capital.budgetPerDraw)],
@@ -93,22 +93,22 @@ export default function Overview() {
                 ].map(([k, v]) => (
                   <div key={k} className="flex justify-between gap-2">
                     <dt className="text-muted">{k}</dt>
-                    <dd className="tabular font-medium">{v}</dd>
+                    <dd className="measured font-medium">{v}</dd>
                   </div>
                 ))}
               </dl>
-              <div className="mt-4 h-2 overflow-hidden rounded-full bg-surface-2" aria-label="Tỷ lệ đã dùng hạn mức tháng">
-                <div className="h-full bg-primary" style={{ width: `${Math.min(100, (100 * d.capital.monthSpent) / Math.max(1, d.capital.monthlyBudget))}%` }} />
+              <div className="mt-4 h-2 overflow-hidden rounded-full bg-paper-3" aria-label="Tỷ lệ đã dùng hạn mức tháng">
+                <div className="h-full bg-accent" style={{ width: `${Math.min(100, (100 * d.capital.monthSpent) / Math.max(1, d.capital.monthlyBudget))}%` }} />
               </div>
-              <p className="mt-2 text-xs text-muted">Danh mục: {num(d.portfolios?.total ?? 0)} · chờ kết quả {num(d.portfolios?.pending ?? 0)} · đã chấm {num(d.portfolios?.evaluated ?? 0)}</p>
+              <p className="mt-2 text-xs text-muted">Danh mục <span className="measured text-ink-2">{num(d.portfolios?.total ?? 0)}</span>, chờ kết quả <span className="measured text-ink-2">{num(d.portfolios?.pending ?? 0)}</span>, đã chấm <span className="measured text-ink-2">{num(d.portfolios?.evaluated ?? 0)}</span>.</p>
             </Card>
           </div>
           <div className="grid gap-5 lg:grid-cols-2">
-            <Card title="Hiệu quả mô hình (backtest gần đây)" actions={<Link className="text-xs text-primary hover:underline" to="/backtesting">Backtesting</Link>}>
+            <Card title="Hiệu quả mô hình (backtest gần đây)" actions={<Link className="text-xs text-accent hover:underline" to="/backtesting">Backtesting</Link>}>
               {d.backtests.length === 0 ? (
                 <EmptyState title="Chưa có phiên backtest" description="Chạy walk-forward backtest để đánh giá chiến lược so với baseline ngẫu nhiên." />
               ) : (
-                <ul className="divide-y divide-line/60 text-sm">
+                <ul className="divide-y divide-rule/60 text-sm">
                   {d.backtests.map((b: any) => (
                     <li key={b.id} className="flex items-center justify-between gap-2 py-2">
                       <Link to={`/backtesting?id=${b.id}`} className="hover:underline">
@@ -124,7 +124,7 @@ export default function Overview() {
               {d.activity.length === 0 ? (
                 <EmptyState title="Chưa có hoạt động" />
               ) : (
-                <ul className="divide-y divide-line/60 text-sm">
+                <ul className="divide-y divide-rule/60 text-sm">
                   {d.activity.map((a: any) => (
                     <li key={a.id} className="flex flex-wrap items-center justify-between gap-2 py-2">
                       <span>

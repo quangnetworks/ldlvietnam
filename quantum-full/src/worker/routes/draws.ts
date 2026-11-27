@@ -225,7 +225,7 @@ drawRoutes.post('/admin/draws/:id/correct', requireRole('admin'), async (c) => {
     c.env.DB.prepare("UPDATE portfolios SET status = CASE WHEN purchased_at IS NOT NULL THEN 'purchased' ELSE 'draft' END, updated_at = ? WHERE target_draw_id = ? AND status = 'evaluated'").bind(ts, id),
     auditStatement(c, { action: 'draws.correct', entityType: 'draw', entityId: id, before, after: { main, special: b.special ?? null, drawDate: date, drawTime: time, reason: b.reason, sourceHash: hash } }),
   ]);
-  return c.json({ data: { draw: await getDraw(c.env.DB, id), ledgerEntriesAffected: affected?.n ?? 0, note: (affected?.n ?? 0) > 0 ? 'Sổ quỹ đã có bút toán liên quan kỳ này — cần lập bút toán điều chỉnh.' : null } });
+  return c.json({ data: { draw: await getDraw(c.env.DB, id), ledgerEntriesAffected: affected?.n ?? 0, note: (affected?.n ?? 0) > 0 ? 'Sổ quỹ đã có bút toán liên quan kỳ này, cần lập bút toán điều chỉnh.' : null } });
 });
 
 // ───────────── Đồng bộ tự động từ nguồn dữ liệu mở ─────────────

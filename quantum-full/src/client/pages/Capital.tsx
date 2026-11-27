@@ -22,7 +22,7 @@ export default function Capital() {
         xAxis: { type: 'category', data: d.monthly.map((m: any) => m.month), ...axis() },
         yAxis: { type: 'value', ...axis({ axisLabel: { color: CHART.muted, formatter: (v: number) => `${(v / 1000).toLocaleString('vi-VN')}k` } }) },
         series: [
-          { name: 'Chi mua vé', type: 'bar', data: d.monthly.map((m: any) => m.investment), itemStyle: { color: '#475569' } },
+          { name: 'Chi mua vé', type: 'bar', data: d.monthly.map((m: any) => m.investment), itemStyle: { color: CHART.faint } },
           { name: 'Tiền thưởng', type: 'bar', data: d.monthly.map((m: any) => m.prizes), itemStyle: { color: CHART.accent } },
           { name: 'Ròng', type: 'line', data: d.monthly.map((m: any) => m.net), itemStyle: { color: CHART.warn } },
         ],
@@ -66,7 +66,7 @@ export default function Capital() {
               {d.monthly.length ? <Chart option={opt} height={260} ariaLabel="Chi tiêu và tiền thưởng theo tháng" /> : <EmptyState title="Chưa có giao dịch" />}
             </Card>
             <Card title="Nguyên tắc">
-              <ul className="list-disc space-y-2 pl-4 text-xs text-slate-300">
+              <ul className="list-disc space-y-2 pl-4 text-xs text-ink-2">
                 {d.principles.map((p: string) => (
                   <li key={p}>{p}</li>
                 ))}
@@ -84,7 +84,7 @@ export default function Capital() {
                     <tr key={l.id}>
                       <Td className="whitespace-nowrap text-xs">{dateOnly(l.entry_date)}</Td>
                       <Td>{l.entry_type === 'purchase' ? <Badge>Mua vé</Badge> : l.entry_type === 'prize' ? <Badge tone="good">Thưởng</Badge> : <Badge tone="warn">Điều chỉnh</Badge>}</Td>
-                      <Td className={`tabular ${l.amount < 0 ? 'text-red-300' : 'text-green-300'}`}>{vnd(l.amount)}</Td>
+                      <Td className={`measured ${l.amount < 0 ? 'text-bad' : 'text-ok'}`}>{vnd(l.amount)}</Td>
                       <Td className="text-xs">{l.portfolio_name ?? '—'}</Td>
                       <Td className="text-xs">{l.draw_code ?? '—'}</Td>
                       <Td className="max-w-[200px] text-xs text-muted">{l.note}</Td>

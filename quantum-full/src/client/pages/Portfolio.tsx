@@ -66,7 +66,7 @@ function Optimizer({ onSaved }: { onSaved: () => void }) {
             </Select>
           </Field>
           <label className="flex items-start gap-2 text-xs text-muted">
-            <input type="checkbox" className="mt-0.5 h-4 w-4 accent-blue-500" checked={f.avoidPopular} onChange={(e) => setF({ ...f, avoidPopular: e.target.checked })} />
+            <input type="checkbox" className="mt-0.5 h-4 w-4 accent-accent" checked={f.avoidPopular} onChange={(e) => setF({ ...f, avoidPopular: e.target.checked })} />
             Ưu tiên bộ số ít phổ biến (giảm rủi ro phải chia giải; không đổi xác suất trúng)
           </label>
           <Field label="Ngày quay mục tiêu (tuỳ chọn)">
@@ -109,7 +109,7 @@ function PortfolioDetail({ id, onChanged }: { id: number; onChanged: () => void 
   if (!q.data) return <LoadingBlock />;
   const p = q.data;
   return (
-    <div className="space-y-3 rounded-lg border border-line bg-bg/50 p-3">
+    <div className="space-y-3 rounded-[var(--radius-pill)] border border-rule bg-paper/50 p-3">
       <div className="flex flex-wrap gap-2">
         {p.mode === 'real' && p.status === 'draft' && (
           <Button variant="primary" loading={busy === 'buy'} onClick={() => act('buy', `/portfolios/${id}/purchase`, 'Đã ghi nhận mua vé thực tế')}>
@@ -130,7 +130,7 @@ function PortfolioDetail({ id, onChanged }: { id: number; onChanged: () => void 
       {p.mode === 'real' && p.status === 'draft' && <Notice tone="info">Hệ thống không mua vé thay bạn. Chỉ bấm “Ghi nhận đã mua” sau khi bạn đã tự mua vé tại điểm bán/kênh chính thức. Hạn mức vốn được kiểm tra trước khi ghi nhận.</Notice>}
       <ul className="grid gap-2 sm:grid-cols-2">
         {p.tickets.map((t: any) => (
-          <li key={t.id} className="flex flex-wrap items-center gap-2 rounded-lg border border-line px-3 py-2">
+          <li key={t.id} className="flex flex-wrap items-center gap-2 rounded-[var(--radius-pill)] border border-rule px-3 py-2">
             <Balls main={t.main} special={t.special} size="sm" />
             {t.result && (
               <span className="ml-auto text-xs">
@@ -194,9 +194,9 @@ function SavedPortfolios({ refreshKey }: { refreshKey: number }) {
               <Td className="whitespace-nowrap text-xs">
                 {dateOnly(p.target_draw_date)} {p.target_draw_time ?? ''}
               </Td>
-              <Td className="tabular">{p.ticket_count}</Td>
-              <Td className="tabular">{vnd(p.total_cost)}</Td>
-              <Td className="tabular">{p.status === 'evaluated' ? vnd(p.fixed_prizes) : '—'}</Td>
+              <Td className="measured">{p.ticket_count}</Td>
+              <Td className="measured">{vnd(p.total_cost)}</Td>
+              <Td className="measured">{p.status === 'evaluated' ? vnd(p.fixed_prizes) : '—'}</Td>
               <Td>
                 <Badge tone={STATUS[p.status].tone}>{STATUS[p.status].label}</Badge>
               </Td>

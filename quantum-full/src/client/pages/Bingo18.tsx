@@ -3,7 +3,7 @@ import { Play, Wallet } from 'lucide-react';
 import { apiFetch, ApiClientError } from '../lib/api';
 import { useApi } from '../lib/hooks';
 import { num, pct, pv, todayVn, vnd } from '../lib/format';
-import { Badge, Button, Card, EmptyState, ErrorState, Field, Input, Kpi, LoadingBlock, Notice, PageHeader, Pagination, Select, Table, Tabs, Td } from '../components/ui';
+import { Badge, RecordLead, Button, Card, EmptyState, ErrorState, Field, Input, Kpi, LoadingBlock, Notice, PageHeader, Pagination, Select, Table, Tabs, Td } from '../components/ui';
 import { Chart, CHART, axis } from '../components/Chart';
 import { ObservedExpectedBar } from '../components/charts';
 import { useToast } from '../components/toast';
@@ -13,7 +13,7 @@ const errMsg = (e: unknown) => (e instanceof ApiClientError ? e.message : 'Có l
 
 function Dice({ v }: { v: number }) {
   return (
-    <span className="tabular inline-flex h-8 w-8 items-center justify-center rounded-md border border-primary/50 bg-primary/10 text-sm font-semibold text-blue-100" aria-label={`Số ${v}`}>
+    <span className="measured inline-flex h-8 w-8 items-center justify-center rounded-[var(--radius-pill)] border border-accent/50 bg-accent/10 text-sm font-medium text-cool" aria-label={`Số ${v}`}>
       {v}
     </span>
   );
@@ -42,23 +42,37 @@ function TodayTab() {
   const d = q.data;
   return (
     <div className="space-y-5">
-      <section className={`rounded-xl border p-5 ${d.action === 'play' ? 'border-primary/40 bg-primary/5' : 'border-line bg-surface'}`} aria-live="polite">
-        <Badge tone={d.action === 'play' ? 'info' : 'default'}>{d.action === 'play' ? 'Kế hoạch hôm nay' : 'Khuyến nghị'}</Badge>
-        <h2 className="mt-2 text-xl font-semibold tracking-tight sm:text-2xl">{d.headline}</h2>
-        <p className="mt-1 text-sm text-muted">
-          Còn {d.schedule.remaining}/{d.schedule.perDay} kỳ hôm nay{d.schedule.nextAt ? ` · kỳ kế tiếp ${d.schedule.nextAt}` : ''} · giới hạn phiên {d.sessionMinutes} phút
-        </p>
-        <ul className="mt-4 list-disc space-y-1 pl-5 text-sm text-slate-300">
-          {d.reasons.map((r: string) => (
-            <li key={r}>{r}</li>
-          ))}
-        </ul>
-      </section>
+      <RecordLead
+        badge={<Badge tone={d.action === 'play' ? 'warn' : 'default'}>{d.action === 'play' ? 'Kế hoạch hôm nay' : 'Khuyến nghị'}</Badge>}
+        headline={d.headline}
+        meta={
+          <dl className="flex flex-wrap gap-x-6 gap-y-2">
+            <div>
+              <dt className="text-xs">Kỳ còn lại hôm nay</dt>
+              <dd className="measured text-cool">
+                {d.schedule.remaining}/{d.schedule.perDay}
+              </dd>
+            </div>
+            {d.schedule.nextAt && (
+              <div>
+                <dt className="text-xs">Kỳ kế tiếp</dt>
+                <dd className="measured text-cool">{d.schedule.nextAt}</dd>
+              </div>
+            )}
+            <div>
+              <dt className="text-xs">Giới hạn phiên</dt>
+              <dd className="measured text-ink-2">{d.sessionMinutes} phút</dd>
+            </div>
+          </dl>
+        }
+        reasons={d.reasons}
+        reading={{ label: 'Ngân sách khả dụng hôm nay', value: vnd(d.allowance.available), note: `Hạn mức Bingo18 mỗi ngày ${vnd(d.allowance.dailyLimit)}. Lỗ kỳ vọng nếu chơi hết ${vnd(d.expectedLoss)}.` }}
+      />
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <Kpi label="Ngân sách khả dụng" value={vnd(d.allowance.available)} hint={`Hạn mức Bingo18/ngày ${vnd(d.allowance.dailyLimit)}`} />
         <Kpi label="Đã chi / đã thắng hôm nay" value={`${vnd(d.allowance.spentToday)}`} hint={`Thắng ${vnd(d.allowance.wonToday)}`} />
         <Kpi label="Lỗ kỳ vọng nếu chơi hết" value={vnd(d.expectedLoss)} tone="warn" />
-        <Kpi label="Khả năng kết thúc ngày có lãi" value={d.outlook ? pct(d.outlook.probabilityProfit, 1) : '—'} hint={d.outlook ? `Trung vị ${vnd(d.outlook.median)} · 90% trong [${vnd(d.outlook.p5)}; ${vnd(d.outlook.p95)}]` : 'Mô phỏng 4.000 ngày'} />
+        <Kpi label="Khả năng kết thúc ngày có lãi" value={d.outlook ? pct(d.outlook.probabilityProfit, 1) : '—'} hint={d.outlook ? `Trung vị ${vnd(d.outlook.median)}; 90% trong khoảng ${vnd(d.outlook.p5)} đến ${vnd(d.outlook.p95)}` : 'Mô phỏng 4.000 ngày'} />
       </div>
       {d.model && (
         <Notice tone={d.model.verdict === 'edge' ? 'warn' : 'info'}>
@@ -99,7 +113,7 @@ function TodayTab() {
           </Button>
         </Card>
         <Card title="Cảnh báo">
-          <ul className="list-disc space-y-2 pl-4 text-xs text-slate-300">
+          <ul className="list-disc space-y-2 pl-4 text-xs text-ink-2">
             {d.warnings.map((w: string) => (
               <li key={w}>{w}</li>
             ))}
@@ -202,13 +216,13 @@ function BetsTab() {
               <Td className="whitespace-nowrap">
                 {b.label} {b.label === d.bestReturn.label && <Badge tone="info">Hoàn trả cao nhất</Badge>}
               </Td>
-              <Td className="tabular whitespace-nowrap">
+              <Td className="measured whitespace-nowrap">
                 {pct(b.winProbabilityValue, 2)} <span className="text-xs text-muted">({b.winProbability})</span>
               </Td>
-              <Td className="tabular">{vnd(b.maxPayout)}</Td>
-              <Td className="tabular">{vnd(b.expectedPayout)}</Td>
-              <Td className="tabular">{pct(b.returnRatio, 2)}</Td>
-              <Td className="tabular">{pct(b.houseEdge, 2)}</Td>
+              <Td className="measured">{vnd(b.maxPayout)}</Td>
+              <Td className="measured">{vnd(b.expectedPayout)}</Td>
+              <Td className="measured">{pct(b.returnRatio, 2)}</Td>
+              <Td className="measured">{pct(b.houseEdge, 2)}</Td>
             </tr>
           ))}
         </Table>
@@ -283,9 +297,9 @@ function StatsTab() {
                 {q.data.bigSmallDraw.map((r: any) => (
                   <tr key={r.label}>
                     <Td>{r.label}</Td>
-                    <Td className="tabular">{num(r.observed)}</Td>
-                    <Td className="tabular">{pct(r.share, 2)}</Td>
-                    <Td className="tabular text-muted">{pct(r.expectedShare, 2)}</Td>
+                    <Td className="measured">{num(r.observed)}</Td>
+                    <Td className="measured">{pct(r.share, 2)}</Td>
+                    <Td className="measured text-muted">{pct(r.expectedShare, 2)}</Td>
                   </tr>
                 ))}
               </Table>
@@ -295,9 +309,9 @@ function StatsTab() {
                 {q.data.bigAfterBigStreak.map((r: any) => (
                   <tr key={r.streak}>
                     <Td>{r.streak} kỳ</Td>
-                    <Td className="tabular">{num(r.total)}</Td>
-                    <Td className="tabular">{num(r.nextBig)}</Td>
-                    <Td className="tabular">{pct(r.rate, 1)}</Td>
+                    <Td className="measured">{num(r.total)}</Td>
+                    <Td className="measured">{num(r.nextBig)}</Td>
+                    <Td className="measured">{pct(r.rate, 1)}</Td>
                   </tr>
                 ))}
               </Table>
@@ -335,7 +349,7 @@ function SimulateTab() {
       r && {
         xAxis: { type: 'category', data: r.histogram.map((h: any) => `${Math.round(h.from / 1000)}k`), ...axis({ axisLabel: { color: CHART.muted, fontSize: 10, rotate: 30 } }) },
         yAxis: { type: 'value', ...axis() },
-        series: [{ type: 'bar', data: r.histogram.map((h: any) => ({ value: h.count, itemStyle: { color: h.to < 0 ? '#64748b' : CHART.accent } })) }],
+        series: [{ type: 'bar', data: r.histogram.map((h: any) => ({ value: h.count, itemStyle: { color: h.to < 0 ? CHART.faint : CHART.accent } })) }],
       },
     [r],
   );
@@ -390,13 +404,13 @@ function SimulateTab() {
               <Kpi label="Chi mỗi kỳ" value={vnd(r.costPerDraw)} hint={r.bets.map((b: any) => b.label).join(', ')} />
               <Kpi label="Kết quả TB / phiên" value={vnd(r.meanNet.mean)} hint={`KTC 95%: ${vnd(r.meanNet.low)} – ${vnd(r.meanNet.high)}`} tone="bad" />
               <Kpi label="Khả năng phiên có lãi" value={pct(r.probabilityProfit, 1)} />
-              <Kpi label="Khả năng mất > 50% vốn phiên" value={pct(r.probabilityLossOverHalf, 1)} tone="warn" />
+              <Kpi label="Khả năng mất trên 50% vốn phiên" value={pct(r.probabilityLossOverHalf, 1)} tone="warn" />
             </div>
-            <Card title="Phân phối kết quả ròng mỗi phiên" subtitle={`${num(r.sessions)} phiên × ${r.drawsPerSession} kỳ · seed ${r.seed} · lần chạy #${r.modelRunId}`}>
+            <Card title="Phân phối kết quả ròng mỗi phiên" subtitle={`${num(r.sessions)} phiên, mỗi phiên ${r.drawsPerSession} kỳ. Seed ${r.seed}, lần chạy #${r.modelRunId}.`}>
               <Chart option={histOpt} height={260} ariaLabel="Phân phối kết quả ròng mỗi phiên chơi" />
               <p className="mt-2 text-xs text-muted">
-                Phân vị: 5% {vnd(r.percentiles.p5)} · 25% {vnd(r.percentiles.p25)} · trung vị {vnd(r.percentiles.p50)} · 75% {vnd(r.percentiles.p75)} · 95% {vnd(r.percentiles.p95)}
-                {r.stoppedEarly ? ` · ${num(r.stoppedEarly)} phiên dừng vì chạm mức lỗ` : ''}
+                Phân vị 5%: <span className="measured">{vnd(r.percentiles.p5)}</span>. 25%: <span className="measured">{vnd(r.percentiles.p25)}</span>. Trung vị: <span className="measured">{vnd(r.percentiles.p50)}</span>. 75%: <span className="measured">{vnd(r.percentiles.p75)}</span>. 95%: <span className="measured">{vnd(r.percentiles.p95)}</span>.
+                {r.stoppedEarly ? ` ${num(r.stoppedEarly)} phiên dừng vì chạm mức lỗ.` : ''}
               </p>
             </Card>
           </>
@@ -418,7 +432,7 @@ function ResultsTab() {
         <Table head={['Kỳ', 'Ngày', 'Kết quả', 'Tổng', 'Loại', 'Trạng thái']}>
           {q.data.map((d) => (
             <tr key={d.id}>
-              <Td className="tabular">#{d.draw_code}</Td>
+              <Td className="measured">#{d.draw_code}</Td>
               <Td className="text-xs text-muted">{d.draw_date}</Td>
               <Td>
                 <div className="flex gap-1">
@@ -427,7 +441,7 @@ function ResultsTab() {
                   <Dice v={d.d3} />
                 </div>
               </Td>
-              <Td className="tabular">{d.total}</Td>
+              <Td className="measured">{d.total}</Td>
               <Td>{d.total >= 12 ? 'Lớn' : d.total <= 9 ? 'Nhỏ' : 'Hoà'}</Td>
               <Td>{d.verification_status === 'verified' ? <Badge tone="good">Đã xác minh</Badge> : <Badge tone="warn">Chưa xác minh</Badge>}</Td>
             </tr>

@@ -86,20 +86,40 @@ export function SplitDrawCard({ split, onSaved }: { split: any; onSaved: () => v
               <Kpi label="Kỳ vọng / vé (ước tính)" value={pct(split.returnRatioEstimate, 0)} tone={split.returnRatioEstimate >= 1 ? 'good' : 'warn'} hint={`≈ ${mil(split.tickets)} lần dự thưởng`} />
               <Kpi label="Kỳ vọng / vé (thận trọng)" value={pct(split.returnRatioConservative, 0)} tone={split.returnRatioConservative >= 1 ? 'good' : 'warn'} hint={`≈ ${mil(split.ticketsConservative)} (+${num((cfg.sales_growth ?? 0) * 100)}% doanh số)`} />
               <Kpi label="Còn có lợi khi số vé dưới" value={mil(split.breakEvenTickets)} hint="Điểm hoà vốn (sau thuế)" />
-              <Kpi label="Khả năng thực sự chia" value={pct(split.pSplitHappens, 1)} hint="= không ai trúng Độc đắc kỳ đó" />
+              <Kpi label="Khả năng thực sự chia" value={pct(split.pSplitHappens, 1)} hint="Không ai trúng Độc đắc kỳ đó" />
             </div>
-            <p className="text-sm text-muted">
-              Kỳ {cfg.date} lúc {cfg.time} · Độc đắc {(cfg.jackpot / 1e9).toLocaleString('vi-VN', { maximumFractionDigits: 2 })} tỷ
-              {split.estimate && ` · ước lượng từ ${num(split.estimate.winnersUsed)} vé trúng kỳ tham chiếu (95%: ${mil(split.estimate.low)} – ${mil(split.estimate.high)})`}
-              {cfg.reference_note && ` · ${cfg.reference_note}`} · cập nhật {dateTime(cfg.updatedAt)}
-            </p>
+            <dl className="grid gap-x-6 gap-y-3 text-sm sm:grid-cols-2 lg:grid-cols-4">
+              <div>
+                <dt className="text-xs text-muted">Kỳ chia giải</dt>
+                <dd className="measured text-cool">
+                  {cfg.date} {cfg.time}
+                </dd>
+              </div>
+              <div>
+                <dt className="text-xs text-muted">Độc đắc sẽ chia</dt>
+                <dd className="measured text-ink">{(cfg.jackpot / 1e9).toLocaleString('vi-VN', { maximumFractionDigits: 2 })} tỷ</dd>
+              </div>
+              {split.estimate && (
+                <div>
+                  <dt className="text-xs text-muted">Ước lượng từ {num(split.estimate.winnersUsed)} vé trúng kỳ tham chiếu (95%)</dt>
+                  <dd className="measured text-ink-2">
+                    {mil(split.estimate.low)} đến {mil(split.estimate.high)}
+                  </dd>
+                </div>
+              )}
+              <div>
+                <dt className="text-xs text-muted">Cập nhật</dt>
+                <dd className="measured text-cool">{dateTime(cfg.updatedAt)}</dd>
+              </div>
+            </dl>
+            {cfg.reference_note && <p className="text-xs text-muted">Nguồn: {cfg.reference_note}</p>}
             <Table head={['Hạng', 'Xác suất / vé', 'Người khác cùng trúng (kỳ vọng)', 'Bạn nhận nếu trúng (kỳ vọng)']}>
               {split.tiers.map((t: any) => (
                 <tr key={t.code}>
                   <Td>{t.name}</Td>
-                  <Td className="tabular">1 / {num(1 / t.probability)}</Td>
-                  <Td className="tabular">{num(t.expectedOtherWinners, 1)}</Td>
-                  <Td className="tabular">{vnd(t.expectedAmountIfWin)}</Td>
+                  <Td className="measured">1 / {num(1 / t.probability)}</Td>
+                  <Td className="measured">{num(t.expectedOtherWinners, 1)}</Td>
+                  <Td className="measured">{vnd(t.expectedAmountIfWin)}</Td>
                 </tr>
               ))}
             </Table>
@@ -108,7 +128,7 @@ export function SplitDrawCard({ split, onSaved }: { split: any; onSaved: () => v
           <Notice tone="info">Chưa có kỳ chia giải nào được xác nhận. Khi Vietlott công bố Độc đắc vượt 12 tỷ, hãy nhập thông tin bên dưới.</Notice>
         )}
 
-        <details className="rounded-lg border border-line p-3" open={!ok}>
+        <details className="rounded-[var(--radius-pill)] border border-rule p-3" open={!ok}>
           <summary className="cursor-pointer text-sm font-medium">Cập nhật kỳ chia giải (quản trị viên)</summary>
           <div className="mt-3 grid gap-3 sm:grid-cols-4">
             <Field label="Ngày kỳ chia giải">

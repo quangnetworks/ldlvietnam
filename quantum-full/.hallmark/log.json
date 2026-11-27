@@ -1,0 +1,25 @@
+[
+ {
+  "mode": "redesign",
+  "depth": "full",
+  "scope": "app",
+  "shape": "app screen",
+  "theme": "console",
+  "axes": "dark/grotesk-sans/chromatic-amber",
+  "nav": "kept sidebar",
+  "footer": "none (app)",
+  "imagery": "product figures only",
+  "photos": [],
+  "signature": "the daily decision set as a reading",
+  "sections": [
+   "Today reading",
+   "Predictability reading",
+   "XSKT reading",
+   "Bingo18 reading"
+  ],
+  "waived": [],
+  "fingerprint": "console-graphite-bevietnampro-plexmono",
+  "prompt": "lottery probability analytics workbench",
+  "date": "2026-11-27"
+ }
+]

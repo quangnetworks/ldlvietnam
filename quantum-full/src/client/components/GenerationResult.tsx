@@ -54,8 +54,8 @@ export function GenerationResult({ r, onSaved, gameCode }: { r: any; onSaved?: (
       >
         <ol className="grid gap-2 xl:grid-cols-2">
           {r.tickets.map((t: any, i: number) => (
-            <li key={i} className="flex items-center gap-3 rounded-lg border border-line bg-bg/60 px-3 py-2.5">
-              <span className="tabular w-6 text-xs text-muted">{i + 1}</span>
+            <li key={i} className="flex items-center gap-3 rounded-[var(--radius-pill)] border border-rule bg-paper/60 px-3 py-2.5">
+              <span className="measured w-6 text-xs text-muted">{i + 1}</span>
               <Balls main={t.main} special={t.special} size="md" />
               <span className="ml-auto text-[11px] text-muted" title="Ước lượng mức phổ biến (heuristic)">
                 phổ biến {Math.round(t.popularity)}%
@@ -64,7 +64,7 @@ export function GenerationResult({ r, onSaved, gameCode }: { r: any; onSaved?: (
           ))}
         </ol>
         {saveOpen && (
-          <div className="mt-4 grid gap-3 rounded-lg border border-line bg-surface-2 p-4 sm:grid-cols-5">
+          <div className="mt-4 grid gap-3 rounded-[var(--radius-pill)] border border-rule bg-paper-3 p-4 sm:grid-cols-5">
             <Field label="Tên danh mục">
               <Input value={save.name} onChange={(e) => setSave({ ...save, name: e.target.value })} />
             </Field>
@@ -97,7 +97,7 @@ export function GenerationResult({ r, onSaved, gameCode }: { r: any; onSaved?: (
       </div>
       <div className="grid gap-5 lg:grid-cols-2">
         <Card title="Cách sinh & trạng thái kiểm định">
-          <p className="text-sm leading-relaxed text-slate-300">{r.explanation}</p>
+          <p className="text-sm leading-relaxed text-ink-2">{r.explanation}</p>
           <dl className="mt-4 grid grid-cols-2 gap-x-4 gap-y-2 text-xs">
             <dt className="text-muted">Thuật toán</dt>
             <dd>
@@ -112,7 +112,7 @@ export function GenerationResult({ r, onSaved, gameCode }: { r: any; onSaved?: (
             <dt className="text-muted">Mốc cắt dữ liệu</dt>
             <dd>{r.dataCutoff.before ? dateTime(r.dataCutoff.before) : 'Toàn bộ dữ liệu hiện có'}</dd>
             <dt className="text-muted">Dataset hash</dt>
-            <dd className="truncate font-mono" title={r.datasetHash}>
+            <dd className="truncate measured" title={r.datasetHash}>
               {r.datasetHash.slice(0, 16)}…
             </dd>
           </dl>
@@ -121,22 +121,22 @@ export function GenerationResult({ r, onSaved, gameCode }: { r: any; onSaved?: (
           </div>
           {r.relaxedConstraints && (
             <div className="mt-2">
-              <Notice tone="warn">Không tìm được đủ vé thoả giới hạn trùng lặp — đã nới ràng buộc cho một số vé.</Notice>
+              <Notice tone="warn">Không tìm được đủ vé thoả giới hạn trùng lặp, nên đã nới ràng buộc cho một số vé.</Notice>
             </div>
           )}
         </Card>
         <Card title="Xác suất & kỳ vọng">
           <dl className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
             <dt className="text-muted">Tổng số tổ hợp</dt>
-            <dd className="tabular">{Number(r.probability.totalCombinations).toLocaleString('vi-VN')}</dd>
+            <dd className="measured">{Number(r.probability.totalCombinations).toLocaleString('vi-VN')}</dd>
             <dt className="text-muted">P(Jackpot) danh mục</dt>
-            <dd className="tabular">{oneIn(r.probability.jackpotOneIn)}</dd>
+            <dd className="measured">{oneIn(r.probability.jackpotOneIn)}</dd>
             <dt className="text-muted">P(≥1 vé trúng giải) ≈</dt>
-            <dd className="tabular">{pct(r.probability.anyPrizeAtLeastOneApprox, 2)}</dd>
+            <dd className="measured">{pct(r.probability.anyPrizeAtLeastOneApprox, 2)}</dd>
             <dt className="text-muted">Kỳ vọng tiền thưởng / vé</dt>
-            <dd className="tabular">{vnd(r.probability.expectedValuePerTicket.expectedPrize)}</dd>
+            <dd className="measured">{vnd(r.probability.expectedValuePerTicket.expectedPrize)}</dd>
             <dt className="text-muted">Kỳ vọng ròng / vé</dt>
-            <dd className="tabular text-amber-300">{vnd(r.probability.expectedValuePerTicket.expectedNet)}</dd>
+            <dd className="measured text-warn">{vnd(r.probability.expectedValuePerTicket.expectedNet)}</dd>
           </dl>
           <ul className="mt-3 list-disc space-y-1 pl-4 text-xs text-muted">
             {r.probability.expectedValuePerTicket.notes.map((n: string) => (

@@ -16,7 +16,7 @@ import { syncXskt } from '../services/xsktSync';
 export const xsktRoutes = new Hono<AppEnv>();
 
 const RegionEnum = z.enum(['mb', 'mt', 'mn']);
-const DATA_NOTICE = 'Dữ liệu XSKT từ nguồn mở bên thứ ba (GitHub, MIT), trạng thái CHƯA XÁC MINH — đối chiếu kết quả chính thức của công ty XSKT khi cần.';
+const DATA_NOTICE = 'Dữ liệu XSKT từ nguồn mở bên thứ ba (GitHub, MIT), trạng thái CHƯA XÁC MINH, đối chiếu kết quả chính thức của công ty XSKT khi cần.';
 
 async function loadDraws(db: D1Database, region: Region, station?: string): Promise<XsktDraw[]> {
   const sql = `SELECT station, draw_date, numbers_json FROM xskt_draws WHERE region = ?${station ? ' AND station = ?' : ''} ORDER BY draw_date, station`;
@@ -141,15 +141,15 @@ xsktRoutes.get('/xskt/value', async (c) => {
       const cons = Math.round(T * (1 + split.sales_growth));
       const pre = splitDrawEV(lotto, split.jackpot, cons, LOTTO535_SPLIT_SHARES, false);
       const post = splitDrawEV(lotto, split.jackpot, cons, LOTTO535_SPLIT_SHARES, true);
-      vietlott.push({ code: 'lotto535_split', name: `Lotto 5/35 — kỳ Chia giải ${split.date}`, returnRatio: pre.returnRatio, returnRatioAfterTax: post.returnRatio, note: `≈ ${(cons / 1e6).toLocaleString('vi-VN', { maximumFractionDigits: 2 })} triệu lần dự thưởng (thận trọng)` });
-    } else vietlott.push({ code: 'lotto535_split', name: `Lotto 5/35 — kỳ Chia giải ${split.date}`, returnRatio: NaN, returnRatioAfterTax: NaN, note: 'Xem đánh giá chi tiết ở trang Quyết định hôm nay' });
+      vietlott.push({ code: 'lotto535_split', name: `Lotto 5/35, kỳ Chia giải ${split.date}`, returnRatio: pre.returnRatio, returnRatioAfterTax: post.returnRatio, note: `≈ ${(cons / 1e6).toLocaleString('vi-VN', { maximumFractionDigits: 2 })} triệu lần dự thưởng (thận trọng)` });
+    } else vietlott.push({ code: 'lotto535_split', name: `Lotto 5/35, kỳ Chia giải ${split.date}`, returnRatio: NaN, returnRatioAfterTax: NaN, note: 'Xem đánh giá chi tiết ở trang Quyết định hôm nay' });
   }
   return c.json({
     data: {
       xskt,
       vietlott,
       insights: [
-        'Vé XSKT trả lại cố định khoảng 50% tiền vé (trước thuế) — cao hơn Lotto 5/35 kỳ thường (31–45%) nhưng không bao giờ có kỳ vọng dương.',
+        'Vé XSKT trả lại cố định khoảng 50% tiền vé (trước thuế), cao hơn Lotto 5/35 kỳ thường (31 đến 45%) nhưng không bao giờ có kỳ vọng dương.',
         'Thời điểm duy nhất có thể có lợi thế là kỳ Chia giải Độc đắc của Lotto 5/35 (xem trang Quyết định hôm nay).',
         'Mọi vé XSKT có cùng xác suất: chọn số “đẹp”, đài “dễ trúng” hay mua theo dự báo không làm thay đổi kỳ vọng.',
       ],

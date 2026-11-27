@@ -31,7 +31,7 @@ function useRunner() {
 function RunMeta({ res }: { res: any }) {
   return (
     <p className="mt-3 text-[11px] text-muted">
-      Lần chạy #{res.modelRunId} · v{res.modelVersion} · seed {res.seed} · {res.dataDrawCount} kỳ dữ liệu · dataset <span className="font-mono">{res.datasetHash.slice(0, 12)}…</span>
+      Lần chạy <span className="measured text-cool">#{res.modelRunId}</span>, phiên bản <span className="measured">v{res.modelVersion}</span>, seed <span className="measured">{res.seed}</span>, {res.dataDrawCount} kỳ dữ liệu. Mã băm dữ liệu <span className="measured">{res.datasetHash.slice(0, 12)}…</span>
     </p>
   );
 }
@@ -82,10 +82,10 @@ function Bayes() {
             <Table head={['Độ mạnh prior', 'Min', 'Max', 'Chênh']}>
               {r.sensitivity.map((s: any) => (
                 <tr key={s.priorStrength}>
-                  <Td className="tabular">{s.priorStrength}</Td>
-                  <Td className="tabular">{num(s.minMean, 5)}</Td>
-                  <Td className="tabular">{num(s.maxMean, 5)}</Td>
-                  <Td className="tabular">{num(s.spread, 5)}</Td>
+                  <Td className="measured">{s.priorStrength}</Td>
+                  <Td className="measured">{num(s.minMean, 5)}</Td>
+                  <Td className="measured">{num(s.maxMean, 5)}</Td>
+                  <Td className="measured">{num(s.spread, 5)}</Td>
                 </tr>
               ))}
             </Table>
@@ -124,10 +124,10 @@ function Markov() {
             {r.lagCorrelation.map((l: any) => (
               <tr key={l.lag}>
                 <Td>{l.lag}</Td>
-                <Td className="tabular">{num(l.meanIndicatorAcf, 4)}</Td>
-                <Td className="tabular">{num(l.zIndicator, 2)}</Td>
-                <Td className="tabular">{num(l.sumAcf, 4)}</Td>
-                <Td className="tabular">{pv(l.pSum)}</Td>
+                <Td className="measured">{num(l.meanIndicatorAcf, 4)}</Td>
+                <Td className="measured">{num(l.zIndicator, 2)}</Td>
+                <Td className="measured">{num(l.sumAcf, 4)}</Td>
+                <Td className="measured">{pv(l.pSum)}</Td>
               </tr>
             ))}
           </Table>
@@ -183,11 +183,11 @@ function MonteCarlo() {
             {r.tiers.map((t: any) => (
               <tr key={t.code}>
                 <Td>{t.name}</Td>
-                <Td className="tabular">{num(t.hits)}</Td>
-                <Td className="tabular">{t.observedRate.toExponential(3)}</Td>
-                <Td className="tabular">{t.theoreticalRate.toExponential(3)}</Td>
-                <Td className="tabular text-xs text-muted">
-                  {t.ci95.low.toExponential(2)} – {t.ci95.high.toExponential(2)}
+                <Td className="measured">{num(t.hits)}</Td>
+                <Td className="measured">{t.observedRate.toExponential(3)}</Td>
+                <Td className="measured">{t.theoreticalRate.toExponential(3)}</Td>
+                <Td className="measured text-xs text-muted">
+                  từ {t.ci95.low.toExponential(2)} đến {t.ci95.high.toExponential(2)}
                 </Td>
                 <Td>{t.consistent ? <Badge tone="good">Có</Badge> : <Badge tone="warn">Lệch</Badge>}</Td>
               </tr>
@@ -218,7 +218,7 @@ function Ml() {
       <div className="flex flex-wrap items-end gap-3">
         {Object.entries(ML_LABEL).map(([k, v]) => (
           <label key={k} className="flex items-center gap-2 text-sm">
-            <input type="checkbox" className="h-4 w-4 accent-blue-500" checked={models.includes(k)} onChange={() => setModels((m) => (m.includes(k) ? m.filter((x) => x !== k) : [...m, k]))} />
+            <input type="checkbox" className="h-4 w-4 accent-accent" checked={models.includes(k)} onChange={() => setModels((m) => (m.includes(k) ? m.filter((x) => x !== k) : [...m, k]))} />
             {v}
           </label>
         ))}
@@ -239,11 +239,11 @@ function Ml() {
             {r.models.map((m: any) => (
               <tr key={m.model}>
                 <Td>{ML_LABEL[m.model]}</Td>
-                <Td className="tabular">{num(m.test.logLoss, 5)}</Td>
-                <Td className="tabular text-muted">{num(m.baseline.logLoss, 5)}</Td>
-                <Td className="tabular">{pct(m.brierSkill, 3)}</Td>
-                <Td className="tabular">{num(m.test.auc, 3)}</Td>
-                <Td className="tabular whitespace-nowrap text-xs">
+                <Td className="measured">{num(m.test.logLoss, 5)}</Td>
+                <Td className="measured text-muted">{num(m.baseline.logLoss, 5)}</Td>
+                <Td className="measured">{pct(m.brierSkill, 3)}</Td>
+                <Td className="measured">{num(m.test.auc, 3)}</Td>
+                <Td className="measured whitespace-nowrap text-xs">
                   {num(m.logLossDiff.mean, 5)} [{num(m.logLossDiff.low, 5)}; {num(m.logLossDiff.high, 5)}]
                 </Td>
                 <Td>{m.beatsBaseline ? <Badge tone="warn">Vượt (cần xác nhận)</Badge> : <Badge>Không vượt</Badge>}</Td>
@@ -289,9 +289,9 @@ function Behavior() {
             {r.features.map((f: any) => (
               <tr key={f.key}>
                 <Td>{f.label}</Td>
-                <Td className="tabular">{num(f.value, 2)}</Td>
-                <Td className="tabular text-muted">{f.weight}</Td>
-                <Td className="tabular">{num(f.contribution, 2)}</Td>
+                <Td className="measured">{num(f.value, 2)}</Td>
+                <Td className="measured text-muted">{f.weight}</Td>
+                <Td className="measured">{num(f.contribution, 2)}</Td>
               </tr>
             ))}
           </Table>

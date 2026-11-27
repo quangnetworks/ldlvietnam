@@ -350,7 +350,7 @@ export function predictabilityAudit(rules: GameRules, draws: DrawRecord[], opts:
   let headline: string;
   if (winners.length) {
     verdict = 'exploitable';
-    headline = 'PHÁT HIỆN CHIẾN LƯỢC VƯỢT NGẪU NHIÊN — CẦN KIỂM CHỨNG';
+    headline = 'PHÁT HIỆN CHIẾN LƯỢC VƯỢT NGẪU NHIÊN: CẦN KIỂM CHỨNG';
     explanation.push(`Chiến lược vượt chuẩn sau hiệu chỉnh đa kiểm định: ${winners.map((w) => `${w.name} (q = ${f(w.qValue, 3)})`).join('; ')}.`);
     explanation.push('Hãy kiểm tra chất lượng dữ liệu (kỳ nhập sai, trùng) và xác nhận lại trên các kỳ quay MỚI trước khi tin vào kết quả này.');
   } else if (flagged.length) {
@@ -360,10 +360,10 @@ export function predictabilityAudit(rules: GameRules, draws: DrawRecord[], opts:
     explanation.push('Không chiến lược chọn số nào vượt chọn ngẫu nhiên trên dữ liệu kiểm tra walk-forward. Nên rà soát dữ liệu nhập (kỳ chưa xác minh) trước khi diễn giải.');
   } else {
     verdict = 'random';
-    headline = 'KHÔNG CÓ QUY LUẬT KHAI THÁC ĐƯỢC — KỲ QUAY KHỚP NGẪU NHIÊN';
+    headline = 'KHÔNG CÓ QUY LUẬT KHAI THÁC ĐƯỢC, KỲ QUAY KHỚP NGẪU NHIÊN';
     explanation.push(`${total} kiểm định đều không có ý nghĩa sau hiệu chỉnh Benjamini–Hochberg (p nhỏ nhất = ${f(minP, 3)}; với ${total} kiểm định, gặp p cỡ này do ngẫu nhiên là bình thường).`);
     explanation.push('Không chiến lược nóng / lạnh / lặp lại / gan nào cho số trùng nhiều hơn chọn ngẫu nhiên. Vì vậy không thể suy ra "thuật toán quay số" để đoán số.');
   }
-  explanation.push('Điều toán học làm được: phối hợp nhiều vé để tăng xác suất có ít nhất một vé trúng (trúng đều hơn) với cùng chi phí — giá trị kỳ vọng không đổi.');
+  explanation.push('Điều toán học làm được: phối hợp nhiều vé để tăng xác suất có ít nhất một vé trúng (trúng đều hơn) với cùng chi phí, giá trị kỳ vọng không đổi.');
   return { ...base, tests, strategies, verdict, headline, explanation };
 }

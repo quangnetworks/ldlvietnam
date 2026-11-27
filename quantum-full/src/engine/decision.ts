@@ -223,20 +223,20 @@ export function decideToday(input: DecisionInput): Decision {
     if (!split || split.returnRatio < 1) {
       const reasons = [
         split
-          ? `Kỳ chia giải ${split.time} có kỳ vọng thận trọng ${(split.returnRatio * 100).toFixed(0)}% (với ≈ ${mil(split.split!.ticketsConservative)} lần dự thưởng) — chưa vượt giá vé.`
+          ? `Kỳ chia giải ${split.time} có kỳ vọng thận trọng ${(split.returnRatio * 100).toFixed(0)}% (với ≈ ${mil(split.split!.ticketsConservative)} lần dự thưởng), chưa vượt giá vé.`
           : 'Hôm nay không có kỳ Chia giải Độc đắc đã được xác nhận (cập nhật ở thẻ “Kỳ Chia giải Độc đắc”).',
-        'Ngoài kỳ chia giải, mỗi vé chỉ hoàn lại khoảng 31–45% — không mua để dồn ngân sách cho kỳ có lợi thế.',
+        'Ngoài kỳ chia giải, mỗi vé chỉ hoàn lại khoảng 31 đến 45%, không mua để dồn ngân sách cho kỳ có lợi thế.',
       ];
-      return skip('KHÔNG MUA — CHỜ KỲ CHIA GIẢI CÓ LỢI THẾ', reasons);
+      return skip('KHÔNG MUA: CHỜ KỲ CHIA GIẢI CÓ LỢI THẾ', reasons);
     }
     // Ngân sách tích luỹ: không chia theo số ngày còn lại (đã để dành), vẫn giới hạn bởi hạn mức kỳ / tháng / năm.
     const avail = Math.max(0, Math.min(input.budgetPerDraw, input.monthRemaining, input.yearRemaining) - input.spentToday);
     const n = Math.floor(avail / split.ticketPrice);
-    if (n < 1) return skip('KHÔNG MUA — HẾT HẠN MỨC', [`Hạn mức khả dụng cho kỳ chia giải: ${vnd(avail)}.`]);
+    if (n < 1) return skip('KHÔNG MUA: HẾT HẠN MỨC', [`Hạn mức khả dụng cho kỳ chia giải: ${vnd(avail)}.`]);
     const s = split.split!;
     return {
       action: 'buy',
-      headline: `MUA ${n} VÉ ${split.gameName.toUpperCase()} — KỲ CHIA GIẢI ${split.time}`,
+      headline: `MUA ${n} VÉ ${split.gameName.toUpperCase()}, KỲ CHIA GIẢI ${split.time}`,
       pick: split,
       tickets: n,
       cost: n * split.ticketPrice,
@@ -248,8 +248,8 @@ export function decideToday(input: DecisionInput): Decision {
         `Kỳ chia giải: toàn bộ Độc đắc ${(s.jackpot / 1e9).toLocaleString('vi-VN', { maximumFractionDigits: 2 })} tỷ được trả cho người chơi kỳ này (nếu không ai trúng Độc đắc thì chia cho các hạng Nhất–Năm).`,
         `Kỳ vọng mỗi vé: ${(s.returnRatioEstimate * 100).toFixed(0)}% với ≈ ${mil(s.tickets)} lần dự thưởng; thận trọng ${(split.returnRatio * 100).toFixed(0)}% với ≈ ${mil(s.ticketsConservative)}.`,
         s.breakEvenTickets ? `Còn có lợi khi tổng số lần dự thưởng dưới ≈ ${mil(s.breakEvenTickets)}.` : '',
-        `Lợi thế chỉ thành hiện thực qua nhiều kỳ chia giải: mỗi vé chỉ ≈ 1,4% trúng từ hạng Năm trở lên — đa số kỳ sẽ không trúng gì.`,
-        `Chọn số ít phổ biến (có số 32–35, tránh dãy ngày sinh) để ít người cùng chia trong mỗi hạng.`,
+        `Lợi thế chỉ thành hiện thực qua nhiều kỳ chia giải: mỗi vé chỉ ≈ 1,4% trúng từ hạng Năm trở lên, đa số kỳ sẽ không trúng gì.`,
+        `Chọn số ít phổ biến (có số 32 đến 35, tránh dãy ngày sinh) để ít người cùng chia trong mỗi hạng.`,
       ].filter(Boolean),
       principles,
     };
@@ -259,11 +259,11 @@ export function decideToday(input: DecisionInput): Decision {
   const maxTickets = Math.floor(available / best.ticketPrice);
   if (maxTickets < 1)
     return skip('KHÔNG MUA HÔM NAY', [
-      available <= 0 && input.spentToday > 0 ? `Đã chi ${input.spentToday.toLocaleString('vi-VN')}đ hôm nay — đạt mức cho phép.` : 'Ngân sách khả dụng hôm nay không đủ cho 1 vé.',
+      available <= 0 && input.spentToday > 0 ? `Đã chi ${input.spentToday.toLocaleString('vi-VN')}đ hôm nay, đạt mức cho phép.` : 'Ngân sách khả dụng hôm nay không đủ cho 1 vé.',
       `Hạn mức tháng còn ${input.monthRemaining.toLocaleString('vi-VN')}đ cho ${daysLeft} ngày (≈ ${dailyFromMonth.toLocaleString('vi-VN')}đ/ngày).`,
     ]);
   if (input.mode === 'value' && best.returnRatio < input.valueThreshold)
-    return skip('KHÔNG MUA — GIÁ TRỊ KỲ VỌNG THẤP', [
+    return skip('KHÔNG MUA: GIÁ TRỊ KỲ VỌNG THẤP', [
       `Tỷ lệ hoàn vốn kỳ vọng tốt nhất hôm nay là ${(best.returnRatio * 100).toFixed(1)}% (${best.gameName} ${best.time}), thấp hơn ngưỡng ${(input.valueThreshold * 100).toFixed(0)}% bạn đặt.`,
       best.breakEvenJackpot ? `Jackpot hoà vốn lý thuyết của ${best.gameName}: ≈ ${Math.round(best.breakEvenJackpot / 1e9).toLocaleString('vi-VN')} tỷ đồng (chưa tính rủi ro chia giải).` : '',
     ].filter(Boolean));
@@ -271,7 +271,7 @@ export function decideToday(input: DecisionInput): Decision {
   const cost = tickets * best.ticketPrice;
   const reasons = [
     `${best.gameName} kỳ ${best.time} có tỷ lệ hoàn vốn kỳ vọng${input.applyTax ? ' sau thuế' : ''} cao nhất trong các kỳ còn mở bán hôm nay: ${(best.returnRatio * 100).toFixed(1)}%.`,
-    best.jackpotIsMinimum ? 'Jackpot đang tính theo mức tối thiểu — hãy cập nhật giá trị hiện tại từ vietlott.vn để đánh giá chính xác hơn.' : `Jackpot dùng để tính: ${Math.round((best.jackpotUsed ?? 0) / 1e6).toLocaleString('vi-VN')} triệu đồng.`,
+    best.jackpotIsMinimum ? 'Jackpot đang tính theo mức tối thiểu, hãy cập nhật giá trị hiện tại từ vietlott.vn để đánh giá chính xác hơn.' : `Jackpot dùng để tính: ${Math.round((best.jackpotUsed ?? 0) / 1e6).toLocaleString('vi-VN')} triệu đồng.`,
     `Ngân sách khả dụng hôm nay: ${available.toLocaleString('vi-VN')}đ = min(hạn mức/kỳ, hạn mức tháng còn lại ÷ ${daysLeft} ngày, hạn mức năm) − đã chi hôm nay.`,
     best.expectedLossPerTicket < 0
       ? `Kỳ vọng LÃI cho ${tickets} vé ≈ ${Math.round(-tickets * best.expectedLossPerTicket).toLocaleString('vi-VN')}đ (trung bình qua nhiều kỳ tương tự).`
@@ -281,7 +281,7 @@ export function decideToday(input: DecisionInput): Decision {
   if (candidates.length > 1) reasons.push(`Lựa chọn thay thế: ${candidates.slice(1, 3).map((c) => `${c.gameName} ${c.time} (${(c.returnRatio * 100).toFixed(1)}%)`).join(', ')}.`);
   return {
     action: 'buy',
-    headline: `MUA ${tickets} VÉ ${best.gameName.toUpperCase()} — KỲ ${best.time}`,
+    headline: `MUA ${tickets} VÉ ${best.gameName.toUpperCase()}, KỲ ${best.time}`,
     pick: best,
     tickets,
     cost,

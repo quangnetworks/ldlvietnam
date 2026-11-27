@@ -3,7 +3,7 @@ import { CalendarCheck, Save, Sparkles } from 'lucide-react';
 import { apiFetch, ApiClientError } from '../lib/api';
 import { useApi } from '../lib/hooks';
 import { dateTime, num, pct, vnd } from '../lib/format';
-import { Badge, Button, Card, ErrorState, Field, Input, Kpi, LoadingBlock, Notice, PageHeader, Select, Table, Td } from '../components/ui';
+import { Badge, Reasons, Button, Card, ErrorState, Field, Input, Kpi, LoadingBlock, Notice, PageHeader, Select, Table, Td } from '../components/ui';
 import { GenerationResult } from '../components/GenerationResult';
 import { useToast } from '../components/toast';
 import { PredictabilitySummary } from './Predictability';
@@ -43,7 +43,7 @@ function JackpotEditor({ games, jackpots, onSaved }: { games: any[]; jackpots: a
     <Card title="Giá trị Jackpot hiện tại" subtitle="Nhập theo số liệu hiển thị trên vietlott.vn trước kỳ quay. Để trống ⇒ dùng mức tối thiểu.">
       <div className="space-y-4">
         {games.map((g) => (
-          <div key={g.code} className="rounded-lg border border-line p-3">
+          <div key={g.code} className="rounded-[var(--radius-pill)] border border-rule p-3">
             <div className="mb-2 flex items-center justify-between text-sm font-medium">
               {g.name}
               <span className="text-xs font-normal text-muted">{jackpots[g.code]?.updatedAt ? `Cập nhật ${dateTime(jackpots[g.code].updatedAt)}` : 'Chưa cập nhật'}</span>
@@ -111,20 +111,34 @@ export default function Today() {
 
   return (
     <>
-      <PageHeader title="Quyết định hôm nay" description="Gợi ý có nên mua hôm nay, mua kỳ nào và bao nhiêu vé — dựa trên lịch quay, giá trị kỳ vọng sau thuế với Jackpot hiện tại và kỷ luật ngân sách. Không dự đoán số." />
+      <PageHeader title="Quyết định hôm nay" description="Gợi ý có nên mua hôm nay, mua kỳ nào và bao nhiêu vé, dựa trên lịch quay, giá trị kỳ vọng sau thuế với Jackpot hiện tại và kỷ luật ngân sách. Không dự đoán số." />
       {q.error && <ErrorState error={q.error} onRetry={q.reload} />}
       {!q.data && !q.error && <LoadingBlock rows={6} />}
       {q.data && d && (
         <div className="space-y-5">
-          <section className={`rounded-xl border p-5 ${d.action === 'buy' ? 'border-primary/40 bg-primary/5' : 'border-line bg-surface'}`} aria-live="polite">
-            <div className="flex flex-wrap items-start justify-between gap-3">
+          {/* Signature: the day's decision set as a reading, cut from one surface with the record beside it. */}
+          <section aria-live="polite" className="panels lg:grid-cols-[minmax(0,1.7fr)_minmax(0,1fr)]">
+            <div className="flex flex-col gap-5 p-5 sm:p-7">
               <div>
-                <Badge tone={d.action === 'buy' ? 'info' : 'default'}>{d.action === 'buy' ? 'Đề xuất' : 'Khuyến nghị'}</Badge>
-                <h2 className="mt-2 text-xl font-semibold tracking-tight sm:text-2xl">{d.headline}</h2>
+                <Badge tone={d.action === 'buy' ? 'warn' : 'default'}>{d.action === 'buy' ? 'Đề xuất' : 'Khuyến nghị'}</Badge>
+                <h2 className="mt-3 max-w-[24ch] text-[length:var(--text-3xl)] font-medium leading-[1.05] tracking-[var(--tracking-display)] text-ink">{d.headline}</h2>
                 {d.pick && (
-                  <p className="mt-1 text-sm text-muted">
-                    Ngày {d.pick.date} · quay {d.pick.time} · ngừng bán sau khoảng {Math.max(0, Math.floor(d.pick.minutesUntilClose / 60))} giờ {d.pick.minutesUntilClose % 60} phút
-                  </p>
+                  <dl className="mt-4 flex flex-wrap gap-x-6 gap-y-2 text-sm">
+                    <div>
+                      <dt className="text-xs text-muted">Ngày quay</dt>
+                      <dd className="measured text-cool">{d.pick.date}</dd>
+                    </div>
+                    <div>
+                      <dt className="text-xs text-muted">Giờ quay</dt>
+                      <dd className="measured text-cool">{d.pick.time}</dd>
+                    </div>
+                    <div>
+                      <dt className="text-xs text-muted">Ngừng bán sau</dt>
+                      <dd className="measured text-ink-2">
+                        {Math.max(0, Math.floor(d.pick.minutesUntilClose / 60))} giờ {d.pick.minutesUntilClose % 60} phút
+                      </dd>
+                    </div>
+                  </dl>
                 )}
               </div>
               <div className="flex flex-wrap gap-2">
@@ -137,12 +151,37 @@ export default function Today() {
                   <CalendarCheck className="h-4 w-4" aria-hidden /> Ghi nhận quyết định
                 </Button>
               </div>
+              <div className="border-t border-rule pt-4">
+                <Reasons items={d.reasons} />
+              </div>
             </div>
-            <ul className="mt-4 list-disc space-y-1 pl-5 text-sm text-slate-300">
-              {d.reasons.map((r: string) => (
-                <li key={r}>{r}</li>
-              ))}
-            </ul>
+            <div className="flex flex-col justify-between gap-6 bg-paper-3 p-5 sm:p-7">
+              <div>
+                {d.pick || d.candidates[0] ? (
+                  <>
+                    <div className="text-xs font-medium text-muted">Hoàn lại kỳ vọng mỗi vé</div>
+                    <div className={`reading mt-3 text-[clamp(2.75rem,6vw,4.25rem)] ${(d.pick ?? d.candidates[0]).returnRatio >= 1 ? 'text-ok' : 'text-ink'}`}>{pct((d.pick ?? d.candidates[0]).returnRatio, 1)}</div>
+                    <div className="mt-2 text-xs text-muted">{d.pick ? `${d.pick.gameName}, kỳ ${d.pick.time}${d.pick.split ? ', kỳ Chia giải' : ''}` : `Tốt nhất còn mở bán: ${d.candidates[0].gameName} ${d.candidates[0].time}`}</div>
+                  </>
+                ) : (
+                  <>
+                    <div className="text-xs font-medium text-muted">Ngân sách giữ lại hôm nay</div>
+                    <div className="reading mt-3 text-[clamp(2.25rem,4.5vw,3.25rem)]">{vnd(d.allowance.available)}</div>
+                    <div className="mt-2 text-xs text-muted">Không còn kỳ quay nào mở bán hôm nay</div>
+                  </>
+                )}
+              </div>
+              <dl className="grid grid-cols-2 gap-px overflow-hidden rounded-[var(--radius-pill)] border border-rule bg-rule text-sm">
+                <div className="bg-paper-2 p-3">
+                  <dt className="text-xs text-muted">Chi phí</dt>
+                  <dd className="measured mt-1 text-ink">{vnd(d.cost)}</dd>
+                </div>
+                <div className="bg-paper-2 p-3">
+                  <dt className="text-xs text-muted">{d.expectedLoss < 0 ? 'Lãi kỳ vọng' : 'Lỗ kỳ vọng'}</dt>
+                  <dd className={`measured mt-1 ${d.expectedLoss < 0 ? 'text-ok' : 'text-warn'}`}>{vnd(Math.abs(d.expectedLoss))}</dd>
+                </div>
+              </dl>
+            </div>
           </section>
 
           <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
@@ -155,7 +194,7 @@ export default function Today() {
           {gen && <GenerationResult r={gen} gameCode={gen.gameCode} />}
 
           <div className="grid gap-5 lg:grid-cols-3">
-            <Card title="Các kỳ còn mở bán hôm nay" className="lg:col-span-2" subtitle="Xếp theo tỷ lệ hoàn vốn kỳ vọng (cao → thấp). Mọi tổ hợp số có xác suất như nhau.">
+            <Card title="Các kỳ còn mở bán hôm nay" className="lg:col-span-2" subtitle="Xếp theo tỷ lệ hoàn vốn kỳ vọng, cao xuống thấp. Mọi tổ hợp số có xác suất như nhau.">
               {d.candidates.length === 0 ? (
                 <p className="text-sm text-muted">Không còn kỳ quay nào mở bán hôm nay.</p>
               ) : (
@@ -166,12 +205,12 @@ export default function Today() {
                         {c.gameName} {c.split && <Badge tone="good">Chia giải</Badge>} {d.pick && d.pick.game === c.game && d.pick.time === c.time && <Badge tone="info">Chọn</Badge>}
                       </Td>
                       <Td>{c.time}</Td>
-                      <Td className="tabular whitespace-nowrap">
-                        {ty(c.jackpotUsed)} {c.jackpotIsMinimum && <span className="text-xs text-amber-300">(tối thiểu)</span>}
+                      <Td className="measured whitespace-nowrap">
+                        {ty(c.jackpotUsed)} {c.jackpotIsMinimum && <span className="text-xs text-warn">(tối thiểu)</span>}
                       </Td>
-                      <Td className="tabular">{pct(c.returnRatio, 1)}</Td>
-                      <Td className="tabular">{c.expectedLossPerTicket < 0 ? <span className="text-accent">lãi {vnd(-c.expectedLossPerTicket)}</span> : vnd(c.expectedLossPerTicket)}</Td>
-                      <Td className="tabular whitespace-nowrap">{c.split ? `≤ ${(c.split.breakEvenTickets / 1e6).toLocaleString('vi-VN', { maximumFractionDigits: 2 })} triệu vé` : ty(c.breakEvenJackpot)}</Td>
+                      <Td className="measured">{pct(c.returnRatio, 1)}</Td>
+                      <Td className="measured">{c.expectedLossPerTicket < 0 ? <span className="text-ok">lãi {vnd(-c.expectedLossPerTicket)}</span> : vnd(c.expectedLossPerTicket)}</Td>
+                      <Td className="measured whitespace-nowrap">{c.split ? `≤ ${(c.split.breakEvenTickets / 1e6).toLocaleString('vi-VN', { maximumFractionDigits: 2 })} triệu vé` : ty(c.breakEvenJackpot)}</Td>
                     </tr>
                   ))}
                 </Table>
@@ -201,13 +240,13 @@ export default function Today() {
                 </Button>
                 <dl className="grid grid-cols-2 gap-1 pt-2 text-xs">
                   <dt className="text-muted">Hạn mức/kỳ</dt>
-                  <dd className="tabular">{vnd(d.allowance.budgetPerDraw)}</dd>
+                  <dd className="measured">{vnd(d.allowance.budgetPerDraw)}</dd>
                   <dt className="text-muted">Tháng còn lại ÷ ngày</dt>
-                  <dd className="tabular">
+                  <dd className="measured">
                     {vnd(d.allowance.dailyFromMonth)} ({num(d.allowance.daysLeftInMonth)} ngày)
                   </dd>
                   <dt className="text-muted">Hạn mức năm còn</dt>
-                  <dd className="tabular">{vnd(d.allowance.yearRemaining)}</dd>
+                  <dd className="measured">{vnd(d.allowance.yearRemaining)}</dd>
                 </dl>
               </div>
             </Card>
@@ -220,7 +259,7 @@ export default function Today() {
             <div className="space-y-5">
               <PredictabilitySummary game={d.pick?.game ?? d.candidates[0]?.game ?? code} />
               <Card title="Nguyên tắc">
-              <ul className="list-disc space-y-2 pl-4 text-xs text-slate-300">
+              <ul className="list-disc space-y-2 pl-4 text-xs text-ink-2">
                 {d.principles.map((p: string) => (
                   <li key={p}>{p}</li>
                 ))}
