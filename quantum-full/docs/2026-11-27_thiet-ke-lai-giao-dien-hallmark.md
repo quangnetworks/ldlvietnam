@@ -56,3 +56,9 @@ Ngày: 2026-11-27 · Skill: Hallmark v2.0.0 (Nutlope/hallmark, commit `04977e1`,
 - Bước "đánh giá hoàn thiện" chạy bởi một agent riêng (`gates.md` § 6) chưa chạy, vì chỉ dùng agent riêng khi chủ dự án yêu cầu.
 - Các màn hình phụ (Data Center, Thống kê, AI Research, Backtesting, Kiểm soát vốn, Kiểm toán, Cài đặt) chỉ áp hệ thống mới qua component dùng chung.
   Bố cục của chúng giữ nguyên.
+
+## Triển khai
+
+- Nhánh `quantum/hallmark` đã qua CI (test, E2E, deploy) ở commit `07940f7`.
+- Khi merge vào `claude/charming-heisenberg-xtzan2`, git tự gộp với PR #8 (mô hình dự báo Bingo18). Bản gộp đạt typecheck, 178 test và sloplint sạch (0/0/0).
+- Deploy lại từ bản gộp, để production có cả giao diện mới lẫn PR #8.
