@@ -106,11 +106,11 @@ export function betLabel(b: BingoBet): string {
     case 'sum':
       return `Tổng ${b.value}`;
     case 'big':
-      return 'Lớn (tổng 12–18)';
+      return 'Lớn (tổng 12 đến 18)';
     case 'small':
-      return 'Nhỏ (tổng 3–9)';
+      return 'Nhỏ (tổng 3 đến 9)';
     case 'draw':
-      return 'Hoà (tổng 10–11)';
+      return 'Hoà (tổng 10 đến 11)';
   }
 }
 
@@ -283,7 +283,7 @@ export function simulateSessions(input: SessionSimInput): SessionSimResult {
   for (const b of input.bets) {
     const err = validateBet(b.bet);
     if (err) throw new RangeError(err);
-    if (!Number.isInteger(b.stakeUnits) || b.stakeUnits < 1 || b.stakeUnits > 100) throw new RangeError('Số lần tham gia mỗi cược phải 1–100');
+    if (!Number.isInteger(b.stakeUnits) || b.stakeUnits < 1 || b.stakeUnits > 100) throw new RangeError('Số lần tham gia mỗi cược phải 1 đến 100');
   }
   const work = input.drawsPerSession * input.sessions * input.bets.length;
   if (work > BINGO_SIM_MAX_WORK) throw new RangeError(`Khối lượng mô phỏng ${work} vượt giới hạn ${BINGO_SIM_MAX_WORK}`);

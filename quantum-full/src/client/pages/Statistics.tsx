@@ -13,7 +13,7 @@ function SampleNotice({ meta, sample }: { meta?: Record<string, any>; sample?: a
   const tone = sample.reliability === 'good' ? 'good' : sample.reliability === 'moderate' ? 'info' : 'warn';
   return (
     <Notice tone={tone}>
-      Cỡ mẫu: <b>{num(sample.draws)}</b> kỳ · Độ tin cậy: <b>{{ insufficient: 'không đủ', low: 'thấp', moderate: 'trung bình', good: 'tốt' }[sample.reliability as string]}</b> — {sample.note} {meta?.dataNotice}
+      Cỡ mẫu <b className="measured">{num(sample.draws)}</b> kỳ. Độ tin cậy: <b>{{ insufficient: 'không đủ', low: 'thấp', moderate: 'trung bình', good: 'tốt' }[sample.reliability as string]}</b>. {sample.note} {meta?.dataNotice}
     </Notice>
   );
 }
@@ -55,16 +55,16 @@ function FrequencyTab({ path }: { path: string }) {
         <Card title="Bản đồ nhiệt z-score" subtitle="Màu thể hiện độ lệch so với kỳ vọng, không phải xác suất tương lai.">
           <FrequencyHeatmap numbers={d.numbers} height={280} />
         </Card>
-        <Card title="Các số lệch nhiều nhất" subtitle="|z| > 2 xuất hiện ngẫu nhiên ở khoảng 5% số — cần hiệu chỉnh đa kiểm định.">
+        <Card title="Các số lệch nhiều nhất" subtitle="|z| > 2 vẫn xảy ra ngẫu nhiên ở khoảng 5% số, nên cần hiệu chỉnh đa kiểm định.">
           <Table head={['Số', 'Lần', 'Kỳ vọng', 'Tỷ lệ', 'z', 'Kỳ chưa về']}>
             {sorted.slice(0, 10).map((n: any) => (
               <tr key={n.number}>
-                <Td className="tabular font-semibold">{two(n.number)}</Td>
-                <Td className="tabular">{n.count}</Td>
-                <Td className="tabular text-muted">{num(n.expected, 1)}</Td>
-                <Td className="tabular text-muted">{pct(n.relative, 1)}</Td>
-                <Td className="tabular">{num(n.zScore, 2)}</Td>
-                <Td className="tabular text-muted">{n.lastSeenAgo ?? '—'}</Td>
+                <Td className="measured font-medium">{two(n.number)}</Td>
+                <Td className="measured">{n.count}</Td>
+                <Td className="measured text-muted">{num(n.expected, 1)}</Td>
+                <Td className="measured text-muted">{pct(n.relative, 1)}</Td>
+                <Td className="measured">{num(n.zScore, 2)}</Td>
+                <Td className="measured text-muted">{n.lastSeenAgo ?? '—'}</Td>
               </tr>
             ))}
           </Table>
@@ -107,10 +107,10 @@ function DistributionTab({ path }: { path: string }) {
             <Table head={['Số', 'Chưa về (kỳ)', 'Khoảng cách TB', 'Lớn nhất']}>
               {[...d.gaps].sort((a: any, b: any) => (b.currentGap ?? -1) - (a.currentGap ?? -1)).slice(0, 12).map((g: any) => (
                 <tr key={g.number}>
-                  <Td className="tabular font-semibold">{two(g.number)}</Td>
-                  <Td className="tabular">{g.currentGap ?? '—'}</Td>
-                  <Td className="tabular text-muted">{g.meanGap == null ? '—' : num(g.meanGap, 1)}</Td>
-                  <Td className="tabular text-muted">{g.maxGap}</Td>
+                  <Td className="measured font-medium">{two(g.number)}</Td>
+                  <Td className="measured">{g.currentGap ?? '—'}</Td>
+                  <Td className="measured text-muted">{g.meanGap == null ? '—' : num(g.meanGap, 1)}</Td>
+                  <Td className="measured text-muted">{g.maxGap}</Td>
                 </tr>
               ))}
             </Table>
@@ -139,9 +139,9 @@ function CombosTab({ path, hasTriplets }: { path: string; hasTriplets: boolean }
                   <Td>
                     <Balls main={r.numbers} size="sm" />
                   </Td>
-                  <Td className="tabular">{r.count}</Td>
-                  <Td className="tabular text-muted">{pv(r.pValue)}</Td>
-                  <Td className="tabular">{r.qValue < 0.05 ? <Badge tone="warn">{pv(r.qValue)}</Badge> : pv(r.qValue)}</Td>
+                  <Td className="measured">{r.count}</Td>
+                  <Td className="measured text-muted">{pv(r.pValue)}</Td>
+                  <Td className="measured">{r.qValue < 0.05 ? <Badge tone="warn">{pv(r.qValue)}</Badge> : pv(r.qValue)}</Td>
                 </tr>
               ))}
             </Table>

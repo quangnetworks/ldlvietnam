@@ -8,7 +8,7 @@ interface Ticket {
   special: number | null;
 }
 
-const BAR: Record<string, string> = { zero: 'bg-slate-500', below_cost: 'bg-warn', break_even: 'bg-accent', ten_x: 'bg-primary' };
+const BAR: Record<string, string> = { zero: 'bg-rule-2', below_cost: 'bg-warn', break_even: 'bg-ok', ten_x: 'bg-cool' };
 
 /** Xác suất CHÍNH XÁC của cả danh mục vé trong một kỳ (POST /portfolio/odds). */
 export function PortfolioOdds({ game, tickets }: { game: string; tickets: Ticket[] }) {
@@ -48,7 +48,7 @@ export function PortfolioOdds({ game, tickets }: { game: string; tickets: Ticket
             <Kpi label="Lỗ kỳ vọng" value={vnd(d.cost - d.expectedPayout)} tone="warn" hint="Không đổi dù chọn số thế nào" />
           </div>
           <div>
-            <div className="flex h-3 w-full overflow-hidden rounded-full bg-surface-2" role="img" aria-label="Phân phối kết quả của danh mục">
+            <div className="flex h-3 w-full overflow-hidden rounded-full bg-paper-3" role="img" aria-label="Phân phối kết quả của danh mục">
               {d.buckets.map((b: any) => (
                 <div key={b.code} className={BAR[b.code]} style={{ width: `${Math.max(0, b.probability) * 100}%` }} title={`${b.label}: ${pct(b.probability, 3)}`} />
               ))}
@@ -58,7 +58,7 @@ export function PortfolioOdds({ game, tickets }: { game: string; tickets: Ticket
                 <li key={b.code} className="flex items-center gap-2">
                   <span className={`inline-block h-2.5 w-2.5 rounded-sm ${BAR[b.code]}`} aria-hidden />
                   <span className="text-muted">{b.label}</span>
-                  <span className="tabular ml-auto">{pct(b.probability, 3)}</span>
+                  <span className="measured ml-auto">{pct(b.probability, 3)}</span>
                 </li>
               ))}
             </ul>

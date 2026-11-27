@@ -393,12 +393,12 @@ export function runMlResearch(rules: GameRules, allDraws: DrawRecord[], opts: { 
     rows: { train: Xtr.length, test: Xte.length },
     models: reports,
     verdict: anyBeats
-      ? 'Có mô hình vượt baseline trên tập kiểm tra (KTC 95% của chênh log loss < 0). Đây là MỘT lần kiểm định trên NHIỀU mô hình — cần xác nhận bằng walk-forward backtest trên dữ liệu mới trước khi tin cậy.'
+      ? 'Có mô hình vượt baseline trên tập kiểm tra (KTC 95% của chênh log loss < 0). Đây là MỘT lần kiểm định trên NHIỀU mô hình, cần xác nhận bằng walk-forward backtest trên dữ liệu mới trước khi tin cậy.'
       : 'KHÔNG CÓ LỢI THẾ DỰ BÁO ĐƯỢC CHỨNG MINH: không mô hình nào vượt baseline ngẫu nhiên đồng đều một cách có ý nghĩa thống kê.',
     notes: [
       `Chia theo thời gian: ${trainDraws} kỳ huấn luyện, ${usable - trainDraws} kỳ kiểm tra; đặc trưng chỉ dùng dữ liệu trước mỗi kỳ.`,
       `Giới hạn ${ML_MAX_DRAWS} kỳ gần nhất mỗi lần chạy để đảm bảo giới hạn CPU của Worker.`,
-      'Thử nhiều mô hình làm tăng rủi ro "may mắn" (multiple testing) — kết luận cần kiểm định độc lập.',
+      'Thử nhiều mô hình làm tăng rủi ro "may mắn" (multiple testing), kết luận cần kiểm định độc lập.',
     ],
   };
 }

@@ -1,53 +1,105 @@
+/* Hallmark · shape: app screen · genre: modern-minimal · theme: Console (deal 3/3, seed lottery-probability-analytics-workbench-7d7f·63677473·2026-11-26·r0) · redesign: full
+ * nav: kept (sidebar, 15 destinations) · signature: the daily decision set as a reading · states: loading, empty, error, full · console: graphite
+ * axes: dark/grotesk-sans/chromatic-amber · posture: restrained · contrast: pass · v2.0.0 */
+/* Hallmark · pre-emit critique: P3 H3 E4 S4 R3 V4 · weakest: R (fifteen dense screens), each screen leads with one record set large and the rest stays tables */
+/* Hallmark · faces swapped: Host Grotesk and Atkinson Hyperlegible Mono carry no Vietnamese subset; Be Vietnam Pro (grotesk) and IBM Plex Mono (measured) keep the voice with full diacritics */
 @import 'tailwindcss';
+@import './tokens.css';
+@import './base.css' layer(base);
 
+/* The one token block: Tailwind emits these as :root custom properties, base.css and every utility read them. */
 @theme {
-  --color-bg: #080d19;
-  --color-surface: #111827;
-  --color-surface-2: #172033;
-  --color-line: #1f2a3d;
-  --color-primary: #3b82f6;
-  --color-accent: #22c55e;
-  --color-warn: #f59e0b;
-  --color-danger: #ef4444;
-  --color-text: #f8fafc;
-  --color-muted: #94a3b8;
-  --font-sans: 'Inter', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --color-paper: oklch(17% 0.008 250);
+  --color-paper-2: oklch(21% 0.009 250);
+  --color-paper-3: oklch(13.5% 0.007 250);
+  --color-ink: oklch(95% 0.005 250);
+  --color-ink-2: oklch(83% 0.008 250);
+  --color-muted: oklch(71% 0.01 250);
+  --color-rule: oklch(31% 0.01 250);
+  --color-rule-2: oklch(42% 0.012 250);
+  /* amber: a person, the primary control, a deviation */
+  --color-accent: oklch(82% 0.15 80);
+  --color-accent-ink: oklch(18% 0.04 75);
+  --color-accent-soft: oklch(29% 0.05 80);
+  --color-focus: oklch(82% 0.15 80);
+  --color-warn: oklch(82% 0.15 80);
+  /* cool: an instrument, a reading, a draw */
+  --color-cool: oklch(77% 0.12 245);
+  --color-cool-soft: oklch(29% 0.05 245);
+  /* ok and bad: status and diffs only */
+  --color-ok: oklch(76% 0.15 150);
+  --color-ok-soft: oklch(24.5% 0.03 150);
+  --color-bad: oklch(70% 0.17 25);
+  --color-bad-soft: oklch(24.5% 0.035 25);
+  --color-error: oklch(72% 0.15 27);
+  --color-success: oklch(76% 0.13 150);
+
+  --font-sans: 'Be Vietnam Pro', ui-sans-serif, system-ui, 'Segoe UI', sans-serif;
+  --font-mono: 'IBM Plex Mono', ui-monospace, 'Cascadia Mono', monospace;
+  --font-display: var(--font-sans);
+  --font-body: var(--font-sans);
+  --font-outlier: var(--font-mono);
+
+  --radius-card: 10px;
+  --radius-pill: 6px;
+  --radius-chip: 4px;
 }
 
-html,
 body {
-  background: var(--color-bg);
-  color: var(--color-text);
-  font-family: var(--font-sans);
-  -webkit-font-smoothing: antialiased;
+  font-size: var(--text-sm);
 }
 
-body {
-  min-height: 100vh;
-}
-
-* {
-  scrollbar-color: #26324a transparent;
-}
-
-.tabular {
-  font-variant-numeric: tabular-nums;
-}
-
-@keyframes pulse-soft {
-  50% {
-    opacity: 0.45;
+/* Theme classes sit in the components layer so a utility (bg-paper-3, text-ok) can still override them. */
+@layer components {
+  .tabular {
+    font-variant-numeric: tabular-nums slashed-zero;
   }
-}
-.skeleton {
-  background: #1a2436;
-  border-radius: 0.5rem;
-  animation: pulse-soft 1.4s ease-in-out infinite;
-}
 
-@media (prefers-reduced-motion: reduce) {
+  /* What an instrument measured: a reading, an id, a timestamp. Never a label, a head or a control. */
+  .measured {
+    font-family: var(--font-outlier);
+    font-variant-numeric: tabular-nums slashed-zero;
+  }
+  .reading {
+    font-family: var(--font-outlier);
+    font-variant-numeric: tabular-nums slashed-zero;
+    font-weight: 400;
+    letter-spacing: -0.04em;
+    line-height: 1;
+    color: var(--color-ink);
+  }
+
+  /* Panels that sit together are one surface divided by 1px rules. */
+  .panels {
+    display: grid;
+    gap: var(--rule-hair);
+    background: var(--color-rule);
+    border: var(--rule-hair) solid var(--color-rule);
+    border-radius: var(--radius-card);
+    overflow: hidden;
+    color: var(--color-ink);
+  }
+  .panels > * {
+    background: var(--color-paper-2);
+    color: var(--color-ink);
+    min-width: 0;
+  }
+
+  @keyframes pulse-soft {
+    50% {
+      opacity: 0.45;
+    }
+  }
   .skeleton {
-    animation: none;
+    background: var(--color-paper-3);
+    border-radius: var(--radius-pill);
+    animation: pulse-soft 1.4s ease-in-out infinite;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .skeleton {
+      animation: none;
+    }
   }
 }
 

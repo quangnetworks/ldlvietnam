@@ -124,7 +124,7 @@ export default function Generator() {
               <Input value={f.seed} onChange={(e) => setF({ ...f, seed: e.target.value })} placeholder="vd: ky-1234" />
             </Field>
             <label className="flex items-center gap-2 text-xs text-muted">
-              <input type="checkbox" className="h-4 w-4 accent-blue-500" checked={f.unverified} onChange={(e) => setF({ ...f, unverified: e.target.checked })} />
+              <input type="checkbox" className="h-4 w-4 accent-accent" checked={f.unverified} onChange={(e) => setF({ ...f, unverified: e.target.checked })} />
               Dùng cả dữ liệu chưa xác minh
             </label>
             {overBudget && <Notice tone="bad">Tổng chi phí {vnd(f.tickets * price)} vượt ngân sách hoặc hạn mức mỗi kỳ.</Notice>}
@@ -156,8 +156,8 @@ export default function Generator() {
                 <Td>
                   {STRATEGY_LABEL[h.strategy_code] ?? h.strategy_code} <span className="text-xs text-muted">v{h.algorithm_version}</span>
                 </Td>
-                <Td className="tabular">{h.ticket_count}</Td>
-                <Td className="tabular">{vnd(h.total_cost)}</Td>
+                <Td className="measured">{h.ticket_count}</Td>
+                <Td className="measured">{vnd(h.total_cost)}</Td>
                 <Td className="text-xs">{h.target_draw_date ?? '—'}</Td>
                 <Td className="max-w-[220px] text-xs">{h.strategy_code === 'random_uniform' ? <Badge tone="info">Baseline</Badge> : <span className="text-muted">{h.validation_status}</span>}</Td>
                 <Td>

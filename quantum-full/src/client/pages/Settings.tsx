@@ -50,7 +50,7 @@ function GameConfig({ game, onSaved }: { game: Game; onSaved: () => void }) {
               <Td>
                 <Input type="number" min={0} aria-label={`Giá trị ${t.name}`} value={t.amount} onChange={(e) => setTiers(tiers.map((x, j) => (j === i ? { ...x, amount: Number(e.target.value) } : x)))} className="w-40" />
               </Td>
-              <Td className="tabular text-xs">{probOf(t.code) ? `${oneIn(probOf(t.code).oneIn)} (${probOf(t.code).exact})` : '—'}</Td>
+              <Td className="measured text-xs">{probOf(t.code) ? `${oneIn(probOf(t.code).oneIn)} (${probOf(t.code).exact})` : '—'}</Td>
             </tr>
           ))}
         </Table>
@@ -132,7 +132,7 @@ function Budget() {
         </Field>
       </div>
       <label className="mt-3 flex items-center gap-2 text-xs text-muted">
-        <input type="checkbox" className="h-4 w-4 accent-blue-500" checked={f.unverified} onChange={(e) => setF({ ...f, unverified: e.target.checked })} />
+        <input type="checkbox" className="h-4 w-4 accent-accent" checked={f.unverified} onChange={(e) => setF({ ...f, unverified: e.target.checked })} />
         Thống kê mặc định bao gồm dữ liệu chưa xác minh
       </label>
       <Button className="mt-4" variant="primary" loading={busy} disabled={f.per > f.month || f.month > f.year} onClick={save}>

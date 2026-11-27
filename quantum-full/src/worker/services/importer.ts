@@ -152,7 +152,7 @@ export async function importDraws(actor: ActorCtx, req: ImportRequest): Promise<
     const issues: ImportError[] = [];
     if (!code || code.length > 32 || !/^[\w.\-/]+$/.test(code)) issues.push({ row, drawCode: code, code: 'draw_code', message: 'Mã kỳ quay không hợp lệ' });
     if (!validDate(r.draw_date)) issues.push({ row, drawCode: code, code: 'draw_date', message: `Ngày quay "${r.draw_date}" không hợp lệ (YYYY-MM-DD)` });
-    else if (r.draw_date > today) issues.push({ row, drawCode: code, code: 'future_date', message: 'Ngày quay ở tương lai — không nhận kết quả chưa diễn ra' });
+    else if (r.draw_date > today) issues.push({ row, drawCode: code, code: 'future_date', message: 'Ngày quay ở tương lai, không nhận kết quả chưa diễn ra' });
     if (r.draw_time != null && r.draw_time !== '' && !/^([01]\d|2[0-3]):[0-5]\d$/.test(r.draw_time)) issues.push({ row, drawCode: code, code: 'draw_time', message: 'Giờ quay phải dạng HH:MM' });
     for (const v of validateDrawResult(game, { main: r.main, special: r.special ?? null })) issues.push({ row, drawCode: code, code: v.code, message: v.message });
     if (seenCodes.has(code)) issues.push({ row, drawCode: code, code: 'duplicate_in_payload', message: 'Mã kỳ bị lặp trong dữ liệu nhập' });
@@ -183,7 +183,7 @@ export async function importDraws(actor: ActorCtx, req: ImportRequest): Promise<
     if (ex.source_hash === v.hash) duplicates++;
     else {
       conflicts++;
-      errors.push({ row: v.row, drawCode: v.draw_code, code: 'conflict', message: `Kỳ ${v.draw_code} đã tồn tại (trạng thái ${ex.verification_status}) với nội dung khác — không ghi đè. Dùng quy trình điều chỉnh có audit nếu cần sửa.` });
+      errors.push({ row: v.row, drawCode: v.draw_code, code: 'conflict', message: `Kỳ ${v.draw_code} đã tồn tại (trạng thái ${ex.verification_status}) với nội dung khác, không ghi đè. Dùng quy trình điều chỉnh có audit nếu cần sửa.` });
     }
     return false;
   });

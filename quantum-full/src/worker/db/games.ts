@@ -55,7 +55,7 @@ export async function listGames(db: D1Database): Promise<Game[]> {
 /** Tìm game dạng "chọn K số trong N" theo mã (code) hoặc id. Bingo18 dùng getDiceGame. */
 export async function getGame(db: D1Database, key: string | number): Promise<Game> {
   const g = await getAnyGame(db, key);
-  if (g.engine !== 'pick') throw new ApiError(422, 'unsupported_game', `${g.name} có engine riêng — dùng các endpoint /bingo18`);
+  if (g.engine !== 'pick') throw new ApiError(422, 'unsupported_game', `${g.name} có engine riêng, dùng các endpoint /bingo18`);
   return g;
 }
 

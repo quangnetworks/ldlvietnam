@@ -82,7 +82,7 @@ export async function capitalSummary(db: D1Database, mode: 'real' | 'simulated',
     yearRemaining: Math.max(0, s.annualBudget - (spent?.y ?? 0)),
     monthly: results.reverse().map((r) => ({ month: r.month, investment: r.inv, prizes: r.prizes, net: r.net })),
     principles: [
-      'Ngân sách cố định mỗi kỳ — không tăng vốn sau khi thua (không Martingale).',
+      'Ngân sách cố định mỗi kỳ, không tăng vốn sau khi thua (không Martingale).',
       'Hệ thống KHÔNG tự động mua vé; chỉ ghi nhận giao dịch bạn tự thực hiện.',
       'Không vay tiền để chơi. Không vượt hạn mức đã cài đặt.',
       'Kỳ vọng toán học của mỗi vé là âm: hãy xem đây là chi phí giải trí.',

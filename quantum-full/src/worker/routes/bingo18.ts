@@ -29,7 +29,7 @@ bingoRoutes.get('/bingo18/rules', async (c) => {
       exactSumCounts: exactSumCounts(),
       catalog,
       bestReturn: catalog.reduce((a, b) => (b.returnRatio > a.returnRatio ? b : a)),
-      note: 'Mọi cược đều có tỷ lệ hoàn trả kỳ vọng dưới 100% (khoảng 50–57%): chơi càng nhiều, kết quả càng tiến về mức lỗ kỳ vọng.',
+      note: 'Mọi cược đều có tỷ lệ hoàn trả kỳ vọng dưới 100% (khoảng 50 đến 57%): chơi càng nhiều, kết quả càng tiến về mức lỗ kỳ vọng.',
     },
   });
 });
@@ -132,18 +132,18 @@ bingoRoutes.get('/bingo18/decision', async (c) => {
   let headline: string;
   if (schedule.remaining === 0) {
     action = 'skip';
-    headline = 'KHÔNG CHƠI — HẾT KỲ QUAY HÔM NAY';
+    headline = 'KHÔNG CHƠI: HẾT KỲ QUAY HÔM NAY';
     reasons.push('Bingo18 quay từ 06:00 đến 21:53; hôm nay không còn kỳ nào.');
   } else if (plays < 1) {
     action = 'skip';
-    headline = 'KHÔNG CHƠI — ĐÃ ĐẠT HẠN MỨC';
+    headline = 'KHÔNG CHƠI: ĐÃ ĐẠT HẠN MỨC';
     reasons.push(`Đã chi ${spentToday.toLocaleString('vi-VN')}đ cho Bingo18 hôm nay; hạn mức khả dụng còn ${available.toLocaleString('vi-VN')}đ.`);
   } else {
-    headline = `TỐI ĐA ${plays} LƯỢT × 10.000đ — CƯỢC “${best.label.toUpperCase()}”`;
-    reasons.push(`“${best.label}” có tỷ lệ hoàn trả kỳ vọng cao nhất trong các cách chơi: ${(best.returnRatio * 100).toFixed(2)}% (mọi số 1–6 như nhau).`);
+    headline = `TỐI ĐA ${plays} LƯỢT × 10.000đ, CƯỢC “${best.label.toUpperCase()}”`;
+    reasons.push(`“${best.label}” có tỷ lệ hoàn trả kỳ vọng cao nhất trong các cách chơi: ${(best.returnRatio * 100).toFixed(2)}% (mọi số 1 đến 6 như nhau).`);
     reasons.push(`Ngân sách khả dụng hôm nay ${available.toLocaleString('vi-VN')}đ = min(hạn mức Bingo18/ngày, hạn mức tháng còn lại ÷ ${daysLeft} ngày, hạn mức năm) − đã chi.`);
     reasons.push(`Lỗ kỳ vọng nếu chơi hết ${plays} lượt ≈ ${Math.round(plays * (BINGO_STAKE - best.expectedPayout)).toLocaleString('vi-VN')}đ.`);
-    reasons.push(`Giới hạn phiên ${sessionMinutes} phút; dừng ngay khi hết ngân sách — không cược thêm để “gỡ”.`);
+    reasons.push(`Giới hạn phiên ${sessionMinutes} phút; dừng ngay khi hết ngân sách, không cược thêm để “gỡ”.`);
   }
   const sim =
     action === 'play'
@@ -164,7 +164,7 @@ bingoRoutes.get('/bingo18/decision', async (c) => {
       sessionMinutes,
       reasons,
       warnings: [
-        'Bingo18 quay mỗi 6 phút — tần suất cao dễ dẫn tới chơi quá mức. Đặt giới hạn thời gian và số tiền trước khi bắt đầu.',
+        'Bingo18 quay mỗi 6 phút, tần suất cao dễ dẫn tới chơi quá mức. Đặt giới hạn thời gian và số tiền trước khi bắt đầu.',
         'Kết quả các kỳ độc lập: chuỗi “Lớn” hay “Nhỏ” liên tiếp không làm thay đổi xác suất kỳ sau.',
         'Không có chiến thuật cược nào (gấp thếp, đánh đuổi…) làm tỷ lệ hoàn trả vượt ~57%.',
       ],

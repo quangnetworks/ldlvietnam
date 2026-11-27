@@ -70,7 +70,7 @@ async function processChunk(c: Context<AppEnv>, r: RunRow): Promise<RunRow> {
   const game = await getGame(db, r.game_id);
   const draws = await loadRunDraws(c, r);
   if ((await datasetHash(draws)) !== r.dataset_hash) {
-    await db.prepare("UPDATE backtest_runs SET status = 'failed', error = ?, updated_at = ? WHERE id = ?").bind('Dữ liệu lịch sử đã thay đổi trong khi chạy — kết quả bị huỷ để tránh sai lệch.', nowIso(), r.id).run();
+    await db.prepare("UPDATE backtest_runs SET status = 'failed', error = ?, updated_at = ? WHERE id = ?").bind('Dữ liệu lịch sử đã thay đổi trong khi chạy, kết quả bị huỷ để tránh sai lệch.', nowIso(), r.id).run();
     throw conflict('Dữ liệu lịch sử đã thay đổi trong khi backtest đang chạy; phiên đã bị đánh dấu thất bại.');
   }
   const cfg = configOf(r);

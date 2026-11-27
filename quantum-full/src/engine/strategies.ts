@@ -61,7 +61,7 @@ export const STRATEGIES: Record<StrategyCode, StrategyInfo> = {
     baseline: false,
     description: 'Ngẫu nhiên có ràng buộc cân bằng chẵn/lẻ, thấp/cao, tổng, hạn chế dãy liên tiếp.',
     explanation:
-      'Lấy mẫu ngẫu nhiên và chỉ giữ bộ số có cấu trúc "điển hình" (chẵn/lẻ, thấp/cao gần cân bằng; tổng trong ±1 độ lệch chuẩn; tối đa 2 số liên tiếp). Mỗi tổ hợp vẫn có xác suất trúng như mọi tổ hợp khác — ràng buộc chỉ thay đổi hình dạng bộ số, không thay đổi xác suất.',
+      'Lấy mẫu ngẫu nhiên và chỉ giữ bộ số có cấu trúc "điển hình" (chẵn/lẻ, thấp/cao gần cân bằng; tổng trong ±1 độ lệch chuẩn; tối đa 2 số liên tiếp). Mỗi tổ hợp vẫn có xác suất trúng như mọi tổ hợp khác, ràng buộc chỉ thay đổi hình dạng bộ số, không thay đổi xác suất.',
   },
   statistical: {
     code: 'statistical',

@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import { useGame } from '../lib/game';
 import { useApi } from '../lib/hooks';
 import { dateTime, num, pct, pv } from '../lib/format';
-import { Badge, Card, ErrorState, Field, Kpi, LoadingBlock, Notice, PageHeader, Select, Table, Td } from '../components/ui';
+import { Badge, RecordLead, Card, ErrorState, Field, Kpi, LoadingBlock, Notice, PageHeader, Select, Table, Td } from '../components/ui';
 
 const VERDICT_TONE: Record<string, 'good' | 'warn' | 'bad' | 'info'> = { random: 'good', anomaly: 'warn', exploitable: 'bad', insufficient: 'info' };
 const VERDICT_LABEL: Record<string, string> = { random: 'Ngẫu nhiên', anomaly: 'Có độ lệch', exploitable: 'Cần kiểm chứng', insufficient: 'Chưa đủ dữ liệu' };
@@ -23,12 +23,12 @@ export function PredictabilitySummary({ game }: { game: string }) {
             <Badge tone={VERDICT_TONE[d.verdict]}>{VERDICT_LABEL[d.verdict]}</Badge>
             <span className="font-medium">{d.headline}</span>
           </div>
-          <p className="text-xs text-slate-300">{d.explanation[0]}</p>
+          <p className="text-xs text-ink-2">{d.explanation[0]}</p>
           <p className="text-xs text-muted">
             {num(d.draws)} kỳ · {q.meta?.dataNotice}
           </p>
-          <Link to="/predictability" className="inline-block text-xs text-primary underline-offset-2 hover:underline">
-            Xem chi tiết kiểm định →
+          <Link to="/predictability" className="inline-block text-xs text-ink underline decoration-rule-2 underline-offset-4 transition-[color] duration-[var(--dur-micro)] hover:text-accent">
+            Xem chi tiết kiểm định
           </Link>
         </div>
       )}
@@ -70,23 +70,21 @@ export default function Predictability() {
       {!d && !q.error && <LoadingBlock rows={6} />}
       {d && (
         <div className="space-y-5">
-          <section className="rounded-xl border border-line bg-surface p-5" aria-live="polite">
-            <Badge tone={VERDICT_TONE[d.verdict]}>{VERDICT_LABEL[d.verdict]}</Badge>
-            <h2 className="mt-2 text-xl font-semibold tracking-tight sm:text-2xl">{d.headline}</h2>
-            <p className="mt-1 text-sm text-muted">
-              {d.gameName} · {num(d.draws)} kỳ{d.firstDrawAt ? ` (${dateTime(d.firstDrawAt)} – ${dateTime(d.lastDrawAt)})` : ''} · {q.meta?.dataNotice}
-            </p>
-            <ul className="mt-4 list-disc space-y-1 pl-5 text-sm text-slate-300">
-              {d.explanation.map((e: string) => (
-                <li key={e}>{e}</li>
-              ))}
-            </ul>
+          <RecordLead
+            badge={<Badge tone={VERDICT_TONE[d.verdict]}>{VERDICT_LABEL[d.verdict]}</Badge>}
+            headline={d.headline}
+            meta={q.meta?.dataNotice}
+            reasons={d.explanation}
+            reading={{
+              label: `Số kỳ ${d.gameName} đã kiểm định`,
+              value: num(d.draws),
+              note: d.firstDrawAt ? `Từ ${dateTime(d.firstDrawAt)} đến ${dateTime(d.lastDrawAt)}.` : 'Chưa có kỳ nào trong phạm vi dữ liệu đã chọn.',
+            }}
+          >
             {d.verdict === 'insufficient' && q.meta && !q.meta.includeUnverified && (
-              <div className="mt-3">
-                <Notice tone="info">Dữ liệu đồng bộ tự động thường ở trạng thái “chưa xác minh”. Chọn “Bao gồm chưa xác minh” ở trên để kiểm định trên toàn bộ dữ liệu.</Notice>
-              </div>
+              <Notice tone="info">Dữ liệu đồng bộ tự động thường ở trạng thái “chưa xác minh”. Chọn “Bao gồm chưa xác minh” ở trên để kiểm định trên toàn bộ dữ liệu.</Notice>
             )}
-          </section>
+          </RecordLead>
 
           {d.tests.length > 0 && (
             <>
@@ -106,12 +104,12 @@ export default function Predictability() {
                         <div className="text-xs text-muted">{t.question}</div>
                         <div className="text-xs text-muted">{t.detail}</div>
                       </Td>
-                      <Td className="tabular whitespace-nowrap">
+                      <Td className="measured whitespace-nowrap">
                         {num(t.statistic, 2)}
                         {t.df != null && <span className="text-xs text-muted"> (df {t.df})</span>}
                       </Td>
-                      <Td className="tabular">{pv(t.pValue)}</Td>
-                      <Td className="tabular">{pv(t.qValue)}</Td>
+                      <Td className="measured">{pv(t.pValue)}</Td>
+                      <Td className="measured">{pv(t.qValue)}</Td>
                       <Td>{t.significant ? <Badge tone="warn">Lệch</Badge> : <Badge tone="good">Khớp ngẫu nhiên</Badge>}</Td>
                     </tr>
                   ))}
@@ -123,13 +121,13 @@ export default function Predictability() {
                   {d.strategies.map((s: any) => (
                     <tr key={s.code}>
                       <Td>{s.name}</Td>
-                      <Td className="tabular">{num(s.steps)}</Td>
-                      <Td className="tabular">{s.target === 'main' ? `${num(s.observed, 3)} số/vé` : pct(s.observed, 1)}</Td>
-                      <Td className="tabular">{s.target === 'main' ? num(s.expected, 3) : pct(s.expected, 1)}</Td>
-                      <Td className="tabular">{num(s.z, 2)}</Td>
-                      <Td className="tabular">{pv(s.pValue)}</Td>
-                      <Td className="tabular">{pv(s.qValue)}</Td>
-                      <Td className="tabular">{s.hits3Plus == null ? '—' : num(s.hits3Plus)}</Td>
+                      <Td className="measured">{num(s.steps)}</Td>
+                      <Td className="measured">{s.target === 'main' ? `${num(s.observed, 3)} số/vé` : pct(s.observed, 1)}</Td>
+                      <Td className="measured">{s.target === 'main' ? num(s.expected, 3) : pct(s.expected, 1)}</Td>
+                      <Td className="measured">{num(s.z, 2)}</Td>
+                      <Td className="measured">{pv(s.pValue)}</Td>
+                      <Td className="measured">{pv(s.qValue)}</Td>
+                      <Td className="measured">{s.hits3Plus == null ? '—' : num(s.hits3Plus)}</Td>
                       <Td>{s.beatsRandom ? <Badge tone="bad">Vượt ngẫu nhiên</Badge> : <Badge tone="default">Không hơn ngẫu nhiên</Badge>}</Td>
                     </tr>
                   ))}
@@ -139,7 +137,7 @@ export default function Predictability() {
           )}
 
           <Card title="Toán học giúp được gì khi mua thật?">
-            <ul className="list-disc space-y-2 pl-4 text-sm text-slate-300">
+            <ul className="list-disc space-y-2 pl-4 text-sm text-ink-2">
               <li>Không chọn được bộ số có xác suất trúng cao hơn: mọi tổ hợp đều như nhau.</li>
               <li>
                 Khi mua nhiều vé cho cùng một kỳ, <b>phối hợp vé</b> (số đặc biệt khác nhau, số chính ít trùng nhau) làm tăng xác suất <b>có ít nhất một vé trúng</b> với cùng chi phí. Hệ thống tính chính xác con số này mỗi khi sinh bộ số.

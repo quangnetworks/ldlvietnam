@@ -49,7 +49,7 @@ export async function generateAndStore(c: Context<AppEnv>, game: Game, input: Ge
   const capital = await getCapitalSettings(db);
   const budgetCheck = checkBudget(game.ticketPrice, input.ticket_count, input.budget, capital.budgetPerDraw);
   if (!budgetCheck.ok) throw new ApiError(422, 'budget_violation', budgetCheck.issues.map((i) => i.message).join('; '), budgetCheck);
-  if (input.target_draw_date && input.target_draw_date < todayVn()) throw unprocessable('Ngày quay mục tiêu đã qua — dự báo chỉ được lập TRƯỚC kỳ quay (dùng Backtesting cho kỳ quá khứ).');
+  if (input.target_draw_date && input.target_draw_date < todayVn()) throw unprocessable('Ngày quay mục tiêu đã qua, dự báo chỉ được lập TRƯỚC kỳ quay (dùng Backtesting cho kỳ quá khứ).');
   const cutoff = input.target_draw_date ? composeDrawAt(input.target_draw_date, '00:00') : undefined;
   const history = await loadDrawRecords(db, game.id, { includeUnverified: input.include_unverified ?? false, before: cutoff });
   const seed = input.seed ?? randomSeed();

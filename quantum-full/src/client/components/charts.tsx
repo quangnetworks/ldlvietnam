@@ -16,13 +16,13 @@ export function FrequencyHeatmap({ numbers, height = 240 }: { numbers: { number:
       grid: { left: 8, right: 8, top: 8, bottom: 48 },
       xAxis: { type: 'category', show: false, data: Array.from({ length: cols }, (_, i) => i) },
       yAxis: { type: 'category', show: false, data: Array.from({ length: rows }, (_, i) => i) },
-      visualMap: { dimension: 2, min: -3, max: 3, calculable: false, orient: 'horizontal', left: 'center', bottom: 0, itemHeight: 120, text: ['z +3', 'z −3'], textStyle: { color: CHART.muted }, inRange: { color: ['#1e3a8a', '#172033', '#14532d'] } },
+      visualMap: { dimension: 2, min: -3, max: 3, calculable: false, orient: 'horizontal', left: 'center', bottom: 0, itemHeight: 120, text: ['z +3', 'z −3'], textStyle: { color: CHART.muted }, inRange: { color: [CHART.coolSoft, CHART.panel, CHART.okSoft] } },
       series: [
         {
           type: 'heatmap',
           data,
-          label: { show: true, color: '#E2E8F0', fontSize: 11, formatter: (p: { data: number[] }) => two(p.data[3]) },
-          itemStyle: { borderColor: '#080D19', borderWidth: 2, borderRadius: 4 },
+          label: { show: true, color: CHART.ink, fontSize: 11, formatter: (p: { data: number[] }) => two(p.data[3]) },
+          itemStyle: { borderColor: CHART.paper, borderWidth: 2, borderRadius: 4 },
         },
       ],
     };
@@ -39,7 +39,7 @@ export function ObservedExpectedBar({ categories, height = 240, title }: { categ
       grid: { left: 44, right: 12, top: 32, bottom: categories.length > 6 ? 64 : 36 },
       series: [
         { name: 'Quan sát', type: 'bar', data: categories.map((c) => c.observed), itemStyle: { color: CHART.primary, borderRadius: [3, 3, 0, 0] } },
-        { name: 'Kỳ vọng (H0)', type: 'bar', data: categories.map((c) => Number(c.expected.toFixed(2))), itemStyle: { color: '#475569', borderRadius: [3, 3, 0, 0] } },
+        { name: 'Kỳ vọng (H0)', type: 'bar', data: categories.map((c) => Number(c.expected.toFixed(2))), itemStyle: { color: CHART.faint, borderRadius: [3, 3, 0, 0] } },
       ],
     }),
     [categories],

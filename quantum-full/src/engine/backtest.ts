@@ -262,7 +262,7 @@ export function summarizeBacktest(rules: GameRules, steps: StepResult[], windows
     edgeProven: edge,
     bonferroniLevel: alpha,
     verdict: edge
-      ? 'Một chiến lược có số trùng trung bình cao hơn baseline với mức ý nghĩa đã hiệu chỉnh Bonferroni. Cần xác nhận lại trên giai đoạn dữ liệu mới (out-of-sample) trước khi tin cậy — kết quả này có thể vẫn là may mắn.'
+      ? 'Một chiến lược có số trùng trung bình cao hơn baseline với mức ý nghĩa đã hiệu chỉnh Bonferroni. Cần xác nhận lại trên giai đoạn dữ liệu mới (out-of-sample) trước khi tin cậy, kết quả này có thể vẫn là may mắn.'
       : 'KHÔNG CÓ LỢI THẾ DỰ BÁO ĐƯỢC CHỨNG MINH: không chiến lược nào vượt baseline Random Uniform một cách có ý nghĩa thống kê.',
     biasControls: [
       'Look-ahead bias: mỗi kỳ chỉ dùng dữ liệu có thời điểm trước kỳ mục tiêu (kiểm tra cứng trong mã).',

@@ -63,7 +63,7 @@ export async function evaluatePortfolio(c: Context<AppEnv>, p: PortfolioRow): Pr
   if (p.status === 'evaluated') return { evaluated: false, reason: 'Đã chấm trước đó' };
   if (p.mode === 'real' && p.status !== 'purchased') return { evaluated: false, reason: 'Danh mục thực tế chưa ghi nhận mua vé' };
   const drawId = await findTargetDraw(db, p);
-  if (!drawId) return { evaluated: false, reason: 'Chưa có kết quả ĐÃ XÁC MINH khớp ngày/giờ quay mục tiêu (hoặc có nhiều kỳ cùng ngày — hãy chọn giờ quay)' };
+  if (!drawId) return { evaluated: false, reason: 'Chưa có kết quả ĐÃ XÁC MINH khớp ngày/giờ quay mục tiêu (hoặc có nhiều kỳ cùng ngày, hãy chọn giờ quay)' };
   const draw = await getDraw(db, drawId);
   if (!draw || draw.verificationStatus !== 'verified') return { evaluated: false, reason: 'Kết quả chưa xác minh' };
   const game = await getGame(db, p.game_id);

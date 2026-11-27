@@ -169,7 +169,7 @@ export function portfolioOdds(rules: GameRules, tickets: Ticket[], jackpots: Rec
   const jackpotsUsed = Object.fromEntries(rules.prizeTiers.filter((t) => t.kind === 'jackpot').map((t) => [t.code, jackpots[t.code] ?? t.amount]));
   const notes = [
     'Tiền thưởng trước thuế TNCN; Jackpot tính theo giá trị hiện tại đã nhập (hoặc mức tối thiểu) và chưa tính rủi ro chia giải.',
-    'Giá trị kỳ vọng của danh mục luôn bằng tổng kỳ vọng từng vé — phối hợp vé chỉ thay đổi khả năng "có vé trúng", không tăng kỳ vọng.',
+    'Giá trị kỳ vọng của danh mục luôn bằng tổng kỳ vọng từng vé, phối hợp vé chỉ thay đổi khả năng "có vé trúng", không tăng kỳ vọng.',
   ];
   if (!exact) notes.push('Game có quá nhiều tổ hợp để liệt kê; kết quả là ước lượng Monte Carlo có seed cố định (tái lập được).');
   const ci = exact ? null : wilsonInterval(Math.round(acc.any * outcomes), outcomes);

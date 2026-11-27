@@ -16,16 +16,16 @@ function Models() {
       <Table head={['Mã', 'Tên', 'Phiên bản', 'Loại', 'Số lần chạy', 'Lần cuối', 'Kiểm định']}>
         {q.data.map((m) => (
           <tr key={m.id}>
-            <Td className="font-mono text-xs">{m.code}</Td>
+            <Td className="measured text-xs">{m.code}</Td>
             <Td>
               {m.name} {m.is_baseline ? <Badge tone="info">Baseline</Badge> : null}
               <div className="text-xs text-muted">{m.description}</div>
             </Td>
             <Td>v{m.version}</Td>
             <Td className="text-xs">{m.kind}</Td>
-            <Td className="tabular">{m.run_count}</Td>
+            <Td className="measured">{m.run_count}</Td>
             <Td className="whitespace-nowrap text-xs text-muted">{dateTime(m.last_run_at)}</Td>
-            <Td className="max-w-[240px] text-xs">{m.validation ? <span className={/KHÔNG|CHƯA/.test(m.validation.status) ? 'text-amber-300' : 'text-slate-300'}>{m.validation.status}</span> : '—'}</Td>
+            <Td className="max-w-[240px] text-xs">{m.validation ? <span className={/KHÔNG|CHƯA/.test(m.validation.status) ? 'text-warn' : 'text-ink-2'}>{m.validation.status}</span> : '—'}</Td>
           </tr>
         ))}
       </Table>
@@ -66,9 +66,9 @@ function Runs() {
               <Td>
                 {r.model_name} <span className="text-xs text-muted">v{r.model_version}</span>
               </Td>
-              <Td className="font-mono text-xs">{r.seed ?? '—'}</Td>
+              <Td className="measured text-xs">{r.seed ?? '—'}</Td>
               <Td className="whitespace-nowrap text-xs">{dateTime(r.data_cutoff_at)}</Td>
-              <Td className="tabular">{r.data_draw_count}</Td>
+              <Td className="measured">{r.data_draw_count}</Td>
               <Td className="text-xs text-muted">{r.created_by}</Td>
               <Td>
                 <Button variant="ghost" onClick={() => setOpen(open === r.id ? null : r.id)}>
@@ -80,10 +80,10 @@ function Runs() {
               <tr key={`${r.id}-d`}>
                 <td colSpan={9} className="px-2 pb-3">
                   <div className="grid gap-3 lg:grid-cols-2">
-                    <pre className="max-h-64 overflow-auto rounded-lg border border-line bg-bg p-3 text-[11px]">{JSON.stringify(r.params, null, 2)}</pre>
-                    <pre className="max-h-64 overflow-auto rounded-lg border border-line bg-bg p-3 text-[11px]">{JSON.stringify(r.output, null, 2)}</pre>
+                    <pre className="max-h-64 overflow-auto rounded-[var(--radius-pill)] border border-rule bg-paper p-3 text-[11px]">{JSON.stringify(r.params, null, 2)}</pre>
+                    <pre className="max-h-64 overflow-auto rounded-[var(--radius-pill)] border border-rule bg-paper p-3 text-[11px]">{JSON.stringify(r.output, null, 2)}</pre>
                   </div>
-                  <p className="mt-1 font-mono text-[10px] text-muted">dataset {r.dataset_hash}</p>
+                  <p className="mt-1 text-xs text-muted">Mã băm dữ liệu <span className="measured break-all text-ink-2">{r.dataset_hash}</span></p>
                 </td>
               </tr>
             ) : null,
@@ -114,11 +114,11 @@ function AuditLog() {
               <Td className="text-xs">
                 {a.actor} <Badge>{a.actor_role}</Badge>
               </Td>
-              <Td className="font-mono text-xs">{a.action}</Td>
+              <Td className="measured text-xs">{a.action}</Td>
               <Td className="text-xs">
                 {a.entity_type} {a.entity_id ? `#${a.entity_id}` : ''}
               </Td>
-              <Td className="max-w-[120px] truncate font-mono text-[10px] text-muted">{a.request_id}</Td>
+              <Td className="max-w-[120px] truncate measured text-[10px] text-muted">{a.request_id}</Td>
               <Td>
                 <Button variant="ghost" onClick={() => setOpen(open === a.id ? null : a.id)}>
                   {open === a.id ? 'Đóng' : 'Xem'}
@@ -131,11 +131,11 @@ function AuditLog() {
                   <div className="grid gap-3 lg:grid-cols-2">
                     <div>
                       <div className="mb-1 text-xs text-muted">Trước</div>
-                      <pre className="max-h-64 overflow-auto rounded-lg border border-line bg-bg p-3 text-[11px]">{JSON.stringify(a.before, null, 2)}</pre>
+                      <pre className="max-h-64 overflow-auto rounded-[var(--radius-pill)] border border-rule bg-paper p-3 text-[11px]">{JSON.stringify(a.before, null, 2)}</pre>
                     </div>
                     <div>
                       <div className="mb-1 text-xs text-muted">Sau</div>
-                      <pre className="max-h-64 overflow-auto rounded-lg border border-line bg-bg p-3 text-[11px]">{JSON.stringify(a.after, null, 2)}</pre>
+                      <pre className="max-h-64 overflow-auto rounded-[var(--radius-pill)] border border-rule bg-paper p-3 text-[11px]">{JSON.stringify(a.after, null, 2)}</pre>
                     </div>
                   </div>
                 </td>
