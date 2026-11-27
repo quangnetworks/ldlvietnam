@@ -7,13 +7,14 @@ import { Badge, RecordLead, Button, Card, EmptyState, ErrorState, Field, Input, 
 import { Chart, CHART, axis } from '../components/Chart';
 import { ObservedExpectedBar } from '../components/charts';
 import { useToast } from '../components/toast';
+import { BingoStrategyTab } from '../components/BingoStrategyTab';
 
-type Tab = 'today' | 'models' | 'bets' | 'stats' | 'simulate' | 'results';
+type Tab = 'today' | 'strategy' | 'models' | 'bets' | 'stats' | 'simulate' | 'results';
 const errMsg = (e: unknown) => (e instanceof ApiClientError ? e.message : 'Có lỗi xảy ra');
 
 function Dice({ v }: { v: number }) {
   return (
-    <span className="measured inline-flex h-8 w-8 items-center justify-center rounded-[var(--radius-pill)] border border-accent/50 bg-accent/10 text-sm font-medium text-cool" aria-label={`Số ${v}`}>
+    <span className="measured inline-flex h-8 w-8 items-center justify-center rounded-[var(--radius-pill)] border border-cool/45 bg-cool-soft text-sm font-medium text-ink" aria-label={`Số ${v}`}>
       {v}
     </span>
   );
@@ -463,6 +464,7 @@ export default function Bingo18() {
         onChange={setTab}
         items={[
           { value: 'today', label: 'Hôm nay' },
+          { value: 'strategy', label: 'Chiến thuật kiểm soát lỗ' },
           { value: 'models', label: 'Mô hình dự báo' },
           { value: 'bets', label: 'Bảng cược & xác suất' },
           { value: 'stats', label: 'Kiểm định ngẫu nhiên' },
@@ -471,6 +473,7 @@ export default function Bingo18() {
         ]}
       />
       {tab === 'today' && <TodayTab />}
+      {tab === 'strategy' && <BingoStrategyTab />}
       {tab === 'models' && <ModelsTab />}
       {tab === 'bets' && <BetsTab />}
       {tab === 'stats' && <StatsTab />}

@@ -199,3 +199,12 @@ test('Danh mục: nhập vé tay (bắt buộc giờ quay với Lotto) rồi s�
   await page.getByRole('button', { name: 'Lưu thay đổi' }).click();
   await expect(page.getByText('Đã lưu thay đổi danh mục')).toBeVisible();
 });
+
+test('Bingo18: chiến thuật kiểm soát lỗ (không có chiến thuật thắng chắc)', async ({ page }) => {
+  await login(page);
+  await page.goto('/bingo18');
+  await page.getByRole('tab', { name: 'Chiến thuật kiểm soát lỗ' }).click();
+  await expect(page.getByRole('heading', { level: 2, name: 'KHÔNG CÓ CHIẾN THUẬT NÀO BẢO ĐẢM KHÔNG LỖ' })).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByText('Gấp thếp (Martingale)')).toBeVisible();
+  await expect(page.getByText('Điều bảo đảm được khi chơi Bingo18')).toBeVisible();
+});
