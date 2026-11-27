@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import { z } from 'zod';
 import { BINGO_STAKE, OFFICIAL_PAYTABLE, analyzeBet, betCatalog, betLabel, bingoModels, bingoStatistics, exactSumCounts, simulateSessions, type BingoBet, type BingoResult } from '../../engine/bingo18';
 import { daysLeftInMonth, evaluateTicketValue, vnClock } from '../../engine/decision';
+import { STAKE_STRATEGIES, hedgeBound, simulateStakeStrategies } from '../../engine/bingoStrategy';
 import { REGION_CODES, regionValue } from '../../engine/xskt';
 import { listGames } from '../db/games';
 import { randomSeed } from '../../engine/rng';
@@ -126,6 +127,45 @@ bingoRoutes.post('/bingo18/simulate', rateLimit(5), async (c) => {
   const game = await getAnyGame(c.env.DB, 'bingo18');
   const run = await insertModelRun(c.env.DB, { modelCode: 'bingo18_analysis', gameId: game.id, runType: 'montecarlo', params: { ...b, seed }, seed, draws: [], output: { meanNet: r.meanNet, probabilityProfit: r.probabilityProfit, percentiles: r.percentiles }, durationMs: 0, createdBy: c.get('user').id });
   return c.json({ data: { ...r, seed, modelRunId: run.id, bets: b.bets.map((x) => ({ ...x, label: betLabel(x.bet as BingoBet) })) } }, 201);
+});
+
+const StrategyQuery = z.object({
+  bet_type: z.enum(['single', 'pair', 'triple', 'any_triple', 'sum', 'big', 'small', 'draw']).default('single'),
+  bet_value: z.coerce.number().int().optional(),
+  base_units: z.coerce.number().int().min(1).max(100).default(1),
+  budget: z.coerce.number().int().min(10_000).max(100_000_000).optional(),
+  take_profit: z.coerce.number().int().min(0).max(100_000_000).optional(),
+  rounds: z.coerce.number().int().min(1).max(160).default(30),
+  sessions: z.coerce.number().int().min(1000).max(20_000).default(10_000),
+  seed: z.string().min(1).max(64).optional(),
+});
+
+/**
+ * Chiến thuật kiểm soát lỗ: (1) chứng minh không tổ hợp cược nào lãi chắc chắn (cận trên/cận dưới tính trên 216 kết quả);
+ * (2) so sánh cược đều, gấp thếp, Paroli với cùng quy tắc dừng: lỗ tối đa = ngân sách, chốt lời, số kỳ. Chỉ tính toán, không ghi dữ liệu.
+ */
+bingoRoutes.get('/bingo18/strategy', rateLimit(3), async (c) => {
+  const q = parseQuery(c, StrategyQuery);
+  const limit = await getSetting<number>(c.env.DB, 'bingo18_daily_limit', 100_000);
+  const budget = q.budget ?? Math.max(BINGO_STAKE, limit);
+  const bet: BingoBet = q.bet_type === 'single' || q.bet_type === 'pair' || q.bet_type === 'triple' || q.bet_type === 'sum' ? { type: q.bet_type, value: q.bet_value ?? (q.bet_type === 'sum' ? 10 : 1) } : { type: q.bet_type };
+  const seed = q.seed ?? randomSeed();
+  const input = { bet, baseUnits: q.base_units, budget, takeProfit: q.take_profit ?? null, maxRounds: q.rounds, sessions: q.sessions, seed };
+  let strategies;
+  try {
+    strategies = simulateStakeStrategies(input);
+  } catch (e) {
+    throw new ApiError(422, 'model_input', (e as Error).message);
+  }
+  const a = analyzeBet(bet);
+  return c.json({
+    data: {
+      hedge: hedgeBound(),
+      input: { ...input, betLabel: betLabel(bet), expectedNetPerRound: q.base_units * (a.expectedPayout - BINGO_STAKE), dailyLimit: limit },
+      strategies,
+      catalog: Object.entries(STAKE_STRATEGIES).map(([code, v]) => ({ code, ...v })),
+    },
+  });
 });
 
 /** Số kỳ Bingo18 còn lại hôm nay theo lịch 6 phút/kỳ từ 06:00 đến 21:53. */

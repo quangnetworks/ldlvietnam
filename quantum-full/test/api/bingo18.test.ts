@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { env } from 'cloudflare:workers';
 import { syncBingo, parseBingoChunk } from '../../src/worker/services/bingoSync';
 import { bingoDrawsRemaining } from '../../src/worker/routes/bingo18';
-import { api } from './helpers';
+import { api, VIEWER } from './helpers';
 import { createRng } from '../../src/engine/rng';
 
 const actor = { db: env.DB, actorId: 'system:test', actorRole: 'system', requestId: null, ip: null };
@@ -105,5 +105,19 @@ describe('Bingo18 — đồng bộ theo HTTP Range', () => {
     expect(bingoDrawsRemaining('2026-11-19T22:00:00Z')).toMatchObject({ remaining: 159, perDay: 159, nextAt: '06:00' }); // 05:00 VN
     expect(bingoDrawsRemaining('2026-11-20T14:40:00Z')).toMatchObject({ remaining: 2, nextAt: '21:42' }); // 21:40 VN
     expect(bingoDrawsRemaining('2026-11-20T14:50:00Z').remaining).toBe(0);
+  });
+});
+
+describe('API chiến thuật kiểm soát lỗ', () => {
+  it('Người xem đọc được; mặc định lỗ tối đa = hạn mức Bingo18/ngày; tham số sai bị từ chối', async () => {
+    const r = await api('/bingo18/strategy?bet_type=big&rounds=40&sessions=2000&seed=api', { token: VIEWER });
+    expect(r.status).toBe(200);
+    expect(r.body.data.hedge.profitableMixExists).toBe(false);
+    expect(r.body.data.strategies).toHaveLength(4);
+    expect(r.body.data.input.budget).toBe(r.body.data.input.dailyLimit);
+    for (const s of r.body.data.strategies) expect(s.worst).toBeGreaterThanOrEqual(-r.body.data.input.budget);
+    expect((await api('/bingo18/strategy?bet_type=single&bet_value=9')).status).toBe(422);
+    expect((await api('/bingo18/strategy?rounds=999')).status).toBe(400);
+    expect((await api('/bingo18/strategy', { token: null })).status).toBe(401);
   });
 });
