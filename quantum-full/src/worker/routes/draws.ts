@@ -190,6 +190,27 @@ drawRoutes.post('/admin/draws/verify-batch', requireRole('admin'), async (c) => 
   return c.json({ data: { requested: b.ids.length, verified: updated } });
 });
 
+const FillTimeBody = z.object({ draw_time: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/) });
+
+/** Điền giờ quay còn trống (vd kỳ 13:00 đồng bộ trước khi có kỳ 21:00). Chỉ điền khi đang trống; giờ phải thuộc lịch quay của game. */
+drawRoutes.post('/admin/draws/:id/time', requireRole('admin'), async (c) => {
+  const id = parseId(c);
+  const b = await parseJson(c, FillTimeBody);
+  const before = await getDraw(c.env.DB, id);
+  if (!before) throw notFound('Kỳ quay');
+  if (before.drawTime) throw conflict(`Kỳ ${before.drawCode} đã có giờ quay ${before.drawTime}; dùng "Điều chỉnh" nếu cần sửa.`);
+  const game = await getGame(c.env.DB, before.gameId);
+  const times = game.drawSchedule?.times ?? [];
+  if (times.length && !times.includes(b.draw_time)) throw unprocessable(`Giờ quay của ${game.name} phải là một trong: ${times.join(', ')}`);
+  const clash = await c.env.DB.prepare('SELECT draw_code FROM draws WHERE game_id = ? AND draw_date = ? AND draw_time = ? AND id != ?').bind(before.gameId, before.drawDate, b.draw_time, id).first<{ draw_code: string }>();
+  if (clash) throw conflict(`Kỳ ${clash.draw_code} đã là kỳ ${b.draw_time} ngày ${before.drawDate}.`);
+  await c.env.DB.batch([
+    c.env.DB.prepare('UPDATE draws SET draw_time = ?, draw_at = ?, updated_at = ? WHERE id = ? AND draw_time IS NULL').bind(b.draw_time, composeDrawAt(before.drawDate, b.draw_time), nowIso(), id),
+    auditStatement(c, { action: 'draws.fill_time', entityType: 'draw', entityId: id, before: { drawTime: null }, after: { drawTime: b.draw_time } }),
+  ]);
+  return c.json({ data: await getDraw(c.env.DB, id) });
+});
+
 const CorrectBody = z.object({
   main: z.array(z.number().int()),
   special: z.number().int().nullable().optional(),

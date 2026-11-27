@@ -1,6 +1,9 @@
 import { Hono } from 'hono';
 import { z } from 'zod';
 import { getGame } from '../db/games';
+import { validateTicket } from '../../engine/validation';
+import { vnClock } from '../../engine/decision';
+import type { Game } from '../../shared/game';
 import { auditStatement } from '../lib/audit';
 import { requireRole } from '../lib/auth';
 import { ApiError, PaginationQuery, conflict, notFound, nowIso, pageMeta, parseId, parseJson, parseQuery, unprocessable } from '../lib/http';
@@ -48,6 +51,142 @@ portfolioRoutes.post('/portfolios', async (c) => {
   stmts.push(auditStatement(c, { action: 'portfolios.create', entityType: 'portfolio', entityId: pid, after: { ...b, ticketCount, totalCost: ticketCount * price } }));
   for (let i = 0; i < stmts.length; i += 100) await c.env.DB.batch(stmts.slice(i, i + 100));
   return c.json({ data: { id: pid } }, 201);
+});
+
+const TicketInput = z.object({ main: z.array(z.number().int()), special: z.number().int().nullable().optional() });
+const TimeStr = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/);
+const DateStr = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
+
+const ManualBody = z.object({
+  game: z.string().min(1),
+  name: z.string().min(1).max(100),
+  mode: z.enum(['simulated', 'real']),
+  target_draw_date: DateStr,
+  target_draw_time: TimeStr.nullable().optional(),
+  tickets: z.array(TicketInput).min(1).max(200),
+  notes: z.string().max(1000).optional(),
+});
+
+const UpdateBody = z.object({
+  name: z.string().min(1).max(100).optional(),
+  target_draw_date: DateStr.optional(),
+  target_draw_time: TimeStr.nullable().optional(),
+  tickets: z.array(TicketInput).min(1).max(200).optional(),
+  notes: z.string().max(1000).nullable().optional(),
+});
+
+function normalizeTickets(game: Game, tickets: z.infer<typeof TicketInput>[]) {
+  const norm = tickets.map((t) => ({ main: [...t.main].sort((a, b) => a - b), special: t.special ?? null }));
+  const issues = norm.flatMap((t, i) => validateTicket(game, t).map((v) => `Vé ${i + 1}: ${v.message}`));
+  if (issues.length) throw unprocessable('Vé không hợp lệ theo thể lệ', issues);
+  return norm;
+}
+
+/** Game nhiều kỳ/ngày (Lotto 5/35: 13:00, 21:00) phải chọn giờ quay; game một kỳ/ngày lấy giờ theo lịch. */
+function resolveTime(game: Game, time: string | null | undefined): string | null {
+  const times = game.drawSchedule?.times ?? [];
+  if (time) {
+    if (times.length && !times.includes(time)) throw unprocessable(`Giờ quay của ${game.name} phải là một trong: ${times.join(', ')}`);
+    return time;
+  }
+  if (times.length > 1) throw unprocessable(`${game.name} quay ${times.length} kỳ mỗi ngày (${times.join(', ')}); hãy chọn giờ quay để chấm được vé.`);
+  return times[0] ?? null;
+}
+
+/** Kỳ mục tiêu đã quay (hoặc đã quá giờ) theo giờ Việt Nam. */
+function drawPassed(date: string, time: string | null): boolean {
+  const now = vnClock(new Date().toISOString());
+  if (date < now.date) return true;
+  if (date > now.date) return false;
+  if (!time) return false;
+  const [hh, mm] = time.split(':').map(Number);
+  return now.minutes >= hh * 60 + mm;
+}
+
+function ticketStatements(db: D1Database, pid: number, tickets: { main: number[]; special: number | null }[], price: number): D1PreparedStatement[] {
+  const stmts: D1PreparedStatement[] = [];
+  tickets.forEach((t, i) => {
+    stmts.push(db.prepare('INSERT INTO tickets (portfolio_id, ticket_index, special_number, cost) VALUES (?, ?, ?, ?)').bind(pid, i, t.special, price));
+    stmts.push(
+      db
+        .prepare(`INSERT INTO ticket_numbers (ticket_id, position, number) VALUES ${t.main.map(() => '((SELECT id FROM tickets WHERE portfolio_id = ? AND ticket_index = ?), ?, ?)').join(', ')}`)
+        .bind(...t.main.flatMap((n, pos) => [pid, i, pos, n])),
+    );
+  });
+  return stmts;
+}
+
+/**
+ * Nhập danh mục bằng tay: vé đã mua thật (mode real) hoặc bộ số tự chọn để mô phỏng.
+ * Mô phỏng không được nhắm kỳ đã quay (chọn vé sau khi biết kết quả); vé thật được ghi nhận cả sau giờ quay, có đánh dấu.
+ */
+portfolioRoutes.post('/portfolios/manual', async (c) => {
+  const b = await parseJson(c, ManualBody);
+  const game = await getGame(c.env.DB, b.game);
+  const tickets = normalizeTickets(game, b.tickets);
+  const time = resolveTime(game, b.target_draw_time);
+  const passed = drawPassed(b.target_draw_date, time);
+  if (b.mode === 'simulated' && passed) throw unprocessable('Danh mục mô phỏng không được nhắm kỳ đã quay (tránh chọn vé sau khi biết kết quả). Vé đã mua thật hãy chọn loại "Thực tế".');
+  const notes = [b.notes, passed ? 'Nhập sau giờ quay.' : null].filter(Boolean).join(' ') || null;
+  const price = game.ticketPrice;
+  const user = c.get('user');
+  const p = await c.env.DB.prepare(
+    `INSERT INTO portfolios (game_id, recommendation_id, name, mode, status, target_draw_date, target_draw_time, ticket_count, total_cost, notes, created_by)
+     VALUES (?, NULL, ?, ?, 'draft', ?, ?, ?, ?, ?, ?) RETURNING id`,
+  )
+    .bind(game.id, b.name, b.mode, b.target_draw_date, time, tickets.length, tickets.length * price, notes, user.id)
+    .first<{ id: number }>();
+  const pid = p!.id;
+  const stmts = ticketStatements(c.env.DB, pid, tickets, price);
+  stmts.push(auditStatement(c, { action: 'portfolios.create_manual', entityType: 'portfolio', entityId: pid, after: { game: game.code, name: b.name, mode: b.mode, targetDrawDate: b.target_draw_date, targetDrawTime: time, tickets, enteredAfterDraw: passed } }));
+  for (let i = 0; i < stmts.length; i += 100) await c.env.DB.batch(stmts.slice(i, i + 100));
+  return c.json({ data: { id: pid, enteredAfterDraw: passed } }, 201);
+});
+
+/**
+ * Sửa danh mục: tên, ghi chú, ngày/giờ quay mục tiêu (nháp hoặc đã mua, chưa chấm); vé chỉ sửa khi còn nháp
+ * (đã mua thì chi phí đã ghi sổ quỹ). Đổi kỳ mục tiêu sẽ bỏ liên kết kỳ cũ để chấm lại đúng kỳ.
+ */
+portfolioRoutes.put('/portfolios/:id', async (c) => {
+  const id = parseId(c);
+  const b = await parseJson(c, UpdateBody);
+  const p = await getPortfolio(c.env.DB, id);
+  if (p.status === 'evaluated' || p.status === 'cancelled') throw conflict(`Danh mục đang ở trạng thái ${p.status}; không sửa được.`);
+  if (b.tickets && p.status !== 'draft') throw conflict('Chỉ sửa được vé khi danh mục còn nháp (đã mua thì chi phí đã ghi sổ quỹ).');
+  const game = await getGame(c.env.DB, p.game_id);
+  const date = b.target_draw_date ?? p.target_draw_date;
+  if (!date) throw unprocessable('Thiếu ngày quay mục tiêu');
+  const timeChanged = b.target_draw_time !== undefined;
+  const time = timeChanged || b.target_draw_date !== undefined ? resolveTime(game, timeChanged ? b.target_draw_time : p.target_draw_time) : p.target_draw_time;
+  const targetChanged = date !== p.target_draw_date || time !== p.target_draw_time;
+  if (p.mode === 'simulated' && targetChanged && drawPassed(date, time)) throw unprocessable('Danh mục mô phỏng không được chuyển sang kỳ đã quay.');
+  const tickets = b.tickets ? normalizeTickets(game, b.tickets) : null;
+  const ts = nowIso();
+  const before = { name: p.name, targetDrawDate: p.target_draw_date, targetDrawTime: p.target_draw_time, ticketCount: p.ticket_count, tickets: tickets ? await loadPortfolioTickets(c.env.DB, id) : undefined };
+  const stmts: D1PreparedStatement[] = [
+    c.env.DB.prepare(
+      `UPDATE portfolios SET name = ?, notes = ?, target_draw_date = ?, target_draw_time = ?, target_draw_id = CASE WHEN ? THEN NULL ELSE target_draw_id END,
+         ticket_count = ?, total_cost = ?, updated_at = ? WHERE id = ? AND status IN ('draft', 'purchased')`,
+    ).bind(
+      b.name ?? p.name,
+      b.notes === undefined ? ((p as PortfolioRow & { notes?: string | null }).notes ?? null) : b.notes,
+      date,
+      time,
+      targetChanged ? 1 : 0,
+      tickets ? tickets.length : p.ticket_count,
+      tickets ? tickets.length * game.ticketPrice : p.total_cost,
+      ts,
+      id,
+    ),
+  ];
+  if (tickets) {
+    stmts.push(c.env.DB.prepare('DELETE FROM ticket_numbers WHERE ticket_id IN (SELECT id FROM tickets WHERE portfolio_id = ?)').bind(id));
+    stmts.push(c.env.DB.prepare('DELETE FROM tickets WHERE portfolio_id = ?').bind(id));
+    stmts.push(...ticketStatements(c.env.DB, id, tickets, game.ticketPrice));
+  }
+  stmts.push(auditStatement(c, { action: 'portfolios.update', entityType: 'portfolio', entityId: id, before, after: { name: b.name ?? p.name, targetDrawDate: date, targetDrawTime: time, tickets: tickets ?? undefined } }));
+  for (let i = 0; i < stmts.length; i += 100) await c.env.DB.batch(stmts.slice(i, i + 100));
+  return c.json({ data: { ...(await getPortfolio(c.env.DB, id)), tickets: await loadPortfolioTickets(c.env.DB, id) } });
 });
 
 portfolioRoutes.get('/portfolios', async (c) => {

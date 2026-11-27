@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { CheckCircle2, Layers, RefreshCw } from 'lucide-react';
+import { CheckCircle2, Layers, Pencil, RefreshCw } from 'lucide-react';
 import { apiFetch, ApiClientError } from '../lib/api';
 import { useGame } from '../lib/game';
 import { useApi } from '../lib/hooks';
@@ -7,6 +7,7 @@ import { dateOnly, todayVn, vnd } from '../lib/format';
 import { Badge, Balls, Button, Card, EmptyState, ErrorState, Field, Input, LoadingBlock, Notice, PageHeader, Pagination, Select, Table, Tabs, Td } from '../components/ui';
 import { GenerationResult } from '../components/GenerationResult';
 import { useToast } from '../components/toast';
+import { ManualPortfolioForm } from '../components/ManualPortfolioForm';
 
 const STATUS: Record<string, { label: string; tone: 'default' | 'good' | 'warn' | 'bad' | 'info' }> = {
   draft: { label: 'Nháp', tone: 'default' },
@@ -89,8 +90,10 @@ function Optimizer({ onSaved }: { onSaved: () => void }) {
 
 function PortfolioDetail({ id, onChanged }: { id: number; onChanged: () => void }) {
   const q = useApi<any>(`/portfolios/${id}`);
+  const { games } = useGame();
   const toast = useToast();
   const [busy, setBusy] = useState('');
+  const [editing, setEditing] = useState(false);
   const act = async (key: string, path: string, ok: string) => {
     setBusy(key);
     try {
@@ -108,8 +111,24 @@ function PortfolioDetail({ id, onChanged }: { id: number; onChanged: () => void 
   if (q.error) return <ErrorState error={q.error} onRetry={q.reload} />;
   if (!q.data) return <LoadingBlock />;
   const p = q.data;
+  const game = games.find((g) => g.code === p.game.code);
+  const multi = (game?.drawSchedule?.times?.length ?? 0) > 1;
+  if (editing && game)
+    return (
+      <div className="rounded-[var(--radius-pill)] border border-rule bg-paper p-4">
+        <ManualPortfolioForm
+          game={game}
+          initial={{ id: p.id, name: p.name, mode: p.mode, status: p.status, target_draw_date: p.target_draw_date, target_draw_time: p.target_draw_time, notes: p.notes, tickets: p.tickets.map((t: any) => ({ main: t.main, special: t.special })) }}
+          onSaved={() => (setEditing(false), q.reload(), onChanged())}
+          onCancel={() => setEditing(false)}
+        />
+      </div>
+    );
   return (
     <div className="space-y-3 rounded-[var(--radius-pill)] border border-rule bg-paper/50 p-3">
+      {multi && !p.target_draw_time && (p.status === 'draft' || p.status === 'purchased') && (
+        <Notice tone="warn">Danh mục chưa chọn giờ quay nên chưa chấm được ({game?.drawSchedule?.times.join(' hoặc ')}). Bấm “Sửa” để chọn giờ.</Notice>
+      )}
       <div className="flex flex-wrap gap-2">
         {p.mode === 'real' && p.status === 'draft' && (
           <Button variant="primary" loading={busy === 'buy'} onClick={() => act('buy', `/portfolios/${id}/purchase`, 'Đã ghi nhận mua vé thực tế')}>
@@ -119,6 +138,11 @@ function PortfolioDetail({ id, onChanged }: { id: number; onChanged: () => void 
         {(p.status === 'draft' || p.status === 'purchased') && (
           <Button loading={busy === 'eval'} onClick={() => act('eval', `/portfolios/${id}/evaluate`, 'Đã chấm vé')}>
             <CheckCircle2 className="h-4 w-4" aria-hidden /> Chấm với kết quả
+          </Button>
+        )}
+        {(p.status === 'draft' || p.status === 'purchased') && (
+          <Button onClick={() => setEditing(true)}>
+            <Pencil className="h-4 w-4" aria-hidden /> Sửa
           </Button>
         )}
         {p.status === 'draft' && (
@@ -145,7 +169,7 @@ function PortfolioDetail({ id, onChanged }: { id: number; onChanged: () => void 
 }
 
 function SavedPortfolios({ refreshKey }: { refreshKey: number }) {
-  const { code } = useGame();
+  const { code, game } = useGame();
   const toast = useToast();
   const [mode, setMode] = useState('');
   const [page, setPage] = useState(1);
@@ -183,7 +207,7 @@ function SavedPortfolios({ refreshKey }: { refreshKey: number }) {
     >
       {q.error && <ErrorState error={q.error} onRetry={q.reload} />}
       {q.loading && !q.data && <LoadingBlock />}
-      {q.data?.length === 0 && <EmptyState title="Chưa có danh mục" description="Sinh bộ số hoặc tối ưu danh mục, sau đó bấm “Lưu danh mục”." />}
+      {q.data?.length === 0 && <EmptyState title="Chưa có danh mục" description="Sinh bộ số, tối ưu danh mục rồi bấm “Lưu danh mục”, hoặc nhập vé đã mua ở tab “Nhập vé tay”." />}
       {!!q.data?.length && (
         <Table head={['#', 'Tên', 'Loại', 'Kỳ mục tiêu', 'Vé', 'Chi phí', 'Giải cố định', 'Trạng thái', '']}>
           {q.data.flatMap((p) => [
@@ -193,6 +217,11 @@ function SavedPortfolios({ refreshKey }: { refreshKey: number }) {
               <Td>{p.mode === 'real' ? <Badge tone="warn">Thực tế</Badge> : <Badge>Mô phỏng</Badge>}</Td>
               <Td className="whitespace-nowrap text-xs">
                 {dateOnly(p.target_draw_date)} {p.target_draw_time ?? ''}
+                {!p.target_draw_time && (game?.drawSchedule?.times?.length ?? 0) > 1 && (p.status === 'draft' || p.status === 'purchased') && (
+                  <span className="ml-1.5">
+                    <Badge tone="warn">Chưa chọn giờ</Badge>
+                  </span>
+                )}
               </Td>
               <Td className="measured">{p.ticket_count}</Td>
               <Td className="measured">{vnd(p.total_cost)}</Td>
@@ -222,13 +251,31 @@ function SavedPortfolios({ refreshKey }: { refreshKey: number }) {
 }
 
 export default function Portfolio() {
-  const [tab, setTab] = useState<'optimize' | 'saved'>('optimize');
+  const [tab, setTab] = useState<'optimize' | 'manual' | 'saved'>('optimize');
   const [refresh, setRefresh] = useState(0);
+  const { game } = useGame();
   return (
     <>
       <PageHeader title="Danh mục vé" description="Tối ưu độ phủ theo ngân sách, lưu danh mục mô phỏng hoặc thực tế, và chấm vé với kết quả đã xác minh." />
-      <Tabs value={tab} onChange={setTab} items={[{ value: 'optimize', label: 'Tối ưu danh mục' }, { value: 'saved', label: 'Danh mục đã lưu' }]} />
-      {tab === 'optimize' ? <Optimizer onSaved={() => setRefresh((x) => x + 1)} /> : <SavedPortfolios refreshKey={refresh} />}
+      <Tabs
+        value={tab}
+        onChange={setTab}
+        items={[
+          { value: 'optimize', label: 'Tối ưu danh mục' },
+          { value: 'manual', label: 'Nhập vé tay' },
+          { value: 'saved', label: 'Danh mục đã lưu' },
+        ]}
+      />
+      {tab === 'optimize' && <Optimizer onSaved={() => setRefresh((x) => x + 1)} />}
+      {tab === 'manual' &&
+        (game ? (
+          <Card title={`Nhập vé ${game.name} bằng tay`} subtitle="Dán các vé bạn đã mua (hoặc bộ số tự chọn), chọn ngày và giờ quay để hệ thống chấm khi có kết quả.">
+            <ManualPortfolioForm key={game.code} game={game} onSaved={() => (setRefresh((x) => x + 1), setTab('saved'))} />
+          </Card>
+        ) : (
+          <LoadingBlock />
+        ))}
+      {tab === 'saved' && <SavedPortfolios refreshKey={refresh} />}
     </>
   );
 }
