@@ -13,7 +13,7 @@ function SampleNotice({ meta, sample }: { meta?: Record<string, any>; sample?: a
   const tone = sample.reliability === 'good' ? 'good' : sample.reliability === 'moderate' ? 'info' : 'warn';
   return (
     <Notice tone={tone}>
-      Cỡ mẫu <b className="measured">{num(sample.draws)}</b> kỳ. Độ tin cậy: <b>{{ insufficient: 'không đủ', low: 'thấp', moderate: 'trung bình', good: 'tốt' }[sample.reliability as string]}</b>. {sample.note} {meta?.dataNotice}
+      Cỡ mẫu: <b className="measured">{num(sample.draws)}</b> kỳ. Độ tin cậy: <b>{{ insufficient: 'không đủ', low: 'thấp', moderate: 'trung bình', good: 'tốt' }[sample.reliability as string]}</b>. {sample.note} {meta?.dataNotice}
     </Notice>
   );
 }
